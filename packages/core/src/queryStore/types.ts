@@ -1,0 +1,493 @@
+import { AttachValue, SignalFunction } from '../signal';
+import { BaseStore, DebounceOptions, SetPartial, Store } from '../types';
+
+// ============ Query Store Type =============================================== //
+
+/**
+ * Helper type that represents the store returned by `createQueryStore()`.
+ */
+export type QueryStore<TData, TParams extends Record<string, unknown>, CustomState = unknown> = Store<
+  QueryStoreState<TData, TParams, CustomState>
+>;
+
+// ============ Query Config =================================================== //
+
+/**
+ * Configuration options for creating a query-enabled store.
+ */
+export type QueryStoreConfig<
+  TQueryFnData,
+  TParams extends Record<string, unknown>,
+  TData = TQueryFnData,
+  CustomState = unknown,
+  S extends QueryStoreState<TData, TParams, CustomState> = QueryStoreState<TData, TParams, CustomState>,
+> = {
+  /**
+   * **A function responsible for fetching data from a remote source.**
+   * Receives parameters of type TParams and optionally an abort controller.
+   * Returns either a promise or a raw data value of type TQueryFnData.
+   *
+   * ---
+   * `abortController` is by default available, unless either:
+   * - `abortInterruptedFetches` is set to `false` in the store's config
+   * - The fetch was manually triggered with `skipStoreUpdates: true`
+   */
+  fetcher: (params: TParams, abortController: AbortController | null) => TQueryFnData | Promise<TQueryFnData>;
+
+  /**
+   * **A callback invoked whenever a fetch operation fails.**
+   * Receives the error and the current retry count.
+   */
+  onError?: (error: Error, retryCount: number) => void;
+
+  /**
+   * **A callback invoked whenever fresh data is successfully fetched.**
+   * Receives the transformed data and the store's set function, which can optionally be used to update store state.
+   */
+  onFetched?: (info: OnFetchedParams<TData, TParams, CustomState, S>) => void;
+
+  /**
+   * **A function that overrides the default behavior of setting the fetched data in the store's query cache.**
+   * Receives an object containing the transformed data, the query parameters, the query key, and the store's set function.
+   *
+   * When using `setData`, it’s important to note that you are taking full responsibility for managing query data. If your
+   * query supports variable parameters (and thus multiple query keys) and you want to cache data for each key, you’ll need
+   * to manually handle storing data based on the provided `params` or `queryKey`. Naturally, you will also bear
+   * responsibility for pruning this data in the event you do not want it persisted indefinitely.
+   *
+   * Automatic refetching per your specified `staleTime` is still managed internally by the store. While no query *data*
+   * will be cached internally if `setData` is provided, metadata such as the last fetch time for each query key is still
+   * cached and tracked by the store, unless caching is fully disabled via `disableCache: true`.
+   */
+  setData?: (info: SetDataParams<TData, TParams, CustomState, S>) => void;
+
+  /**
+   * **A function to transform the raw fetched data** (`TQueryFnData`) into another form (`TData`).
+   * If not provided, the raw data returned by `fetcher` is used.
+   */
+  transform?: (data: TQueryFnData, params: TParams) => TData;
+
+  /**
+   * If `true`, the store will abort any partially completed fetches when:
+   * - A new fetch is initiated due to a change in parameters
+   * - All components subscribed to the store via selectors are unmounted
+   * @default true
+   */
+  abortInterruptedFetches?: boolean;
+
+  /**
+   * The maximum duration, in milliseconds, that fetched data is considered fresh.
+   * After this time, data is considered expired and will be refetched when requested.
+   * @default time.days(7)
+   */
+  cacheTime?: number | ((params: TParams) => number);
+
+  /**
+   * If `true`, the store will log debug messages to the console.
+   * @default false
+   */
+  debugMode?: boolean;
+
+  /**
+   * If `true`, the store will **not** trigger automatic refetches when data becomes stale. This is
+   * useful in cases where you want to refetch data on component mount if stale, but not automatically
+   * if data becomes stale while your component is already mounted.
+   * @default false
+   */
+  disableAutoRefetching?: boolean;
+
+  /**
+   * Controls whether the store's caching mechanisms are disabled. When disabled, the store will always refetch
+   * data when params change, and fetched data will not be stored unless a `setData` function is provided.
+   * @default false
+   */
+  disableCache?: boolean;
+
+  /**
+   * When `true`, the store actively fetches and refetches data as needed.
+   * When `false`, the store will not automatically fetch data until explicitly enabled.
+   * @default true
+   */
+  enabled?: boolean | ReactiveParam<boolean, TParams, S, TData>;
+
+  /**
+   * When `true`, the store's `getData` method will always return existing data from the cache if it exists,
+   * regardless of whether the cached data is expired, until the data is pruned following a successful refetch.
+   *
+   * Additionally, when params change while the store is enabled, `getData` will return the previous data until
+   * data for the new params is available.
+   * @default false
+   */
+  keepPreviousData?: boolean;
+
+  /**
+   * The maximum number of times to retry a failed fetch operation.
+   * @default 5
+   */
+  maxRetries?: number;
+
+  /**
+   * Delay before triggering a fetch when parameters change.
+   * Accepts a number (ms) or debounce options:
+   *
+   * `{ delay: number, leading?: boolean, trailing?: boolean, maxWait?: number }`
+   * @default undefined // (No throttle)
+   */
+  paramChangeThrottle?: number | DebounceOptions;
+
+  /**
+   * Parameters to be passed to the fetcher, defined as either direct values or `ReactiveParam` functions.
+   * Dynamic parameters using `AttachValue` will cause the store to refetch when their values change.
+   */
+  params?: QueryStoreParams<TParams, TData, S, CustomState>;
+
+  /**
+   * The delay between retries after a fetch error occurs, in milliseconds, defined as a number or a function that
+   * receives the error and current retry count and returns a number.
+   *
+   * @default Exponential backoff starting at 5s, doubling each retry, capped at 5m:
+   * ```ts
+   * retryCount => Math.min(time.seconds(5) * Math.pow(2, retryCount), time.minutes(5))
+   * ```
+   */
+  retryDelay?: number | ((retryCount: number, error: Error) => number);
+
+  /**
+   * The duration, in milliseconds, that data is considered fresh after fetching.
+   * After becoming stale, the store may automatically refetch data in the background if there are active subscribers.
+   *
+   * **Note:** Stale times under 5 seconds are strongly discouraged.
+   * @default time.minutes(2)
+   */
+  staleTime?: number;
+
+  /**
+   * Suppresses warnings in the event a `staleTime` under the minimum is desired.
+   * @default false
+   */
+  suppressStaleTimeWarning?: boolean;
+
+  /**
+   * @deprecated Only use for backwards compatibility.
+   * @default true
+   */
+  useParsableQueryKeys?: boolean;
+};
+
+// ============ Query Store State ============================================== //
+
+/**
+ * The full state structure managed by the query store. This type is generally internal,
+ * though the state it defines can be accessed via the store's public interface.
+ */
+export type QueryStoreState<TData, TParams extends Record<string, unknown>, CustomState = unknown> = {
+  /**
+   * Initiates a data fetch for the given parameters. If no parameters are provided,
+   * the store's current parameters are used.
+   * @param params - Optional parameters to pass to the fetcher function.
+   * @param options - Optional {@link FetchOptions} to customize the fetch behavior.
+   * @returns A promise that resolves when the fetch operation completes.
+   */
+  fetch: (params?: Partial<TParams>, options?: FetchOptions) => Promise<TData | null>;
+
+  /**
+   * A lower-level helper that provides direct access to cache entries.
+   * If no parameters are provided, the store's current parameters are used.
+   * If partial parameters are provided, any missing required parameters will
+   * be resolved from the store's current parameters.
+   * @param paramsOrQueryKey - Optional parameters or query key to retrieve cached data for.
+   * @returns The cached data, or `null` if no data is available.
+   */
+  getCacheEntry: (paramsOrQueryKey?: TParams | Partial<TParams> | string) => CacheEntry<TData> | null;
+
+  /**
+   * Returns the cached data, if available, for the current or provided query parameters.
+   * If partial parameters are provided, any missing required parameters will
+   * be resolved from the store's current parameters.
+   * @param paramsOrQueryKey - Optional parameters or query key to retrieve cached data for.
+   * @returns The cached data, or `null` if no data is available.
+   */
+  getData: (paramsOrQueryKey?: TParams | string) => CacheEntry<TData>['data'];
+
+  /**
+   * Returns expanded status information for the currently specified query parameters. The raw
+   * status can be obtained by directly reading the `status` property.
+   * @returns An object containing boolean flags for each status.
+   */
+  getStatus: () => QueryStatusInfo;
+
+  /**
+   * Determines if the current data is expired based on whether `cacheTime` has been exceeded.
+   * @param override - An optional override for the default cache time, in milliseconds.
+   * @returns `true` if the data is expired, otherwise `false`.
+   */
+  isDataExpired: (override?: number) => boolean;
+
+  /**
+   * Determines if the current data is stale based on whether `staleTime` has been exceeded.
+   * Stale data may be refreshed automatically in the background.
+   * @param override - An optional override for the default stale time, in milliseconds.
+   * @returns `true` if the data is stale, otherwise `false`.
+   */
+  isStale: (override?: number) => boolean;
+
+  /**
+   * Resets the store to its initial state, clearing data, error, and any cached values.
+   */
+  reset: () => void;
+
+  /**
+   * Indicates whether the store should actively fetch data.
+   * When `false`, the store won't automatically refetch data.
+   */
+  enabled: boolean;
+
+  /**
+   * The most recent error encountered during a fetch operation, if any.
+   */
+  error: Error | null;
+
+  /**
+   * The timestamp of the last successful fetch, or null if no successful fetch has occurred.
+   */
+  lastFetchedAt: number | null;
+
+  /**
+   * A cache of fetched data and metadata, keyed by query stringified params.
+   */
+  queryCache: Record<string, CacheEntry<TData> | undefined>;
+
+  /**
+   * The current query key, which is a string representation of the current query parameter values.
+   */
+  queryKey: string;
+
+  /**
+   * The current status of the query's remote data fetching operation.
+   */
+  status: QueryStatus;
+} & CustomState;
+
+// ============ Fetch Options ================================================== //
+
+/**
+ * Defines additional options for a data fetch operation.
+ */
+export type FetchOptions = {
+  /**
+   * Overrides the store's default cacheTime for this fetch, which dictates when the data fetched in this operation
+   * will become eligible for pruning.
+   *
+   * Has no effect if `skipStoreUpdates` is set to `true`.
+   */
+  cacheTime?: number;
+
+  /**
+   * Forces a fetch request even if there is fresh data available in the cache.
+   *
+   * Note: If a pending fetch matches the forced fetch's params, the pending promise *will* be returned.
+   * @default false
+   */
+  force?: boolean;
+
+  /**
+   * If `true`, the fetch will simply return the data without any internal handling or side effects,
+   * running in parallel with any other ongoing fetches. Use together with `force: true` if you want to
+   * guarantee that a fresh fetch is triggered regardless of the current store state.
+   *
+   * ---
+   * If set to `'withCache'`, the fetch will similarly run in parallel without affecting the store, but the
+   * fetched data will be stored in the cache, as long as the store's config doesn't contain `disableCache: true`.
+   * @default false
+   */
+  skipStoreUpdates?: boolean | 'withCache';
+
+  /**
+   * Overrides the store's default staleTime for this fetch, which dictates how fresh data must be to be returned
+   * from the cache.
+   */
+  staleTime?: number;
+
+  /**
+   * If `true`, the fetch operation will throw an error if the fetch fails.
+   * @default false
+   */
+  throwOnError?: boolean;
+
+  /**
+   * Dictates whether the store's `queryKey` should be updated based on the params used in the fetch operation.
+   * Useful if for instance you want to cache the manually fetched data, but skip updating the store's current
+   * `queryKey` (which determines where `getData()` points to).
+   *
+   * ---
+   * Defaults to `true` unless `skipStoreUpdates: true` is specified, in which case the default is `false`.
+   */
+  updateQueryKey?: boolean;
+};
+
+// ============ Status Types =================================================== //
+
+/**
+ * A set of constants representing the various stages of a query's remote data fetching process.
+ */
+export const QueryStatuses = {
+  Error: 'error',
+  Idle: 'idle',
+  Loading: 'loading',
+  Success: 'success',
+} as const;
+
+/**
+ * Represents the current status of the query's remote data fetching operation.
+ *
+ * Possible values:
+ * - **`'error'`**: The most recent request encountered an error.
+ * - **`'idle'`**: No request in progress, no error, no data yet.
+ * - **`'loading'`**: A request is currently in progress.
+ * - **`'success'`**: The most recent request has succeeded and data is available.
+ */
+export type QueryStatus = (typeof QueryStatuses)[keyof typeof QueryStatuses];
+
+/**
+ * Expanded status information for the currently specified query parameters.
+ */
+export type QueryStatusInfo = {
+  isError: boolean;
+  isFetching: boolean;
+  isIdle: boolean;
+  isInitialLoading: boolean;
+  isSuccess: boolean;
+};
+
+// ============ Cache Types ==================================================== //
+
+/**
+ * Represents an entry in the query cache, which stores fetched data along with metadata,
+ * and error information in the event the most recent fetch failed.
+ */
+export type CacheEntry<T> = {
+  cacheTime: number;
+  data: T | null;
+} & (
+  | {
+      errorInfo: {
+        error: Error;
+        lastFailedAt: number;
+        retryCount: number;
+      };
+      lastFetchedAt: null;
+    }
+  | {
+      errorInfo: {
+        error: Error;
+        lastFailedAt: number;
+        retryCount: number;
+      } | null;
+      lastFetchedAt: number;
+    }
+);
+
+// ============ Param Types ==================================================== //
+
+/**
+ * Internal helper type for the config’s params clause.
+ */
+export type QueryStoreParams<
+  TParams extends Record<string, unknown>,
+  TData,
+  S extends QueryStoreState<TData, TParams, CustomState>,
+  CustomState = unknown,
+> = [TParams] extends [Record<string, never>]
+  ? undefined
+  : {
+      [K in keyof TParams]: ReactiveParam<TParams[K], TParams, S, TData>;
+    };
+
+/**
+ * Represents a parameter that can be provided directly or defined via a reactive `AttachValue`.
+ * A parameter can be:
+ * - A static value (e.g. `string`, `number`).
+ * - A function that returns an `AttachValue<T>` when given a `SignalFunction`.
+ */
+export type ReactiveParam<T, TParams extends Record<string, unknown>, S extends QueryStoreState<TData, TParams>, TData> =
+  | T
+  | (($: SignalFunction, store: BaseStore<S>) => AttachValue<T>);
+
+/**
+ * The result of resolving reactive and static parameter values.
+ */
+export type ResolvedParamsResult<TParams extends Record<string, unknown>> = {
+  /**
+   * Reactive parameter values wrapped in `AttachValue`, which trigger refetches when they change.
+   */
+  attachVals: Partial<Record<keyof TParams, AttachValue<unknown>>>;
+
+  /**
+   * Direct, non-reactive values resolved from the initial configuration.
+   */
+  directValues: Partial<TParams>;
+
+  /**
+   * Fully resolved parameters, merging both direct and reactive values.
+   */
+  resolvedParams: TParams;
+};
+
+/**
+ * The result of resolving the `enabled` option.
+ */
+export type ResolvedEnabledResult = {
+  /**
+   * The reactive enabled state, if provided as a function returning an AttachValue.
+   */
+  enabledAttachVal: AttachValue<boolean> | null;
+
+  /**
+   * The static enabled state, if provided as a direct boolean value.
+   */
+  enabledDirectValue: boolean | null;
+
+  /**
+   * The final enabled state, derived from either the reactive or static value.
+   */
+  resolvedEnabled: boolean;
+};
+
+// ============ Internal Helper Types ========================================== //
+
+/**
+ * The keys that make up the internal state of the store.
+ */
+export type InternalStateKeys = keyof QueryStoreState<unknown, Record<string, unknown>>;
+
+// ============ Query Config Helpers =========================================== //
+
+/**
+ * Helper type for defining `onFetched` parameters.
+ */
+export type OnFetchedParams<
+  TData,
+  TParams extends Record<string, unknown> = Record<string, never>,
+  CustomState = unknown,
+  S extends QueryStoreState<TData, TParams, CustomState> = QueryStoreState<TData, TParams, CustomState>,
+> = {
+  data: TData;
+  fetch: (params?: TParams | Partial<TParams>, options?: FetchOptions) => Promise<TData | null>;
+  params: TParams;
+  set: (update: SetPartial<S>) => void;
+};
+
+/**
+ * Helper type for defining `setData` parameters.
+ */
+export type SetDataParams<
+  TData,
+  TParams extends Record<string, unknown> = Record<string, never>,
+  CustomState = unknown,
+  S extends QueryStoreState<TData, TParams, CustomState> = QueryStoreState<TData, TParams, CustomState>,
+> = {
+  data: TData;
+  params: TParams;
+  queryKey: string;
+  set: (update: SetPartial<S>) => void;
+};

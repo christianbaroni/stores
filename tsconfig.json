@@ -1,0 +1,29 @@
+{
+  "compilerOptions": {
+    "target": "ES2021",
+    "module": "ESNext",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "composite": true,
+    "outDir": "dist",
+    "baseUrl": ".",
+    "paths": {
+      "@/env": ["packages/core/src/env"],
+      "@/logger": ["packages/core/src/logger"],
+      "@/queryStore/*": ["packages/core/src/queryStore/*"],
+      "@/utils/*": ["packages/core/src/utils/*"],
+      "@/hooks/*": ["packages/core/src/hooks/*"],
+      "@/derivedStore/*": ["packages/core/src/derivedStore/*"],
+      "@/tests/*": ["packages/core/src/tests/*"],
+      "@/storesStorage": ["packages/core/src/storesStorage"],
+      "@stores": ["packages/core/src"]
+    }
+  },
+  "include": ["packages/*/src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

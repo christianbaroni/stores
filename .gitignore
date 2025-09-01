@@ -1,0 +1,59 @@
+# Node
+node_modules/
+.pnpm/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.idea/
+.vscode/
+*.swp
+
+# Build output
+dist/
+build/
+coverage/
+
+# TypeScript
+*.tsbuildinfo
+
+# Jest
+coverage/
+
+# Env
+.env
+.env.*
+
+# Misc
+*.local
+
+# pnpm store
+.pnpm-store/
+
+# Next.js/.next (if used)
+.next/
+
+# Expo
+.expo/
+.expo-shared/
+
+# Mac system files
+Icon?
+
+# Temporary files
+*.tmp
+*.temp
+
+# Lint cache
+.eslintcache
+
+# Storybook
+storybook-static/ 
