@@ -1,16 +1,14 @@
 let Platform;
 try {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
   const req = Function('return typeof require !== "undefined" ? require : undefined')();
   Platform = req ? req('react-native').Platform : { OS: undefined };
 } catch {
   Platform = { OS: undefined };
 }
 
-function getNodeEnv() {
+function getNodeEnv(): string | undefined {
   try {
-    // @ts-ignore
-    return typeof process !== 'undefined' && process.env && process.env.NODE_ENV;
+    return (typeof process !== 'undefined' && process.env && process.env.NODE_ENV) || undefined;
   } catch {
     return undefined;
   }

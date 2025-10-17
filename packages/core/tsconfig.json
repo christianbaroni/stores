@@ -3,16 +3,17 @@
     "target": "ES2021",
     "module": "ESNext",
     "moduleResolution": "node",
+    "lib": ["ES2021", "DOM", "DOM.Iterable"],
+    "types": ["node", "jest"],
     "outDir": "dist",
     "declaration": true,
     "declarationDir": "dist",
     "emitDeclarationOnly": false,
-    "rootDir": "src",
     "composite": true,
     "esModuleInterop": true,
     "strict": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*", "tsup.config.ts", "analyze-bundle.ts"]
 }

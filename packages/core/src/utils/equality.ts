@@ -86,14 +86,17 @@ export function dequal(foo: unknown, bar: unknown): boolean {
   const has = Object.prototype.hasOwnProperty;
 
   function find(iter: Iterable<unknown>, tar: unknown): unknown {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     for (const key of (iter as any).keys()) {
       if (dequal(key, tar)) return key;
     }
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let ctor: any, len: number, tmp: unknown;
   if (foo === bar) return true;
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   if (foo && bar && (ctor = (foo as any).constructor) === (bar as any).constructor) {
     if (ctor === Date) return (foo as Date).getTime() === (bar as Date).getTime();
     if (ctor === RegExp) return (foo as RegExp).toString() === (bar as RegExp).toString();
@@ -151,6 +154,7 @@ export function dequal(foo: unknown, bar: unknown): boolean {
       const fooView = foo as ArrayBufferView;
       const barView = bar as ArrayBufferView;
       if ((len = fooView.byteLength) === barView.byteLength) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         while (len-- && (fooView as any)[len] === (barView as any)[len]);
       }
       return len === -1;

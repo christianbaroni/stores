@@ -40,19 +40,19 @@ export function defaultDeserializeState<PersistedState>(serializedState: string,
   }
 }
 
-interface SerializedMap {
+type SerializedMap = {
   __type: 'Map';
   entries: [unknown, unknown][];
-}
+};
 
 export function isSerializedMap(value: unknown): value is SerializedMap {
   return typeof value === 'object' && value !== null && (value as Record<string, unknown>).__type === 'Map';
 }
 
-interface SerializedSet {
+type SerializedSet = {
   __type: 'Set';
   values: unknown[];
-}
+};
 
 export function isSerializedSet(value: unknown): value is SerializedSet {
   return typeof value === 'object' && value !== null && (value as Record<string, unknown>).__type === 'Set';

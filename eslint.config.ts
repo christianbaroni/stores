@@ -1,14 +1,13 @@
-import js from '@eslint/js';
 import typescriptPlugin from '@typescript-eslint/eslint-plugin';
 import typescriptParser from '@typescript-eslint/parser';
 import prettierPlugin from 'eslint-plugin-prettier';
 import prettierRecommended from 'eslint-plugin-prettier/recommended';
+import reactHooksPlugin from 'eslint-plugin-react-hooks';
 
 export default [
   {
-    ignores: ['node_modules/', 'build/', 'dist/'],
+    ignores: ['**/node_modules/', '**/build/', '**/dist/'],
   },
-  js.configs.recommended,
   prettierRecommended,
   {
     plugins: {
@@ -29,9 +28,16 @@ export default [
     },
     plugins: {
       '@typescript-eslint': typescriptPlugin,
+      'react-hooks': reactHooksPlugin,
     },
     rules: {
       ...typescriptPlugin.configs.recommended.rules,
+      ...reactHooksPlugin.configs.recommended.rules,
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+      '@typescript-eslint/no-redeclare': 'off',
+      'no-undef': 'off',
+      'no-redeclare': 'off',
+      'react-hooks/refs': 'off',
     },
   },
   {
@@ -40,6 +46,18 @@ export default [
         window: 'readonly',
         document: 'readonly',
         process: 'readonly',
+        console: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+        setInterval: 'readonly',
+        clearInterval: 'readonly',
+        queueMicrotask: 'readonly',
+        AbortController: 'readonly',
+        global: 'readonly',
+        __dirname: 'readonly',
+        __filename: 'readonly',
+        Buffer: 'readonly',
+        Promise: 'readonly',
       },
       ecmaVersion: 2021,
     },

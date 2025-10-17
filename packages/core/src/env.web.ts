@@ -1,7 +1,6 @@
-function getNodeEnv() {
+function getNodeEnv(): string | undefined {
   try {
-    // @ts-ignore
-    return typeof process !== 'undefined' && process.env && process.env.NODE_ENV;
+    return (typeof process !== 'undefined' && process.env && process.env.NODE_ENV) || undefined;
   } catch {
     return undefined;
   }

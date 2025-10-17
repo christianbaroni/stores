@@ -34,12 +34,30 @@ type TimeUtils = {
  * time.zero // 0
  */
 export const time: TimeUtils = {
-  ms: ms => ms,
-  seconds: seconds => seconds * 1000,
-  minutes: minutes => time.seconds(minutes * 60),
-  hours: hours => time.minutes(hours * 60),
-  days: days => time.hours(days * 24),
-  weeks: weeks => time.days(weeks * 7),
+  ms: ms => {
+    'worklet';
+    return ms;
+  },
+  seconds: seconds => {
+    'worklet';
+    return seconds * 1000;
+  },
+  minutes: minutes => {
+    'worklet';
+    return time.seconds(minutes * 60);
+  },
+  hours: hours => {
+    'worklet';
+    return time.minutes(hours * 60);
+  },
+  days: days => {
+    'worklet';
+    return time.hours(days * 24);
+  },
+  weeks: weeks => {
+    'worklet';
+    return time.days(weeks * 7);
+  },
   infinity: Infinity,
   zero: 0,
 };

@@ -1,62 +1,40 @@
+import { Timeout } from '../types';
+
+export type DebounceOptions = {
+  leading?: boolean;
+  maxWait?: number;
+  trailing?: boolean;
+};
+
+export type DebouncedFunction<F extends (...args: Parameters<F>) => ReturnType<F>> = {
+  (...args: Parameters<F>): ReturnType<F> | undefined;
+  cancel: () => void;
+  flush: () => ReturnType<F> | undefined;
+};
+
+const nativeMax = Math.max;
+const nativeMin = Math.min;
+
 /**
- * Creates a debounced function that delays invoking `func` until after `wait` milliseconds have elapsed since the last time the debounced function was invoked.
- * Copied and adapted from lodash@4.17.21, fully typed for TypeScript.
+ * Creates a debounced function that delays invoking `func` until after `wait` milliseconds
+ * have elapsed since the last time the debounced function was invoked.
+ * Copied and adapted from lodash@4.17.21.
  *
  * @param func The function to debounce.
  * @param wait The number of milliseconds to delay.
  * @param options The options object.
  * @returns Returns the new debounced function.
  */
-
-export interface DebounceOptions {
-  leading?: boolean;
-  maxWait?: number;
-  trailing?: boolean;
-}
-
-export interface DebouncedFunction<F extends (...args: any[]) => any> {
-  (...args: Parameters<F>): ReturnType<F> | undefined;
-  cancel: () => void;
-  flush: () => ReturnType<F> | undefined;
-}
-
-function now() {
-  return typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
-}
-
-function toNumber(value: any): number {
-  if (typeof value === 'number') return value;
-  if (typeof value === 'symbol') return NaN;
-  if (typeof value === 'object' && value !== null) {
-    const other = typeof value.valueOf === 'function' ? value.valueOf() : value;
-    value = typeof other === 'object' ? other + '' : other;
-  }
-  if (typeof value !== 'string') return value === 0 ? value : +value;
-  value = value.replace(/^[\s\uFEFF\xA0]+|[\s\uFEFF\xA0]+$/g, '');
-  const isBinary = /^0b[01]+$/i.test(value);
-  return isBinary
-    ? parseInt(value.slice(2), 2)
-    : /^0o[0-7]+$/i.test(value)
-      ? parseInt(value.slice(2), 8)
-      : /^[-+]0x[0-9a-f]+$/i.test(value)
-        ? NaN
-        : +value;
-}
-
-function isObject(value: any): value is object {
-  const type = typeof value;
-  return value !== null && (type === 'object' || type === 'function');
-}
-
-const nativeMax = Math.max;
-const nativeMin = Math.min;
-
-export function debounce<F extends (...args: any[]) => any>(func: F, wait = 0, options: DebounceOptions = {}): DebouncedFunction<F> {
-  let lastArgs: any;
-  let lastThis: any;
+export function debounce<F extends (...args: Parameters<F>) => ReturnType<F>>(
+  func: F,
+  wait = 0,
+  options: DebounceOptions = {}
+): DebouncedFunction<F> {
+  let lastArgs: Parameters<F> | undefined;
+  let lastThis: ThisType<F> | undefined;
   let maxWait: number | undefined;
   let result: ReturnType<F> | undefined;
-  let timerId: ReturnType<typeof setTimeout> | undefined;
+  let timerId: Timeout | undefined;
   let lastCallTime: number | undefined;
   let lastInvokeTime = 0;
   let leading = false;
@@ -79,7 +57,7 @@ export function debounce<F extends (...args: any[]) => any>(func: F, wait = 0, o
     const thisArg = lastThis;
     lastArgs = lastThis = undefined;
     lastInvokeTime = time;
-    result = func.apply(thisArg, args);
+    result = args ? func.apply(thisArg, args) : func.apply(thisArg);
     return result;
   }
 
@@ -136,10 +114,11 @@ export function debounce<F extends (...args: any[]) => any>(func: F, wait = 0, o
     return timerId === undefined ? result : trailingEdge(now());
   }
 
-  function debounced(this: any, ...args: any[]): ReturnType<F> | undefined {
+  function debounced(this: ThisType<F>, ...args: Parameters<F>): ReturnType<F> | undefined {
     const time = now();
     const isInvoking = shouldInvoke(time);
     lastArgs = args;
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
     lastThis = this;
     lastCallTime = time;
     if (isInvoking) {
@@ -159,5 +138,33 @@ export function debounce<F extends (...args: any[]) => any>(func: F, wait = 0, o
   }
   debounced.cancel = cancel;
   debounced.flush = flush;
-  return debounced as DebouncedFunction<F>;
+  return debounced;
+}
+
+function now(): number {
+  return typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
+}
+
+function toNumber(value: number | string | symbol | object | undefined): number {
+  if (typeof value === 'number') return value;
+  if (typeof value === 'symbol' || value === undefined) return NaN;
+  if (typeof value === 'object' && value !== null) {
+    const other = typeof value.valueOf === 'function' ? value.valueOf() : value;
+    value = typeof other === 'object' ? other + '' : other;
+  }
+  if (typeof value !== 'string') return value === 0 ? value : +value;
+  value = value.replace(/^[\s\uFEFF\xA0]+|[\s\uFEFF\xA0]+$/g, '');
+  const isBinary = /^0b[01]+$/i.test(value);
+  return isBinary
+    ? parseInt(value.slice(2), 2)
+    : /^0o[0-7]+$/i.test(value)
+      ? parseInt(value.slice(2), 8)
+      : /^[-+]0x[0-9a-f]+$/i.test(value)
+        ? NaN
+        : +value;
+}
+
+function isObject(value: unknown): value is object {
+  const type = typeof value;
+  return value !== null && (type === 'object' || type === 'function');
 }
