@@ -16,5 +16,10 @@
     "jiti": "^2.6.1",
     "prettier": "^3.5.3",
     "typescript": "^5.9.2"
+  },
+  "scripts": {
+    "lint": "pnpm run lint:eslint && pnpm run lint:prettier",
+    "lint:eslint": "eslint . --ext .ts,.tsx",
+    "lint:prettier": "prettier --check ."
   }
 }
