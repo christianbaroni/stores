@@ -11,9 +11,7 @@ import {
   ReactiveParam,
   QueryStatuses,
   QueryStoreConfig,
-  QueryStoreParams,
   QueryStoreState,
-  QueryStore,
   ResolvedEnabledResult,
   ResolvedParamsResult,
 } from './queryStore/types';
@@ -23,7 +21,6 @@ import {
   OptionallyPersistedStore,
   PersistConfig,
   PersistedStore,
-  SetStateArgs,
   StateCreator,
   Store,
   SubscribeArgs,
@@ -218,10 +215,11 @@ export function createQueryStore<
     paramChangeThrottle,
     params,
     retryDelay = defaultRetryDelay,
-    staleTime = time.minutes(2),
     suppressStaleTimeWarning = false,
     useParsableQueryKeys = true,
   } = config;
+
+  let staleTime = typeof config.staleTime === 'function' ? time.minutes(2) : (config.staleTime ?? time.minutes(2));
 
   if (IS_DEV && !suppressStaleTimeWarning && staleTime < MIN_STALE_TIME) {
     console.warn(
@@ -240,6 +238,7 @@ export function createQueryStore<
 
   let attachVals: { enabled: AttachValue<boolean> | null; params: Partial<Record<keyof TParams, AttachValue<unknown>>> } | null = null;
   let directValues: { enabled: boolean | null; params: Partial<TParams> } | null = null;
+  let staleTimeAttachVal: AttachValue<number> | null = null;
   let paramUnsubscribes: Unsubscribe[] = [];
   let fetchAfterParamCreation = false;
   let isBuildingParams = false;
@@ -307,7 +306,7 @@ export function createQueryStore<
       }
     };
 
-    const setWithEnabledHandling: typeof originalSet = (partial, replace) => {
+    const setWithEnabledHandling: typeof originalSet = (partial, _replace) => {
       const isPartialFunction = typeof partial === 'function';
       if (isPartialFunction || partial.enabled !== undefined) {
         let handleNewEnabled: (() => void) | undefined;
@@ -328,7 +327,7 @@ export function createQueryStore<
 
     subscriptionManager.init({
       onSubscribe: (enabled, isFirstSubscription, shouldThrottle) => {
-        if (!directValues && !attachVals && (params || typeof config.enabled === 'function')) {
+        if (!directValues && !attachVals && (params || typeof config.enabled === 'function' || typeof config.staleTime === 'function')) {
           fetchAfterParamCreation = true;
           return;
         }
@@ -836,6 +835,11 @@ export function createQueryStore<
     directValues = { enabled: resolvedEnabledDirectValue, params: resolvedDirectValues };
   }
 
+  if (typeof config.staleTime === 'function') {
+    staleTimeAttachVal = config.staleTime($, queryStore);
+    staleTime = staleTimeAttachVal.value;
+  }
+
   function onParamChangeBase() {
     const newParams = getCurrentResolvedParams(attachVals, directValues);
     if (!keepPreviousData) {
@@ -894,6 +898,24 @@ export function createQueryStore<
           if (enableLogs) console.log('[🌀 Param Change 🌀] -', k, '- [Old]:', `${oldVal?.toString()},`, '[New]:', newVal?.toString());
           oldVal = newVal;
           onParamChange();
+        }
+      });
+      paramUnsubscribes.push(unsub);
+    }
+  }
+
+  if (staleTimeAttachVal) {
+    const subscribeFn = attachValueSubscriptionMap.get(staleTimeAttachVal);
+    if (subscribeFn) {
+      let oldVal = staleTimeAttachVal.value;
+      if (enableLogs) console.log('[🌀 StaleTime Subscription 🌀] Initial value:', oldVal);
+      const unsub = subscribeFn(() => {
+        const newVal = staleTimeAttachVal.value;
+        if (newVal !== oldVal) {
+          if (enableLogs) console.log('[🌀 StaleTime Change 🌀] - [Old]:', `${oldVal},`, '[New]:', newVal);
+          oldVal = newVal;
+          staleTime = newVal;
+          queryStore.getState().fetch();
         }
       });
       paramUnsubscribes.push(unsub);

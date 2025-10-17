@@ -159,7 +159,7 @@ export type QueryStoreConfig<
    * **Note:** Stale times under 5 seconds are strongly discouraged.
    * @default time.minutes(2)
    */
-  staleTime?: number;
+  staleTime?: number | ReactiveParam<number, TParams, S, TData>;
 
   /**
    * Suppresses warnings in the event a `staleTime` under the minimum is desired.
@@ -191,19 +191,16 @@ export type QueryStoreState<TData, TParams extends Record<string, unknown>, Cust
   fetch: (params?: Partial<TParams>, options?: FetchOptions) => Promise<TData | null>;
 
   /**
-   * A lower-level helper that provides direct access to cache entries.
-   * If no parameters are provided, the store's current parameters are used.
-   * If partial parameters are provided, any missing required parameters will
-   * be resolved from the store's current parameters.
-   * @param paramsOrQueryKey - Optional parameters or query key to retrieve cached data for.
-   * @returns The cached data, or `null` if no data is available.
+   * A lower-level helper that provides direct access to raw cache entries. If no query key
+   * or params are specified, the cache entry for the current parameters is returned.
+   * @param paramsOrQueryKey - Optional parameters or query key to retrieve the cache entry.
+   * @returns The relevant cache entry, or `null` if no entry is found.
    */
   getCacheEntry: (paramsOrQueryKey?: TParams | Partial<TParams> | string) => CacheEntry<TData> | null;
 
   /**
-   * Returns the cached data, if available, for the current or provided query parameters.
-   * If partial parameters are provided, any missing required parameters will
-   * be resolved from the store's current parameters.
+   * Returns the cached data, if available, for the provided query key or parameters.
+   * If no query key or params are specified, data for the current parameters is returned.
    * @param paramsOrQueryKey - Optional parameters or query key to retrieve cached data for.
    * @returns The cached data, or `null` if no data is available.
    */
