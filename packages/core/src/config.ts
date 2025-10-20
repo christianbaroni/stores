@@ -1,5 +1,5 @@
 import { IS_BROWSER } from '@env';
-import { storesStorage } from './storesStorage';
+import { storesStorage } from '@storesStorage';
 import { createBrowserSyncEngine } from './sync/browserSyncEngine';
 import { createNoopSyncEngine } from './sync/noopSyncEngine';
 import type { SyncEngine } from './sync/types';
