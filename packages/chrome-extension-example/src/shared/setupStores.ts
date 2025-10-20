@@ -13,6 +13,7 @@ export function ensureExtensionStoresConfigured(): void {
     return;
   }
   configureStores({
+    async: true,
     storage: new ChromeStorageAdapter({ namespace: STORAGE_NAMESPACE }),
     syncEngine: new ChromeExtensionSyncEngine({ namespace: STORAGE_NAMESPACE }),
   });

@@ -1,11 +1,19 @@
-import { PersistStorage, persist, subscribeWithSelector } from 'zustand/middleware';
+import { PersistStorage, StorageValue, persist, subscribeWithSelector } from 'zustand/middleware';
 import { createWithEqualityFn } from 'zustand/traditional';
 import { IS_BROWSER, IS_IOS, IS_TEST } from '@env';
-import { getStoresConfig } from './config';
+import { getStoresConfig, StoresConfig } from './config';
 import { StoresError, logger } from './logger';
 import { createSyncedStateCreator } from './sync/syncEnhancer';
 import type { NormalizedSyncConfig, SyncConfig } from './sync/types';
-import { LazyPersistParams, PersistConfig, Store, StateCreator, OptionallyPersistedStore } from './types';
+import {
+  AsyncStorageInterface,
+  LazyPersistParams,
+  PersistConfig,
+  Store,
+  StateCreator,
+  SyncStorageInterface,
+  OptionallyPersistedStore,
+} from './types';
 import { debounce } from './utils/debounce';
 import { defaultDeserializeState, defaultSerializeState, omitStoreMethods } from './utils/persistUtils';
 import { time } from './utils/time';
@@ -71,12 +79,12 @@ export function createBaseStore<S, PersistedState extends Partial<S> = Partial<S
   createState: StateCreator<S>,
   options?: BaseStoreOptions<S, PersistedState>
 ): Store<S> | Store<S, PersistedState> {
-  const { syncEngine } = getStoresConfig();
-
   const storageKey = options && 'storageKey' in options ? options.storageKey : undefined;
   const normalizedSync = options?.sync ? normalizeSyncOption(options.sync, storageKey) : null;
 
-  const stateCreatorWithSync = normalizedSync ? createSyncedStateCreator(createState, normalizedSync, syncEngine) : createState;
+  const stateCreatorWithSync = normalizedSync
+    ? createSyncedStateCreator(createState, normalizedSync, normalizedSync.engine ?? getStoresConfig().syncEngine)
+    : createState;
 
   if (!options || !('storageKey' in options)) {
     return createWithEqualityFn<S>()(subscribeWithSelector(stateCreatorWithSync), Object.is);
@@ -100,28 +108,90 @@ export function createBaseStore<S, PersistedState extends Partial<S> = Partial<S
 
 const DEFAULT_PERSIST_THROTTLE_MS = IS_TEST ? 0 : IS_BROWSER ? time.ms(200) : IS_IOS ? time.seconds(3) : time.seconds(5);
 
-/**
- * Creates a persist storage object for the base store.
- * @param config - The configuration options for the persistable base store.
- * @returns An object containing the persist storage and version.
- */
-function createPersistStorage<S, PersistedState extends Partial<S>>(options: PersistWithOptionalSync<S, PersistedState>) {
-  const storage = getStoresConfig().storage;
-  const enableMapSetHandling = !options.deserializer && !options.serializer;
-  const persistThrottleMs = options.sync ? undefined : DEFAULT_PERSIST_THROTTLE_MS;
+// ============ Persist Storage Creation ======================================= //
 
+interface SyncPersistStorage<S, R = unknown> {
+  getItem: (name: string) => StorageValue<S> | null;
+  setItem: (name: string, value: StorageValue<S>) => R;
+  removeItem: (name: string) => R;
+}
+
+/**
+ * Creates a synchronous persist storage adapter for Zustand.
+ */
+function createSyncPersistStorage<S, PersistedState extends Partial<S>>(
+  storage: SyncStorageInterface,
+  options: PersistWithOptionalSync<S, PersistedState>,
+  persistThrottleMs: number | undefined
+): SyncPersistStorage<PersistedState> {
+  const enableMapSetHandling = !options.deserializer && !options.serializer;
   const {
     deserializer = serializedState => defaultDeserializeState<PersistedState>(serializedState, enableMapSetHandling),
     serializer = (state, version) => defaultSerializeState<PersistedState>(state, version, enableMapSetHandling),
     storageKey,
-    version = 0,
   } = options;
 
   function persist(params: LazyPersistParams<S, PersistedState>): void {
     try {
       const key = `${params.storageKey}:${params.name}`;
       const serializedValue = params.serializer(params.partialize(params.value.state as S), params.value.version ?? 0);
-      void Promise.resolve(storage.set(key, serializedValue)).catch(error => {
+      storage.set(key, serializedValue);
+    } catch (error) {
+      logger.error(new StoresError(`[createBaseStore]: Failed to persist store data`), { error });
+    }
+  }
+
+  const lazyPersist = persistThrottleMs
+    ? debounce(persist, persistThrottleMs, { leading: false, maxWait: persistThrottleMs, trailing: true })
+    : persist;
+
+  return {
+    getItem: (name: string) => {
+      const key = `${storageKey}:${name}`;
+      const serializedValue = storage.getString(key);
+      if (!serializedValue) return null;
+      return deserializer(serializedValue);
+    },
+    setItem: (name, value) => {
+      lazyPersist({
+        partialize: options.partialize ?? omitStoreMethods<S, PersistedState>,
+        serializer,
+        storageKey,
+        name,
+        value,
+      });
+    },
+    removeItem: (name: string) => {
+      const key = `${storageKey}:${name}`;
+      try {
+        storage.delete(key);
+      } catch (error) {
+        logger.error(new StoresError(`[createBaseStore]: Failed to delete persisted store data`), { error });
+      }
+    },
+  };
+}
+
+/**
+ * Creates an asynchronous persist storage adapter for Zustand.
+ */
+function createAsyncPersistStorage<S, PersistedState extends Partial<S>>(
+  storage: AsyncStorageInterface,
+  options: PersistWithOptionalSync<S, PersistedState>,
+  persistThrottleMs: number | undefined
+): PersistStorage<PersistedState> {
+  const enableMapSetHandling = !options.deserializer && !options.serializer;
+  const {
+    deserializer = serializedState => defaultDeserializeState<PersistedState>(serializedState, enableMapSetHandling),
+    serializer = (state, version) => defaultSerializeState<PersistedState>(state, version, enableMapSetHandling),
+    storageKey,
+  } = options;
+
+  function persist(params: LazyPersistParams<S, PersistedState>): void {
+    try {
+      const key = `${params.storageKey}:${params.name}`;
+      const serializedValue = params.serializer(params.partialize(params.value.state as S), params.value.version ?? 0);
+      void storage.set(key, serializedValue).catch(error => {
         logger.error(new StoresError(`[createBaseStore]: Failed to persist store data`), { error });
       });
     } catch (error) {
@@ -133,10 +203,10 @@ function createPersistStorage<S, PersistedState extends Partial<S>>(options: Per
     ? debounce(persist, persistThrottleMs, { leading: false, maxWait: persistThrottleMs, trailing: true })
     : persist;
 
-  const persistStorage: PersistStorage<PersistedState> = {
+  return {
     getItem: async (name: string) => {
       const key = `${storageKey}:${name}`;
-      const serializedValue = await Promise.resolve(storage.getString(key));
+      const serializedValue = await storage.getString(key);
       if (!serializedValue) return null;
       return deserializer(serializedValue);
     },
@@ -152,12 +222,32 @@ function createPersistStorage<S, PersistedState extends Partial<S>>(options: Per
     removeItem: async (name: string) => {
       const key = `${storageKey}:${name}`;
       try {
-        await Promise.resolve(storage.delete(key));
+        await storage.delete(key);
       } catch (error) {
         logger.error(new StoresError(`[createBaseStore]: Failed to delete persisted store data`), { error });
       }
     },
   };
+}
+
+/**
+ * Creates a persist storage object for the base store.
+ */
+function createPersistStorage<S, PersistedState extends Partial<S>>(
+  options: PersistWithOptionalSync<S, PersistedState>
+): {
+  persistStorage: SyncPersistStorage<PersistedState> | PersistStorage<PersistedState>;
+  version: number;
+} {
+  const config = getStoresConfig();
+  const persistThrottleMs = options.sync ? undefined : DEFAULT_PERSIST_THROTTLE_MS;
+  const version = options.version ?? 0;
+
+  const isAsync = isStorageAsync(config);
+
+  const persistStorage = isAsync
+    ? createAsyncPersistStorage(config.storage, options, persistThrottleMs)
+    : createSyncPersistStorage(config.storage, options, persistThrottleMs);
 
   return { persistStorage, version };
 }
@@ -193,4 +283,8 @@ function normalizeSyncOption<S extends Record<string, unknown>>(
   }
 
   return { ...config, key };
+}
+
+function isStorageAsync(config: StoresConfig): config is StoresConfig & { async: true } {
+  return config.async === true;
 }
