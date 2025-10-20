@@ -534,6 +534,7 @@ export function createQueryStore<
 
             let transformedData: TData;
             try {
+              // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
               transformedData = transform ? transform(rawResult, effectiveParams) : (rawResult as TData);
             } catch (transformError) {
               throw new StoresError(
@@ -994,10 +995,12 @@ export function parseQueryKey<TParams extends Record<string, unknown>>(queryKey:
 
 function sortParamKeys<TParams extends Record<string, unknown>>(params: TParams): TParams {
   if (typeof params !== 'object' || params === null) return params;
+  // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
   return Object.keys(params)
     .sort()
     .reduce<Record<string, unknown>>((acc, key) => {
       const value = params[key];
+      // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
       acc[key] = value !== null && typeof value === 'object' ? sortParamKeys(value as Record<string, unknown>) : value;
       return acc;
     }, {}) as TParams;
@@ -1031,8 +1034,10 @@ function getCurrentResolvedParams<TParams extends Record<string, unknown>>(
   for (const k in attachVals?.params) {
     const attachVal = attachVals.params[k];
     if (!attachVal) continue;
+    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
     currentParams[k as keyof TParams] = attachVal.value as TParams[keyof TParams];
   }
+  // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
   return currentParams as TParams;
 }
 
@@ -1108,9 +1113,9 @@ function resolveParams<
   params: { [K in keyof TParams]: ReactiveParam<TParams[K], TParams, S, TData> } | undefined,
   store: Store<S>
 ): ResolvedParamsResult<TParams> & ResolvedEnabledResult {
-  const attachVals: Partial<Record<keyof TParams, AttachValue<unknown>>> = {};
-  const directValues: Partial<TParams> = {};
-  const resolvedParams: TParams = {} as TParams;
+  const attachVals: Partial<Record<keyof TParams, AttachValue<unknown>>> = Object.create(null);
+  const directValues: Partial<TParams> = Object.create(null);
+  const resolvedParams: TParams = Object.create(null);
 
   for (const key in params) {
     const param = params[key];

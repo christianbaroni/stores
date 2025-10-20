@@ -29,6 +29,7 @@ export function deepEqual<U>(obj1: U, obj2: U): boolean {
   }
   // Perform a deep comparison of keys and their values
   for (const key of keys1) {
+    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
     if (!(key in obj2) || !deepEqual(obj1[key as keyof U], obj2[key as keyof U])) {
       return false;
     }
@@ -68,12 +69,16 @@ export function shallowEqual<U>(obj1: U, obj2: U): boolean {
   }
   // Perform a shallow comparison of keys and their values
   for (const key of keys1) {
+    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
     if (!Object.is(obj1[key as keyof U], obj2[key as keyof U])) {
       return false;
     }
   }
   return true;
 }
+
+/* eslint-disable @typescript-eslint/consistent-type-assertions */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 /**
  * Performs a deep equality check between two values, supporting objects, arrays, maps, sets, dates, regexps, array buffers, and more.
@@ -86,17 +91,14 @@ export function dequal(foo: unknown, bar: unknown): boolean {
   const has = Object.prototype.hasOwnProperty;
 
   function find(iter: Iterable<unknown>, tar: unknown): unknown {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     for (const key of (iter as any).keys()) {
       if (dequal(key, tar)) return key;
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let ctor: any, len: number, tmp: unknown;
   if (foo === bar) return true;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   if (foo && bar && (ctor = (foo as any).constructor) === (bar as any).constructor) {
     if (ctor === Date) return (foo as Date).getTime() === (bar as Date).getTime();
     if (ctor === RegExp) return (foo as RegExp).toString() === (bar as RegExp).toString();
@@ -154,7 +156,6 @@ export function dequal(foo: unknown, bar: unknown): boolean {
       const fooView = foo as ArrayBufferView;
       const barView = bar as ArrayBufferView;
       if ((len = fooView.byteLength) === barView.byteLength) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         while (len-- && (fooView as any)[len] === (barView as any)[len]);
       }
       return len === -1;

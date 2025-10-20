@@ -117,6 +117,26 @@ interface SyncPersistStorage<S, R = unknown> {
 }
 
 /**
+ * Creates a persist storage object for the base store.
+ */
+function createPersistStorage<S, PersistedState extends Partial<S>>(
+  options: PersistWithOptionalSync<S, PersistedState>
+): {
+  persistStorage: SyncPersistStorage<PersistedState> | PersistStorage<PersistedState>;
+  version: number;
+} {
+  const config = getStoresConfig();
+  const persistThrottleMs = options.sync ? undefined : DEFAULT_PERSIST_THROTTLE_MS;
+  const version = options.version ?? 0;
+
+  const persistStorage = config.async
+    ? createAsyncPersistStorage(config.storage, options, persistThrottleMs)
+    : createSyncPersistStorage(config.storage, options, persistThrottleMs);
+
+  return { persistStorage, version };
+}
+
+/**
  * Creates a synchronous persist storage adapter for Zustand.
  */
 function createSyncPersistStorage<S, PersistedState extends Partial<S>>(
@@ -134,6 +154,7 @@ function createSyncPersistStorage<S, PersistedState extends Partial<S>>(
   function persist(params: LazyPersistParams<S, PersistedState>): void {
     try {
       const key = `${params.storageKey}:${params.name}`;
+      // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
       const serializedValue = params.serializer(params.partialize(params.value.state as S), params.value.version ?? 0);
       storage.set(key, serializedValue);
     } catch (error) {
@@ -190,6 +211,7 @@ function createAsyncPersistStorage<S, PersistedState extends Partial<S>>(
   function persist(params: LazyPersistParams<S, PersistedState>): void {
     try {
       const key = `${params.storageKey}:${params.name}`;
+      // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
       const serializedValue = params.serializer(params.partialize(params.value.state as S), params.value.version ?? 0);
       void storage.set(key, serializedValue).catch(error => {
         logger.error(new StoresError(`[createBaseStore]: Failed to persist store data`), { error });
@@ -228,26 +250,6 @@ function createAsyncPersistStorage<S, PersistedState extends Partial<S>>(
       }
     },
   };
-}
-
-/**
- * Creates a persist storage object for the base store.
- */
-function createPersistStorage<S, PersistedState extends Partial<S>>(
-  options: PersistWithOptionalSync<S, PersistedState>
-): {
-  persistStorage: SyncPersistStorage<PersistedState> | PersistStorage<PersistedState>;
-  version: number;
-} {
-  const config = getStoresConfig();
-  const persistThrottleMs = options.sync ? undefined : DEFAULT_PERSIST_THROTTLE_MS;
-  const version = options.version ?? 0;
-
-  const persistStorage = config.async
-    ? createAsyncPersistStorage(config.storage, options, persistThrottleMs)
-    : createSyncPersistStorage(config.storage, options, persistThrottleMs);
-
-  return { persistStorage, version };
 }
 
 /**

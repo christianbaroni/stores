@@ -83,6 +83,7 @@ class BrowserSyncEngine implements SyncEngine {
       const filteredValues: SyncValues<T> = {};
       for (const key of registration.fields) {
         if (Object.prototype.hasOwnProperty.call(envelope.values, key)) {
+          // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
           filteredValues[key] = envelope.values[key] as SyncValues<T>[typeof key];
         }
       }
@@ -123,7 +124,7 @@ class BrowserSyncEngine implements SyncEngine {
     if (!event.key || !event.newValue) return;
     if (!event.key.startsWith(STORAGE_PREFIX)) return;
     try {
-      const envelope = JSON.parse(event.newValue) as SyncEnvelope;
+      const envelope: SyncEnvelope = JSON.parse(event.newValue);
       this.dispatch(envelope);
     } catch (error) {
       logger.error(new StoresError('[sync] Failed to parse storage event payload'), { error });

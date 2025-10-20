@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { addFavorite, removeFavorite, useFavoritesStore } from '../stores/favoritesStore';
 import { useFilteredFilmsStore } from '../stores/filteredFilmsStore';
 import { setQuery, useSearchStore } from '../stores/searchStore';
-import { SortBy, setSortBy, toggleSortOrder, useSortStore } from '../stores/sortStore';
+import { getSortBy, setSortBy, toggleSortOrder, useSortStore } from '../stores/sortStore';
 import { useStableValue } from '@stores';
 
 export function FilmList() {
@@ -134,7 +134,7 @@ export function FilmList() {
 
             <select
               value={sortBy}
-              onChange={e => setSortBy(e.target.value as SortBy)}
+              onChange={e => setSortBy(getSortBy(e.target.value))}
               style={{
                 height: 40,
                 padding: '0 36px 0 16px',

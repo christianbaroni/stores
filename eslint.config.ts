@@ -37,6 +37,7 @@ export default [
       ...reactHooksPlugin.configs.recommended.rules,
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
       '@typescript-eslint/no-redeclare': 'off',
+      '@typescript-eslint/consistent-type-assertions': ['error', { assertionStyle: 'never' }],
       'no-undef': 'off',
       'no-redeclare': 'off',
       'react-hooks/refs': 'off',

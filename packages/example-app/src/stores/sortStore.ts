@@ -18,3 +18,14 @@ export const useSortStore = createBaseStore<SortState>(set => ({
 }));
 
 export const { setSortBy, toggleSortOrder } = useSortStore.getState();
+
+export function getSortBy(sortBy: SortBy | string): SortBy {
+  switch (sortBy) {
+    case 'title':
+    case 'release_date':
+    case 'rt_score':
+      return sortBy;
+    default:
+      return 'title';
+  }
+}

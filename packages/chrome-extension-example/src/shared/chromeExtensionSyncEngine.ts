@@ -50,7 +50,8 @@ export class ChromeExtensionSyncEngine implements SyncEngine {
 
   register<T extends Record<string, unknown>>(registration: SyncRegistration<T>): SyncHandle<T> {
     this.attachListener();
-    this.registrations.set(registration.key, { registration: registration as SyncRegistration<Record<string, unknown>> });
+    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+    this.registrations.set(registration.key, { registration } as RegistrationContainer);
 
     return {
       destroy: () => {
@@ -116,10 +117,10 @@ export class ChromeExtensionSyncEngine implements SyncEngine {
     const container = this.registrations.get(rawMessage.payload.storeKey);
     if (!container) return false;
 
-    const filteredValues: SyncValues<Record<string, unknown>> = {} as SyncValues<Record<string, unknown>>;
+    const filteredValues: SyncValues<Record<string, unknown>> = {};
     for (const field of container.registration.fields) {
       if (Object.prototype.hasOwnProperty.call(rawMessage.payload.values, field)) {
-        filteredValues[field] = rawMessage.payload.values[field] as SyncValues<Record<string, unknown>>[typeof field];
+        filteredValues[field] = rawMessage.payload.values[field];
       }
     }
 
@@ -140,11 +141,11 @@ export class ChromeExtensionSyncEngine implements SyncEngine {
 
   private isSyncMessage(message: unknown): message is SyncMessage {
     if (typeof message !== 'object' || message === null) return false;
-    const candidate = message as Partial<SyncMessage>;
+    const candidate: Partial<SyncMessage> = message;
     if (candidate.type !== MESSAGE_TYPE) return false;
     if (typeof candidate.namespace !== 'string' || typeof candidate.origin !== 'string') return false;
     if (!candidate.payload || typeof candidate.payload !== 'object') return false;
-    const { payload } = candidate as { payload: SyncMessage['payload'] };
+    const { payload } = candidate;
     return (
       typeof payload.storeKey === 'string' &&
       typeof payload.timestamp === 'number' &&

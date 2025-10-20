@@ -13,8 +13,10 @@ export function omitStoreMethods<S, PersistedState extends Partial<S>>(state: S)
         result[key] = val;
       }
     }
+    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
     return result as PersistedState;
   }
+  // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
   return state as unknown as PersistedState;
 }
 
@@ -46,7 +48,7 @@ type SerializedMap = {
 };
 
 export function isSerializedMap(value: unknown): value is SerializedMap {
-  return typeof value === 'object' && value !== null && (value as Record<string, unknown>).__type === 'Map';
+  return typeof value === 'object' && value !== null && '__type' in value && value.__type === 'Map';
 }
 
 type SerializedSet = {
@@ -55,7 +57,7 @@ type SerializedSet = {
 };
 
 export function isSerializedSet(value: unknown): value is SerializedSet {
-  return typeof value === 'object' && value !== null && (value as Record<string, unknown>).__type === 'Set';
+  return typeof value === 'object' && value !== null && '__type' in value && value.__type === 'Set';
 }
 
 export function replacer(_: string, value: unknown): unknown {

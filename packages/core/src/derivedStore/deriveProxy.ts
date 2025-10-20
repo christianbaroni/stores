@@ -29,6 +29,7 @@ type SubscriptionBuilder = (store: BaseStore<unknown>, selector: Selector<unknow
  */
 export function getOrCreateProxy<S>(store: BaseStore<S>, rootProxyCache: WeakMap<BaseStore<unknown>, unknown>, trackPath: TrackPathFn): S {
   // The WeakMap can't handle generics, so here we re-apply the correct type
+  // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
   const proxyByStore = rootProxyCache.get(store) as S | undefined;
 
   if (!proxyByStore) {
@@ -168,6 +169,7 @@ function buildInvocationSelector(path: string[], invocation: TrackedInvocation):
   const parentPath = path.slice(0, -1);
   return state => {
     const parentObject = getValueAtPath(state, parentPath);
+    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
     const fn = (parentObject as Record<string, unknown> | undefined)?.[method];
     return typeof fn === 'function' ? fn.apply(parentObject, args) : undefined;
   };
@@ -188,6 +190,7 @@ function getValueAtPath<T>(obj: T, path: string[]): T {
   let current = obj;
   for (const p of path) {
     if (!current || typeof current !== 'object') return current;
+    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
     current = (current as Record<string, T>)[p];
   }
   return current;

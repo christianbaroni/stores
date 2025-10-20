@@ -1,16 +1,19 @@
 import { memo, useEffect } from 'react';
+import { useSortedCrew, useTimelinePreview, useThemeTokens } from '../shared/derivedStores';
 import {
+  ExtensionIdentity,
+  MissionTheme,
+  PulseStatus,
   addTask,
   addTimelineEntry,
   acknowledgeMission,
+  getString,
   heartbeat,
   setTheme,
   toggleTask,
   updateSystemPulse,
   useMissionControlStore,
 } from '../shared/missionControlStore';
-import type { ExtensionIdentity, MissionTheme, PulseStatus } from '../shared/missionControlStore';
-import { useSortedCrew, useTimelinePreview, useThemeTokens } from '../shared/derivedStores';
 import './styles.css';
 
 type AppProps = {
@@ -101,8 +104,9 @@ const MissionForm = memo(function MissionForm({ identity }: { identity: Extensio
         onSubmit={event => {
           event.preventDefault();
           const formData = new FormData(event.currentTarget);
-          const name = formData.get('missionName') as string;
-          const summary = formData.get('missionSummary') as string;
+          const name = getString(formData.get('missionName'));
+          const summary = getString(formData.get('missionSummary'));
+          if (!name || !summary) return;
           acknowledgeMission(name, summary, identity);
         }}
       >
@@ -159,11 +163,10 @@ const SharedChecklist = memo(function SharedChecklist({ identity }: { identity: 
         onSubmit={event => {
           event.preventDefault();
           const formData = new FormData(event.currentTarget);
-          const title = formData.get('taskTitle') as string;
-          if (title.trim()) {
-            addTask(title, identity);
-            event.currentTarget.reset();
-          }
+          const title = getString(formData.get('taskTitle'));
+          if (!title) return;
+          addTask(title, identity);
+          event.currentTarget.reset();
         }}
       >
         <input name="taskTitle" placeholder="Add a task" />
@@ -201,11 +204,10 @@ const BroadcastPanel = memo(function BroadcastPanel({ identity }: { identity: Ex
         onSubmit={event => {
           event.preventDefault();
           const formData = new FormData(event.currentTarget);
-          const message = formData.get('broadcastMessage') as string;
-          if (message.trim()) {
-            addTimelineEntry(message, 'info', identity);
-            event.currentTarget.reset();
-          }
+          const message = getString(formData.get('broadcastMessage'));
+          if (!message) return;
+          addTimelineEntry(message, 'info', identity);
+          event.currentTarget.reset();
         }}
       >
         <textarea name="broadcastMessage" placeholder="Share what you changed or what needs attention" rows={2} />

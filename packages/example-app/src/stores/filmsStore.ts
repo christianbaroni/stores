@@ -31,5 +31,6 @@ export const useFilmsStore = createQueryStore<Film[]>(
 async function fetchFilms(): Promise<Film[]> {
   const res = await fetch('https://ghibliapi.vercel.app/films');
   if (!res.ok) throw new Error('Failed to fetch films');
-  return (await res.json()) as Film[];
+  const data: Film[] = await res.json();
+  return data;
 }

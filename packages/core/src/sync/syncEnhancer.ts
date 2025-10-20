@@ -83,6 +83,7 @@ export function createSyncedStateCreator<T extends Record<string, unknown>>(
         }
       }
 
+      // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
       const keys = Object.keys(nextValues) as SyncStateKey<T>[];
       if (!keys.length) return;
 
@@ -186,6 +187,7 @@ function deriveDataKeys<T extends Record<string, unknown>>(state: T): SyncStateK
   const keys: SyncStateKey<T>[] = [];
   for (const [key, value] of Object.entries(state)) {
     if (typeof value === 'function') continue;
+    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
     keys.push(key as SyncStateKey<T>);
   }
   return keys;

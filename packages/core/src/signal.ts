@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/consistent-type-assertions */
 import { StoreApi } from 'zustand';
 import { dequal } from './utils/equality';
 
