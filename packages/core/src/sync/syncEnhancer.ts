@@ -18,14 +18,15 @@ export function createSyncedStateCreator<T extends Record<string, unknown>>(
   const resolvedEngine = config.engine ?? defaultEngine;
 
   return (set, get, api) => {
+    const lastWriteTimes = new Map<SyncStateKey<T>, number>();
+    const pendingUpdates: PendingUpdate<T>[] = [];
+
     let handle: SyncHandle<T> | null = null;
     let isApplyingRemote = false;
     let isHydrated = false;
-    let syncKeys: ReadonlyArray<SyncStateKey<T>> = [];
-    let syncKeySet: Set<SyncStateKey<T>> | null = null;
-    const lastWriteTimes = new Map<SyncStateKey<T>, number>();
-    const pendingUpdates: PendingUpdate<T>[] = [];
     let latestTimestamp = 0;
+    let syncKeySet: Set<SyncStateKey<T>> | null = null;
+    let syncKeys: ReadonlyArray<SyncStateKey<T>> = [];
 
     const generateTimestamp = (): number => {
       const candidate = Date.now();
