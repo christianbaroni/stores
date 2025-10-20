@@ -1,6 +1,4 @@
-import { subscribeWithSelector } from 'zustand/middleware';
-import { createWithEqualityFn } from 'zustand/traditional';
-import { createBaseStore } from './createBaseStore';
+import { BaseStoreOptions, createBaseStore } from './createBaseStore';
 import { IS_DEV, IS_TEST } from '@env';
 import { StoresError, ensureError, logger } from './logger';
 import { SubscriptionManager } from './queryStore/classes/SubscriptionManager';
@@ -75,7 +73,7 @@ export function createQueryStore<
   PersistedState extends Partial<QueryStoreState<TData, TParams>> = Partial<QueryStoreState<TData, TParams>>,
 >(
   config: QueryStoreConfig<TQueryFnData, TParams, TData>,
-  persistConfig: PersistConfig<QueryStoreState<TData, TParams>, PersistedState>
+  options: BaseStoreOptions<QueryStoreState<TData, TParams>, PersistedState>
 ): PersistedStore<QueryStoreState<TData, TParams>, PersistedState>;
 
 /**
@@ -92,11 +90,11 @@ export function createQueryStore<
   TParams extends Record<string, unknown> = Record<string, never>,
   CustomState = unknown,
   TData = TQueryFnData,
-  PersistedState extends Partial<CustomState> = Partial<CustomState>,
+  PersistedState extends Partial<QueryStoreState<TData, TParams, CustomState>> = Partial<QueryStoreState<TData, TParams, CustomState>>,
 >(
   config: QueryStoreConfig<TQueryFnData, TParams, TData, CustomState>,
   stateCreator: StateCreator<QueryStoreState<TData, TParams, CustomState>, CustomState>,
-  persistConfig: PersistConfig<QueryStoreState<TData, TParams, CustomState>, PersistedState>
+  options: BaseStoreOptions<QueryStoreState<TData, TParams, CustomState>, PersistedState>
 ): PersistedStore<QueryStoreState<TData, TParams, CustomState>, PersistedState>;
 
 /**
@@ -115,7 +113,7 @@ export function createQueryStore<
 >(
   config: QueryStoreConfig<TQueryFnData, TParams, TData, CustomState>,
   stateCreator: StateCreator<QueryStoreState<TData, TParams, CustomState>, CustomState>,
-  persistConfig?: undefined
+  options?: BaseStoreOptions<QueryStoreState<TData, TParams, CustomState>>
 ): Store<QueryStoreState<TData, TParams, CustomState>>;
 
 /**
@@ -127,14 +125,14 @@ export function createQueryStore<
  */
 export function createQueryStore<TQueryFnData, TParams extends Record<string, unknown> = Record<string, never>, TData = TQueryFnData>(
   config: QueryStoreConfig<TQueryFnData, TParams, TData>,
-  persistConfig?: undefined
+  options?: BaseStoreOptions<QueryStoreState<TData, TParams>>
 ): Store<QueryStoreState<TData, TParams>>;
 
 /**
  * Creates a conditionally persisted, query-enabled store with data-fetching capabilities
  * and custom state.
  *
- * `persistConfig` may be `undefined` – the returned store exposes `persist?`.
+ * `options.persist` may be `undefined` – the returned store exposes `persist?`.
  *
  * @template TQueryFnData - The raw data type returned by the fetcher
  * @template TParams - Parameters passed to the fetcher function
@@ -147,17 +145,17 @@ export function createQueryStore<
   TParams extends Record<string, unknown> = Record<string, never>,
   CustomState = unknown,
   TData = TQueryFnData,
-  PersistedState extends Partial<CustomState> = Partial<CustomState>,
+  PersistedState extends Partial<QueryStoreState<TData, TParams, CustomState>> = Partial<QueryStoreState<TData, TParams, CustomState>>,
 >(
   config: QueryStoreConfig<TQueryFnData, TParams, TData, CustomState>,
   stateCreator: StateCreator<QueryStoreState<TData, TParams, CustomState>, CustomState>,
-  persistConfig: PersistConfig<QueryStoreState<TData, TParams, CustomState>, PersistedState> | undefined
+  options?: BaseStoreOptions<QueryStoreState<TData, TParams, CustomState>, PersistedState>
 ): OptionallyPersistedStore<QueryStoreState<TData, TParams, CustomState>, PersistedState>;
 
 /**
  * Creates a conditionally persisted, query-enabled store with data fetching capabilities.
  *
- * `persistConfig` may be `undefined` – the returned store exposes `persist?`.
+ * `options.persist` may be `undefined` – the returned store exposes `persist?`.
  *
  * @template TQueryFnData - The raw data type returned by the fetcher
  * @template TParams - Parameters passed to the fetcher function
@@ -171,7 +169,9 @@ export function createQueryStore<
   PersistedState extends Partial<QueryStoreState<TData, TParams>> = Partial<QueryStoreState<TData, TParams>>,
 >(
   config: QueryStoreConfig<TQueryFnData, TParams, TData, QueryStoreState<TData, TParams>>,
-  persistConfig: PersistConfig<QueryStoreState<TData, TParams>, PersistedState> | undefined
+  options:
+    | (PersistConfig<QueryStoreState<TData, TParams>, PersistedState> | BaseStoreOptions<QueryStoreState<TData, TParams>, PersistedState>)
+    | undefined
 ): OptionallyPersistedStore<QueryStoreState<TData, TParams>, PersistedState>;
 
 /**
@@ -191,17 +191,19 @@ export function createQueryStore<
   PersistedState extends Partial<QueryStoreState<TData, TParams, CustomState>> = Partial<QueryStoreState<TData, TParams, CustomState>>,
 >(
   config: QueryStoreConfig<TQueryFnData, TParams, TData, QueryStoreState<TData, TParams, CustomState>>,
-  creatorOrPersistConfig?:
+  creatorOrOptions?:
     | StateCreator<QueryStoreState<TData, TParams, CustomState>, CustomState>
-    | PersistConfig<QueryStoreState<TData, TParams, CustomState>, PersistedState>,
-  maybePersistConfig?: PersistConfig<QueryStoreState<TData, TParams, CustomState>, PersistedState>
+    | BaseStoreOptions<QueryStoreState<TData, TParams, CustomState>, PersistedState>,
+  maybeOptions?: BaseStoreOptions<QueryStoreState<TData, TParams, CustomState>, PersistedState>
 ): Store<QueryStoreState<TData, TParams, CustomState>> | Store<QueryStoreState<TData, TParams, CustomState>, PersistedState> {
   type S = QueryStoreState<TData, TParams, CustomState>;
 
-  /* If arg1 is a function, it's the custom state creator; otherwise, it's the persistConfig. */
-  const customStateCreator = typeof creatorOrPersistConfig === 'function' ? creatorOrPersistConfig : createEmptyState<CustomState>;
-  const persistConfig =
-    typeof creatorOrPersistConfig === 'object' && 'storageKey' in creatorOrPersistConfig ? creatorOrPersistConfig : maybePersistConfig;
+  /* If arg1 is a function, it's the custom state creator; otherwise, it's options */
+  const customStateCreator = typeof creatorOrOptions === 'function' ? creatorOrOptions : createEmptyState<CustomState>;
+  const options = typeof creatorOrOptions === 'object' ? creatorOrOptions : maybeOptions;
+
+  /* BaseStoreOptions is either SyncOptions or PersistWithOptionalSync - check for storageKey to discriminate */
+  const persistConfig = options && 'storageKey' in options ? options : undefined;
 
   const {
     fetcher,
@@ -853,9 +855,12 @@ export function createQueryStore<
       }
     : undefined;
 
-  const queryStore = combinedPersistConfig
-    ? createBaseStore<S, PersistedState>(createState, combinedPersistConfig)
-    : createWithEqualityFn<S>()(subscribeWithSelector(createState), Object.is);
+  const queryStore: Store<S> | Store<S, PersistedState> = combinedPersistConfig
+    ? createBaseStore<S, PersistedState>(
+        createState,
+        options && 'sync' in options ? { ...combinedPersistConfig, sync: options.sync } : combinedPersistConfig
+      )
+    : createBaseStore<S>(createState, !options || !('storageKey' in options) ? options : undefined);
 
   const { enabled: initialStoreEnabled, error, queryKey } = queryStore.getState();
   if (queryKey && !error) lastFetchKey = queryKey;

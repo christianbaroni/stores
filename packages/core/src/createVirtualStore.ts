@@ -10,7 +10,6 @@ import {
   SubscribeArgs,
   UnsubscribeFn,
 } from './types';
-import { destroyStore } from './utils/storeUtils';
 
 type MethodOverrides<Store extends BaseStore<State>, State = InferStoreState<Store>> = Partial<Pick<Store, 'getState' | 'setState'>>;
 
@@ -129,10 +128,7 @@ export function createVirtualStore<
 
   function areStoresEqualWithRebind(previousStore: Store, store: Store): boolean {
     const areStoresEqual = Object.is(previousStore, store);
-    if (!areStoresEqual) {
-      rebindSubscriptions(previousStore, store);
-      destroyStore(previousStore);
-    }
+    if (!areStoresEqual) rebindSubscriptions(previousStore, store);
     return areStoresEqual;
   }
 

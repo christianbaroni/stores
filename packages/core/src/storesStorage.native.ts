@@ -1,8 +1,8 @@
-import type { StorageInterface } from './types';
+import type { SyncStorageInterface } from './types';
 
-declare var require: (id: string) => { MMKV: new (options: { id: string }) => StorageInterface };
+declare var require: (id: string) => { MMKV: new (options: { id: string }) => SyncStorageInterface };
 
-let storageInstance: StorageInterface;
+let storageInstance: SyncStorageInterface;
 
 try {
   const { MMKV } = require('react-native-mmkv');
@@ -15,7 +15,7 @@ try {
   );
 }
 
-function assertMMKV(instance: StorageInterface): asserts instance is StorageInterface {
+function assertMMKV(instance: SyncStorageInterface): asserts instance is SyncStorageInterface {
   if (
     !instance ||
     typeof instance.getString !== 'function' ||
@@ -29,7 +29,7 @@ function assertMMKV(instance: StorageInterface): asserts instance is StorageInte
 
 assertMMKV(storageInstance);
 
-export const storesStorage: StorageInterface = {
+export const storesStorage: SyncStorageInterface = {
   clearAll(): void {
     storageInstance.clearAll();
   },

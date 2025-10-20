@@ -188,7 +188,13 @@ export type DeriveOptions<DerivedState = unknown> =
 
 // ============ Persistence Types ============================================== //
 
-export interface StorageInterface {
+export type MaybePromise<T> = T | Promise<T>;
+
+/**
+ * Synchronous storage interface.
+ * Used for localStorage and MMKV implementations.
+ */
+export interface SyncStorageInterface {
   clearAll(): void;
   contains(key: string): boolean;
   delete(key: string): void;
@@ -196,6 +202,25 @@ export interface StorageInterface {
   getString(key: string): string | undefined;
   set(key: string, value: string): void;
 }
+
+/**
+ * Asynchronous storage interface.
+ * Used for Chrome storage and other async storage implementations.
+ */
+export interface AsyncStorageInterface {
+  clearAll(): Promise<void>;
+  contains(key: string): Promise<boolean>;
+  delete(key: string): Promise<void>;
+  getAllKeys(): Promise<string[]>;
+  getString(key: string): Promise<string | undefined>;
+  set(key: string, value: string): Promise<void>;
+}
+
+/**
+ * Generic storage interface that can be either synchronous or asynchronous.
+ * This is the base type used in the config.
+ */
+export type StorageInterface = SyncStorageInterface | AsyncStorageInterface;
 
 /**
  * Configuration options for creating a persistable store.
