@@ -2,11 +2,11 @@
 
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useLayoutEffect, useRef } from 'react';
-import { useFilteredRainbowListStore, setRainbowListQuery } from '../stores/rainbowListStore';
+import { useFilteredList, setVirtualizedListQuery } from '../stores/virtualizedListStore';
 
-export function VirtualizedRainbowList() {
+export function VirtualizedList() {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const items = useFilteredRainbowListStore();
+  const items = useFilteredList();
 
   // eslint-disable-next-line react-hooks/incompatible-library
   const rowVirtualizer = useVirtualizer({
@@ -22,13 +22,13 @@ export function VirtualizedRainbowList() {
 
   return (
     <div style={{ padding: 32, fontFamily: 'Inter, sans-serif', background: '#f7f9fb', height: 'calc(100vh - 50px)' }}>
-      <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 8 }}>🌈 Rainbow Virtualized List</h1>
+      <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 8 }}>⚡ Virtualized List</h1>
       <p style={{ color: '#666', marginBottom: 24 }}>
-        10,000 users, instant search, virtualized rendering. Try searching for a name, company, city, or status!
+        10,000 users, instant search, virtualized rendering. Search for a name, company, city, or status.
       </p>
       <input
         type="text"
-        onChange={e => setRainbowListQuery(e.target.value)}
+        onChange={e => setVirtualizedListQuery(e.target.value)}
         placeholder="Search by any field..."
         style={{
           padding: '10px 16px',

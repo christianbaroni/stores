@@ -3,7 +3,7 @@ import { Favorites } from './components/Favorites';
 import { FilmDetail } from './components/FilmDetail';
 import { FilmList } from './components/FilmList';
 import { SyncPlayground } from './components/SyncPlayground';
-import { VirtualizedRainbowList } from './components/VirtualizedRainbowList';
+import { VirtualizedList } from './components/VirtualizedList';
 
 export function App() {
   const location = useLocation();
@@ -54,7 +54,7 @@ export function App() {
             transition: 'opacity 0.2s ease',
           }}
         >
-          Rainbow List
+          Virtualized List
         </Link>
         <Link
           to="/sync"
@@ -75,7 +75,7 @@ export function App() {
         <Route path="/" element={<FilmList />} />
         <Route path="/film/:id" element={<FilmDetail />} />
         <Route path="/favorites" element={<Favorites />} />
-        <Route path="/rainbow" element={<VirtualizedRainbowList />} />
+        <Route path="/rainbow" element={<VirtualizedList />} />
         <Route path="/sync" element={<SyncPlayground />} />
       </Routes>
     </div>

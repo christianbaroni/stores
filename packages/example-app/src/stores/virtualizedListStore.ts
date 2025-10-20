@@ -1,6 +1,6 @@
 import { createBaseStore, createDerivedStore } from '@stores';
 
-export type RainbowListItem = {
+export type VirtualizedListItem = {
   id: string;
   name: string;
   email: string;
@@ -64,7 +64,7 @@ function randomDate() {
   return new Date(start + Math.random() * (end - start)).toISOString().slice(0, 10);
 }
 
-function generateRainbowList(): RainbowListItem[] {
+function generateVirtualizedList(): VirtualizedListItem[] {
   return Array.from({ length: 10000 }, (_, i) => {
     const name = `${randomFrom(names)} ${String.fromCharCode(65 + (i % 26))}`;
     const company = randomFrom(companies);
@@ -86,24 +86,24 @@ function generateRainbowList(): RainbowListItem[] {
   });
 }
 
-export type RainbowListState = {
-  items: RainbowListItem[];
+export type VirtualizedListState = {
+  items: VirtualizedListItem[];
   query: string;
   setQuery: (q: string) => void;
 };
 
-export const useRainbowListStore = createBaseStore<RainbowListState>(set => ({
-  items: generateRainbowList(),
+export const useVirtualizedListStore = createBaseStore<VirtualizedListState>(set => ({
+  items: generateVirtualizedList(),
   query: '',
-  setQuery: q => set({ query: q }),
+  setQuery: query => set({ query }),
 }));
 
-export const setRainbowListQuery = useRainbowListStore.getState().setQuery;
+export const setVirtualizedListQuery = useVirtualizedListStore.getState().setQuery;
 
-export const useFilteredRainbowListStore = createDerivedStore(
+export const useFilteredList = createDerivedStore(
   $ => {
-    const items = $(useRainbowListStore).items;
-    const query = $(useRainbowListStore).query.toLowerCase();
+    const items = $(useVirtualizedListStore).items;
+    const query = $(useVirtualizedListStore).query.toLowerCase();
     if (!query) return items;
     return items.filter(
       item =>
