@@ -5,7 +5,7 @@ import { createNoopSyncEngine } from './sync/noopSyncEngine';
 import type { SyncEngine } from './sync/types';
 import type { AsyncStorageInterface, SyncStorageInterface } from './types';
 
-// ============ Stores Configuration =========================================== //
+// ============ Types ========================================================== //
 
 export type StoresConfig = { syncEngine: SyncEngine } & (
   | {
@@ -18,8 +18,10 @@ export type StoresConfig = { syncEngine: SyncEngine } & (
     }
 );
 
+export type StoresConfigUpdate = ConfigUpdate | ((current: StoresConfig) => ConfigUpdate);
+
 type ConfigUpdate =
-  | { async?: undefined; syncEngine: SyncEngine; storage?: undefined }
+  | { async?: undefined; storage?: undefined; syncEngine: SyncEngine }
   | {
       async: true;
       storage: AsyncStorageInterface;
@@ -31,7 +33,9 @@ type ConfigUpdate =
       syncEngine?: SyncEngine;
     };
 
-export type StoresConfigUpdate = ConfigUpdate | ((current: StoresConfig) => ConfigUpdate);
+// ============ Stores Configuration =========================================== //
+
+let activeConfig: StoresConfig = createDefaultConfig();
 
 function createDefaultConfig(): StoresConfig {
   return {
@@ -40,8 +44,6 @@ function createDefaultConfig(): StoresConfig {
     syncEngine: IS_BROWSER ? createBrowserSyncEngine() : createNoopSyncEngine(),
   };
 }
-
-let activeConfig: StoresConfig = createDefaultConfig();
 
 export function configureStores(update: StoresConfigUpdate): void {
   const result = typeof update === 'function' ? update(activeConfig) : update;
