@@ -56,4 +56,8 @@ Icon?
 .eslintcache
 
 # Storybook
-storybook-static/ 
+storybook-static/
+
+# Broken pnpm symlinks (workspace hoisting bug workaround)
+packages/core/chrome-extension-example
+packages/core/example-app
