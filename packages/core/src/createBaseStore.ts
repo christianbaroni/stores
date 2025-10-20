@@ -1,7 +1,7 @@
 import { PersistStorage, StorageValue, persist, subscribeWithSelector } from 'zustand/middleware';
 import { createWithEqualityFn } from 'zustand/traditional';
 import { IS_BROWSER, IS_IOS, IS_TEST } from '@env';
-import { getStoresConfig, StoresConfig } from './config';
+import { getStoresConfig } from './config';
 import { StoresError, logger } from './logger';
 import { createSyncedStateCreator } from './sync/syncEnhancer';
 import type { NormalizedSyncConfig, SyncConfig } from './sync/types';
@@ -243,9 +243,7 @@ function createPersistStorage<S, PersistedState extends Partial<S>>(
   const persistThrottleMs = options.sync ? undefined : DEFAULT_PERSIST_THROTTLE_MS;
   const version = options.version ?? 0;
 
-  const isAsync = isStorageAsync(config);
-
-  const persistStorage = isAsync
+  const persistStorage = config.async
     ? createAsyncPersistStorage(config.storage, options, persistThrottleMs)
     : createSyncPersistStorage(config.storage, options, persistThrottleMs);
 
@@ -283,8 +281,4 @@ function normalizeSyncOption<S extends Record<string, unknown>>(
   }
 
   return { ...config, key };
-}
-
-function isStorageAsync(config: StoresConfig): config is StoresConfig & { async: true } {
-  return config.async === true;
 }
