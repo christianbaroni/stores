@@ -5,18 +5,21 @@
   "types": "dist/web/index.d.ts",
   "react-native": "dist/native/index.js",
   "exports": {
-    "import": {
-      "react-native": "./dist/native/index.js",
-      "default": "./dist/web/index.mjs"
-    },
-    "require": {
-      "react-native": "./dist/native/index.js",
-      "default": "./dist/web/index.js"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": {
+        "react-native": "./dist/native/index.js",
+        "default": "./dist/web/index.mjs"
+      },
+      "require": {
+        "react-native": "./dist/native/index.js",
+        "default": "./dist/web/index.js"
+      }
     }
   },
   "dependencies": {
     "use-sync-external-store": "1.6.0",
-    "zustand": "5.0.5"
+    "zustand": "5.0.8"
   },
   "peerDependencies": {
     "react": ">=17.0.0",

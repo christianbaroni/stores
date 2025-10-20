@@ -1,4 +1,4 @@
-import { IS_DEV } from './env';
+import { IS_DEV } from '@env';
 
 export class StoresError extends Error {
   cause: Error;

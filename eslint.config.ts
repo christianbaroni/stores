@@ -3,6 +3,7 @@ import typescriptParser from '@typescript-eslint/parser';
 import prettierPlugin from 'eslint-plugin-prettier';
 import prettierRecommended from 'eslint-plugin-prettier/recommended';
 import reactHooksPlugin from 'eslint-plugin-react-hooks';
+import jsdocPlugin from 'eslint-plugin-jsdoc';
 
 export default [
   {
@@ -29,15 +30,17 @@ export default [
     plugins: {
       '@typescript-eslint': typescriptPlugin,
       'react-hooks': reactHooksPlugin,
+      'jsdoc': jsdocPlugin,
     },
     rules: {
       ...typescriptPlugin.configs.recommended.rules,
       ...reactHooksPlugin.configs.recommended.rules,
-      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
       '@typescript-eslint/no-redeclare': 'off',
       'no-undef': 'off',
       'no-redeclare': 'off',
       'react-hooks/refs': 'off',
+      'jsdoc/no-undefined-types': ['warn', { markVariablesAsUsed: true }],
     },
   },
   {
