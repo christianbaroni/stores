@@ -4,7 +4,7 @@ import { IS_BROWSER, IS_IOS, IS_TEST } from '@env';
 import { getStoresConfig } from './config';
 import { StoresError, logger } from './logger';
 import { createSyncedStateCreator } from './sync/syncEnhancer';
-import type { NormalizedSyncConfig, SyncConfig } from './sync/types';
+import { NormalizedSyncConfig, SyncConfig } from './sync/types';
 import {
   AsyncStorageInterface,
   LazyPersistParams,

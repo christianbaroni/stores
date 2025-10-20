@@ -2,8 +2,8 @@ import { IS_BROWSER } from '@env';
 import { storesStorage } from '@storesStorage';
 import { createBrowserSyncEngine } from './sync/browserSyncEngine';
 import { createNoopSyncEngine } from './sync/noopSyncEngine';
-import type { SyncEngine } from './sync/types';
-import type { AsyncStorageInterface, SyncStorageInterface } from './types';
+import { SyncEngine } from './sync/types';
+import { AsyncStorageInterface, SyncStorageInterface } from './types';
 
 // ============ Types ========================================================== //
 

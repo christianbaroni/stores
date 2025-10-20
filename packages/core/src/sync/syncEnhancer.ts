@@ -1,6 +1,6 @@
 import { StoresError, logger } from '../logger';
-import type { StateCreator } from '../types';
-import type { NormalizedSyncConfig, SyncEngine, SyncHandle, SyncStateKey, SyncValues } from './types';
+import { StateCreator } from '../types';
+import { NormalizedSyncConfig, SyncEngine, SyncHandle, SyncStateKey, SyncValues } from './types';
 
 // ============ Sync Enhancer ================================================== //
 

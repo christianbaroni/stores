@@ -1,6 +1,6 @@
 import { IS_BROWSER } from '@env';
 import { StoresError, logger } from '../logger';
-import type { SyncEngine, SyncHandle, SyncRegistration, SyncUpdate, SyncValues } from './types';
+import { SyncEngine, SyncHandle, SyncRegistration, SyncUpdate, SyncValues } from './types';
 
 // ============ Browser Sync Engine ============================================ //
 

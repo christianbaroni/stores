@@ -1,4 +1,4 @@
-import type { SyncStorageInterface } from './types';
+import { SyncStorageInterface } from './types';
 
 declare var require: (id: string) => { MMKV: new (options: { id: string }) => SyncStorageInterface };
 

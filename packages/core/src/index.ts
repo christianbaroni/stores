@@ -1,4 +1,4 @@
-export { configureStores, getStoresConfig } from './config';
+export { configureStores } from './config';
 export { BaseStoreOptions, createBaseStore } from './createBaseStore';
 export * from './createDerivedStore';
 export * from './createQueryStore';
@@ -6,9 +6,6 @@ export * from './hooks/useLazyRef';
 export * from './hooks/useListen';
 export * from './hooks/useStableValue';
 export * from './queryStore/types';
-export { createBrowserSyncEngine } from './sync/browserSyncEngine';
-export { createNoopSyncEngine } from './sync/noopSyncEngine';
-export { withSync } from './sync/withSync';
 export * from './sync/types';
 export * from './types';
 export * from './utils/createStoreActions';

@@ -1,4 +1,4 @@
-import type { SyncEngine, SyncHandle, SyncRegistration } from './types';
+import { SyncEngine, SyncHandle, SyncRegistration } from './types';
 
 // ============ Noop Sync Engine =============================================== //
 

@@ -1,4 +1,4 @@
-import type { SyncStorageInterface } from './types';
+import { SyncStorageInterface } from './types';
 
 const STORAGE_ID = 'stores-storage';
 
