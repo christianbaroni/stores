@@ -157,22 +157,33 @@ export type DeriveOptions<DerivedState = unknown> =
       equalityFn?: EqualityFn<DerivedState>;
 
       /**
-       * **In fast mode, subscriptions to underlying stores are established only once**, during
-       * the initial run of your `deriveFunction` — they are *not* rebuilt on subsequent runs
-       * like they are by default.
+       * If `true`, the derived store will never destroy itself. Useful in cases where your
+       * derived store serves as a permanent cache subscribed to intermittently or not at all.
+       * Manual calls to `destroy` *will* destroy the store even when `keepAlive` is `true`.
        *
-       * The implication is that only changes to the *originally tracked* dependencies will cause
-       * the derived store to update, even if your function reads different dependencies in later
-       * runs. So for fast mode to work without issue, `$` calls should be consistent and top-level
-       * in your `deriveFunction`.
+       * *Use this option carefully.*
+       * @default false
+       */
+      keepAlive?: boolean;
+
+      /**
+       * Locks the dependency graph after the first derivation. Subscriptions to
+       * underlying stores are established once and reused on subsequent runs, rather
+       * than being torn down and rebuilt (the default behavior).
        *
-       * Subscribing or unsubscribing in Zustand is generally lightweight (just adding/removing
-       * from a Set), so fast mode only makes a real difference in high-churn or deeply nested
-       * derived stores. However, it *is* faster, and most derived stores can safely enable it.
+       * This avoids the overhead of regenerating selectors and prevents unnecessary
+       * subscription churn. However, it means only the *initially tracked* dependencies
+       * will trigger updates — even if your derive function conditionally reads different
+       * stores in later runs.
+       *
+       * **Requirement**: All `$` calls in your derive function must be consistent and
+       * top level. Conditional dependency tracking will not work correctly.
+       *
+       * Safe to enable for most derived stores where dependencies are static.
        *
        * @default false
        */
-      fastMode?: boolean;
+      lockDependencies?: boolean;
     };
 
 // ============ Persistence Types ============================================== //

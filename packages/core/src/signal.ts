@@ -1,5 +1,6 @@
 import { StoreApi } from 'zustand';
 import { dequal } from './utils/equality';
+import { hasGetSnapshot } from './utils/storeUtils';
 
 const ENABLE_LOGS = false;
 
@@ -60,8 +61,8 @@ export const createSignal = <T, S>(
   selector: (state: T) => S,
   equalityFn: (a: S, b: S) => boolean
 ): [Subscribe, GetValue, SetValue] => {
-  let selected = selector(store.getState());
   const listeners = new Set<() => void>();
+  let selected = selector(hasGetSnapshot(store) ? store.getSnapshot() : store.getState());
   let unsubscribe: Unsubscribe | undefined;
 
   const sub: Subscribe = callback => {

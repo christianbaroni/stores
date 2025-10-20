@@ -1,9 +1,9 @@
 import { PersistStorage, persist, subscribeWithSelector } from 'zustand/middleware';
 import { createWithEqualityFn } from 'zustand/traditional';
-import { IS_BROWSER, IS_IOS, IS_TEST } from './env';
+import { IS_BROWSER, IS_IOS, IS_TEST } from '@env';
+import { storesStorage } from '@storesStorage';
 import { StoresError, logger } from './logger';
-import { storesStorage } from './storesStorage';
-import { LazyPersistParams, PersistConfig, Store, StateCreator } from './types';
+import { LazyPersistParams, OptionallyPersistedStore, PersistConfig, Store, StateCreator } from './types';
 import { debounce } from './utils/debounce';
 import { defaultDeserializeState, defaultSerializeState, omitStoreMethods } from './utils/persistUtils';
 import { time } from './utils/time';
@@ -25,6 +25,17 @@ export function createBaseStore<S, PersistedState extends Partial<S> = Partial<S
   createState: StateCreator<S>,
   persistConfig: PersistConfig<S, PersistedState>
 ): Store<S, PersistedState>;
+
+/**
+ * Creates a base store with optional persistence functionality.
+ * @param createState - The state creator function for the base store.
+ * @param persistConfig - The configuration options for the persistable base store.
+ * @returns A Zustand store with the specified state and optional persistence.
+ */
+export function createBaseStore<S, PersistedState extends Partial<S> = Partial<S>>(
+  createState: StateCreator<S>,
+  persistConfig?: PersistConfig<S, PersistedState>
+): OptionallyPersistedStore<S, PersistedState>;
 
 /**
  * Creates a base store with optional persistence functionality.

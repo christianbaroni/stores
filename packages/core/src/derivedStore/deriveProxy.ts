@@ -1,5 +1,5 @@
 import { BaseStore, Selector } from '../types';
-import { getStoreName } from '../utils/storeUtils';
+import { getStoreName, hasGetSnapshot } from '../utils/storeUtils';
 import { pluralize } from '../utils/stringUtils';
 
 // ============ Types ========================================================== //
@@ -32,7 +32,7 @@ export function getOrCreateProxy<S>(store: BaseStore<S>, rootProxyCache: WeakMap
   const proxyByStore = rootProxyCache.get(store) as S | undefined;
 
   if (!proxyByStore) {
-    const snapshot = store.getState();
+    const snapshot = hasGetSnapshot(store) ? store.getSnapshot() : store.getState();
     const newProxy = createTrackingProxy(snapshot, store, trackPath);
     rootProxyCache.set(store, newProxy);
     return newProxy;
@@ -78,7 +78,7 @@ function buildProxy<T extends object>(
       }
 
       // -- Get the property value
-      const childValue = Reflect.get(target, propKey, receiver);
+      const childValue = Reflect.get(target, propKey, target);
       const propKeyString = String(propKey);
       const newPath = path.concat(propKeyString);
 

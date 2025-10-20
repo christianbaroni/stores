@@ -1,3 +1,5 @@
+import { unstable_batchedUpdates } from 'react-native';
+
 let Platform;
 try {
   const req = Function('return typeof require !== "undefined" ? require : undefined')();
@@ -20,3 +22,5 @@ export const IS_IOS = Platform.OS === 'ios';
 export const IS_ANDROID = Platform.OS === 'android';
 export const IS_DEV = getNodeEnv() === 'development';
 export const IS_TEST = getNodeEnv() === 'test';
+
+export { unstable_batchedUpdates };

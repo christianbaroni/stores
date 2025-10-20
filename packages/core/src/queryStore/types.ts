@@ -128,12 +128,12 @@ export type QueryStoreConfig<
 
   /**
    * Delay before triggering a fetch when parameters change.
-   * Accepts a number (ms) or debounce options:
+   * Accepts a number (ms), `'microtask'` (batched via `queueMicrotask`), or debounce options:
    *
    * `{ delay: number, leading?: boolean, trailing?: boolean, maxWait?: number }`
-   * @default undefined // (No throttle)
+   * @default 'microtask'
    */
-  paramChangeThrottle?: number | DebounceOptions;
+  paramChangeThrottle?: 'microtask' | false | number | DebounceOptions;
 
   /**
    * Parameters to be passed to the fetcher, defined as either direct values or `ReactiveParam` functions.
@@ -207,11 +207,17 @@ export type QueryStoreState<TData, TParams extends Record<string, unknown>, Cust
   getData: (paramsOrQueryKey?: TParams | string) => CacheEntry<TData>['data'];
 
   /**
-   * Returns expanded status information for the currently specified query parameters. The raw
-   * status can be obtained by directly reading the `status` property.
-   * @returns An object containing boolean flags for each status.
+   * Returns expanded status information for the currently specified query parameters.
+   * Pass a status key to avoid building the full status object.
+   * @example
+   * ```ts
+   * const isInitialLoad = useMyQueryStore(state => state.getStatus('isInitialLoad'));
+   * ```
+   * @returns The requested status, or the full status object if no key is provided.
    */
-  getStatus: () => QueryStatusInfo;
+  getStatus(statusKey: keyof QueryStatusInfo): QueryStatusInfo[keyof QueryStatusInfo];
+  getStatus(): QueryStatusInfo;
+  getStatus(statusKey?: keyof QueryStatusInfo): QueryStatusInfo[keyof QueryStatusInfo] | QueryStatusInfo;
 
   /**
    * Determines if the current data is expired based on whether `cacheTime` has been exceeded.
@@ -350,9 +356,9 @@ export type QueryStatus = (typeof QueryStatuses)[keyof typeof QueryStatuses];
  */
 export type QueryStatusInfo = {
   isError: boolean;
-  isFetching: boolean;
   isIdle: boolean;
-  isInitialLoading: boolean;
+  isInitialLoad: boolean;
+  isLoading: boolean;
   isSuccess: boolean;
 };
 

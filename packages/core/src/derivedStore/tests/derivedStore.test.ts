@@ -8,6 +8,7 @@ import { createBaseStore } from '../../createBaseStore';
 import { QueryStatuses } from '../../queryStore/types';
 import { SubscribeArgs, SubscribeOverloads } from '../../types';
 import { deepEqual } from '../../utils/equality';
+import { hasGetSnapshot } from '../../utils/storeUtils';
 
 /**
  * `createDerivedStore` uses `queueMicrotask` to batch updates, so we use
@@ -343,7 +344,7 @@ describe('createDerivedStore', () => {
 
       // First derivation => watchers=0
       expect(deriveCount).toBe(1);
-      expect(totalIntermediaryDerives / 2).toBe(2);
+      expect(totalIntermediaryDerives / 2).toBe(1);
       expect(watcherCalls).toBe(0);
       expect(useDerived.getState()).toBe(0);
 
@@ -358,7 +359,7 @@ describe('createDerivedStore', () => {
       expect(deriveCount).toBe(2);
 
       // And two additional derivations for each pass-through derived store
-      expect(totalIntermediaryDerives / 2).toBe(4);
+      expect(totalIntermediaryDerives / 2).toBe(2);
 
       // But only a single watcher call
       expect(watcherCalls).toBe(1);
@@ -499,7 +500,7 @@ describe('createDerivedStore', () => {
           const value = $(baseStore).count * $(secondStore).nested.multiplier;
           return value;
         },
-        { fastMode: true }
+        { lockDependencies: true }
       );
 
       // No watchers => no derivation yet
@@ -730,6 +731,492 @@ describe('createDerivedStore', () => {
       expect(watcher.mock.calls.length).toBe(oldWatcherCalls);
 
       unsubscribe();
+    });
+  });
+
+  // ──────────────────────────────────────────────
+  // Derivation Modes: Component vs Derived vs Mixed
+  // ──────────────────────────────────────────────
+  describe('Derivation Modes', () => {
+    describe('Pure Component Mode (no derived watchers)', () => {
+      it('should batch multiple synchronous updates via microtask when only component watchers exist', async () => {
+        const baseStore = createBaseStore(() => ({ val: 0 }));
+
+        let deriveCount = 0;
+        const useDerived = createDerivedStore($ => {
+          deriveCount += 1;
+          return $(baseStore).val * 2;
+        });
+
+        // Simulate React component subscription via useSyncExternalStore (selector-based)
+        const watcher = jest.fn();
+        const unsubscribe = useDerived.subscribe(s => s, watcher);
+        if (hasGetSnapshot(useDerived)) {
+          useDerived.getSnapshot(); // Trigger initial derivation like React does
+        }
+
+        // First derivation => watchers=0
+        expect(deriveCount).toBe(1);
+        expect(watcher).toHaveBeenCalledTimes(0);
+
+        // Multiple synchronous updates
+        baseStore.setState({ val: 1 });
+        baseStore.setState({ val: 2 });
+        baseStore.setState({ val: 3 });
+
+        // Before microtask: no re-derivation yet
+        expect(deriveCount).toBe(1);
+        expect(watcher).toHaveBeenCalledTimes(0);
+
+        await flushMicrotasks();
+
+        // After microtask: single batched update
+        expect(deriveCount).toBe(2);
+        expect(watcher).toHaveBeenCalledTimes(1);
+        expect(watcher).toHaveBeenCalledWith(6, 0);
+
+        unsubscribe();
+      });
+    });
+
+    describe('Pure Derived Mode (only derived watchers)', () => {
+      it('should batch and deduplicate derivations when only derived stores are watching', async () => {
+        const baseStore = createBaseStore(() => ({ val: 0 }));
+
+        let parentDeriveCount = 0;
+        const useParent = createDerivedStore($ => {
+          parentDeriveCount += 1;
+          return $(baseStore).val * 2;
+        });
+
+        let childDeriveCount = 0;
+        const childValues: number[] = [];
+        const useChild = createDerivedStore($ => {
+          childDeriveCount += 1;
+          const value = $(useParent) + 100;
+          childValues.push(value);
+          return value;
+        });
+
+        // Add a third derived store to watch child (so child has only derived watchers)
+        let grandchildDeriveCount = 0;
+        const grandchildValues: number[] = [];
+        const useGrandchild = createDerivedStore($ => {
+          grandchildDeriveCount += 1;
+          const value = $(useChild) + 1000;
+          grandchildValues.push(value);
+          return value;
+        });
+
+        // Subscribe to grandchild to activate the chain (component watcher only at the end)
+        const watcher = jest.fn();
+        const unsubscribe = useGrandchild.subscribe(s => s, watcher);
+        if (hasGetSnapshot(useGrandchild)) {
+          useGrandchild.getSnapshot();
+        }
+
+        // First derivation => watchers=0
+        expect(parentDeriveCount).toBe(1);
+        expect(childDeriveCount).toBe(1);
+        expect(grandchildDeriveCount).toBe(1);
+        expect(watcher).toHaveBeenCalledTimes(0);
+
+        // Multiple synchronous updates
+        baseStore.setState({ val: 1 });
+        baseStore.setState({ val: 2 });
+        baseStore.setState({ val: 3 });
+
+        // With new behavior: all stores batch via cascade (even pure derived chains)
+        // Before microtask: no derivations yet
+        expect(parentDeriveCount).toBe(1);
+        expect(childDeriveCount).toBe(1);
+        expect(grandchildDeriveCount).toBe(1);
+        expect(childValues).toEqual([100]);
+        expect(grandchildValues).toEqual([1100]);
+
+        await flushMicrotasks();
+
+        // After microtask: each store derives once (batched and deduplicated)
+        expect(parentDeriveCount).toBe(2); // Initial + 1 batched
+        expect(childDeriveCount).toBe(2); // Initial + 1 batched
+        expect(grandchildDeriveCount).toBe(2); // Initial + 1 batched
+        expect(childValues).toEqual([100, 106]);
+        expect(grandchildValues).toEqual([1100, 1106]);
+        expect(watcher).toHaveBeenCalledTimes(1);
+        expect(watcher).toHaveBeenCalledWith(1106, 1100);
+
+        unsubscribe();
+      });
+    });
+
+    describe('Mixed Mode (both component and derived watchers)', () => {
+      it('should derive synchronously when getState() is called', async () => {
+        const baseStore = createBaseStore(() => ({ val: 0 }));
+
+        let parentDeriveCount = 0;
+        const useParent = createDerivedStore($ => {
+          parentDeriveCount += 1;
+          return $(baseStore).val * 2;
+        });
+
+        // Add a derived watcher (child derived store)
+        let childDeriveCount = 0;
+        const childValues: number[] = [];
+        const useChild = createDerivedStore($ => {
+          childDeriveCount += 1;
+          const value = $(useParent) + 100;
+          childValues.push(value);
+          return value;
+        });
+
+        const childWatcher = jest.fn();
+        const unsubChild = useChild.subscribe(s => s, childWatcher);
+        if (hasGetSnapshot(useChild)) {
+          useChild.getSnapshot();
+        }
+
+        // Add a component watcher (selector-based, non-derived) - simulates React
+        const componentValues: number[] = [];
+        const componentWatcher = jest.fn((val: number) => {
+          componentValues.push(val);
+        });
+        const unsubComponent = useParent.subscribe(s => s, componentWatcher);
+        if (hasGetSnapshot(useParent)) {
+          useParent.getSnapshot();
+        }
+
+        // Initial state
+        expect(parentDeriveCount).toBe(1);
+        expect(childDeriveCount).toBe(1);
+        expect(childValues).toEqual([100]);
+        expect(componentValues).toEqual([]);
+        expect(componentWatcher).toHaveBeenCalledTimes(0);
+        expect(childWatcher).toHaveBeenCalledTimes(0);
+
+        // Multiple synchronous updates
+        baseStore.setState({ val: 1 });
+        baseStore.setState({ val: 2 });
+        baseStore.setState({ val: 3 });
+
+        // Before microtask: all updates batched
+        expect(parentDeriveCount).toBe(1);
+        expect(childDeriveCount).toBe(1);
+        expect(childValues).toEqual([100]);
+        expect(componentWatcher).toHaveBeenCalledTimes(0);
+        expect(componentValues).toEqual([]);
+
+        useParent.getState();
+        expect(parentDeriveCount).toBe(2);
+
+        useChild.getState();
+        expect(childDeriveCount).toBe(2);
+        expect(childValues).toEqual([100, 106]);
+
+        await flushMicrotasks();
+
+        // After microtask: batched updates applied once
+        expect(componentWatcher).toHaveBeenCalledTimes(1);
+        expect(componentValues).toEqual([6]);
+        expect(componentWatcher).toHaveBeenCalledWith(6, 0);
+
+        expect(childWatcher).toHaveBeenCalledTimes(1);
+        expect(childWatcher).toHaveBeenCalledWith(106, 100);
+
+        unsubChild();
+        unsubComponent();
+      });
+
+      it('should handle transitions between modes correctly', async () => {
+        const baseStore = createBaseStore(() => ({ val: 0 }));
+
+        let deriveCount = 0;
+        const useDerived = createDerivedStore($ => {
+          deriveCount += 1;
+          return $(baseStore).val * 2;
+        });
+
+        // Start with component watcher only (batched mode) - selector-based like React
+        const componentWatcher = jest.fn();
+        const unsubComponent = useDerived.subscribe(s => s, componentWatcher);
+        if (hasGetSnapshot(useDerived)) {
+          useDerived.getSnapshot();
+        }
+
+        expect(deriveCount).toBe(1);
+
+        baseStore.setState({ val: 1 });
+        baseStore.setState({ val: 2 });
+
+        // Batched - no immediate derivation
+        expect(deriveCount).toBe(1);
+
+        await flushMicrotasks();
+        expect(deriveCount).toBe(2);
+        expect(componentWatcher).toHaveBeenCalledTimes(1);
+
+        // Now add a derived watcher (switch to mixed mode)
+        let childDeriveCount = 0;
+        const useChild = createDerivedStore($ => {
+          childDeriveCount += 1;
+          return $(useDerived) + 100;
+        });
+
+        const childWatcher = jest.fn();
+        const unsubChild = useChild.subscribe(s => s, childWatcher);
+        if (hasGetSnapshot(useChild)) {
+          useChild.getSnapshot();
+        }
+
+        expect(childDeriveCount).toBe(1);
+
+        // Multiple updates
+        baseStore.setState({ val: 3 });
+        baseStore.setState({ val: 4 });
+
+        // Before microtask: updates batched via cascade scheduler
+        expect(deriveCount).toBe(2);
+        expect(childDeriveCount).toBe(1);
+
+        // Component watcher still batched
+        expect(componentWatcher).toHaveBeenCalledTimes(1);
+
+        await flushMicrotasks();
+
+        // After microtask: cascade applies batched updates
+        expect(deriveCount).toBe(3);
+        expect(childDeriveCount).toBe(2);
+        expect(componentWatcher).toHaveBeenCalledTimes(2);
+        expect(componentWatcher).toHaveBeenLastCalledWith(8, 4);
+        expect(childWatcher).toHaveBeenCalledTimes(1);
+        expect(childWatcher).toHaveBeenCalledWith(108, 104);
+
+        // Remove derived watcher (back to component-only mode)
+        unsubChild();
+
+        // Multiple updates again
+        baseStore.setState({ val: 5 });
+        baseStore.setState({ val: 6 });
+
+        // Before microtask: updates batched
+        expect(deriveCount).toBe(3);
+
+        await flushMicrotasks();
+
+        // After microtask: single batched derivation
+        expect(deriveCount).toBe(4);
+        expect(componentWatcher).toHaveBeenCalledTimes(3);
+
+        unsubComponent();
+      });
+    });
+  });
+
+  // ──────────────────────────────────────────────
+  // Diamond Dependencies
+  // ──────────────────────────────────────────────
+  describe('Diamond Dependencies', () => {
+    it('should minimize derivations in deep diamond dependency graphs via cascade scheduling', async () => {
+      /**
+       * Graph topology:
+       *
+       *           base1    base2
+       *             |  \  /  |
+       *             |   \/   |
+       *             |   /\   |
+       *             |  /  \  |
+       *           left    right
+       *             |  \  /  |
+       *             |   \/   |
+       *             |   /\   |
+       *             |  /  \  |
+       *          leftMid  rightMid
+       *               \    /
+       *                \  /
+       *               merged
+       *                  |
+       *               final
+       *
+       * The cascade scheduler's benefits:
+       * - Coalesces derivations into microtask-batched cascades
+       * - Derives in topological order using a ranked dirty queue
+       * - Does so without knowledge of broader graph structure
+       * - Component watchers get a single notification per cascade
+       * - Tearing is eliminated (all React components see consistent derived state)
+       *
+       * This test demonstrates that even with complex diamond dependencies, there
+       * are zero unnecessary derivations, and component watchers are notified
+       * exactly once per update batch.
+       */
+
+      const base1 = createBaseStore(() => ({ val: 1 }));
+      const base2 = createBaseStore(() => ({ val: 10 }));
+
+      const deriveCounts = {
+        left: 0,
+        right: 0,
+        leftMid: 0,
+        rightMid: 0,
+        merged: 0,
+        final: 0,
+      };
+
+      // Layer 1: Both depend on both bases (diamond pattern)
+      const useLeft = createDerivedStore($ => {
+        deriveCounts.left += 1;
+        return $(base1).val + $(base2).val;
+      });
+
+      const useRight = createDerivedStore($ => {
+        deriveCounts.right += 1;
+        return $(base1).val * $(base2).val;
+      });
+
+      // Layer 2: Each depends on both Layer 1 stores (creates second diamond)
+      const useLeftMid = createDerivedStore($ => {
+        deriveCounts.leftMid += 1;
+        return $(useLeft) + $(useRight);
+      });
+
+      const useRightMid = createDerivedStore($ => {
+        deriveCounts.rightMid += 1;
+        return $(useLeft) * $(useRight);
+      });
+
+      // Layer 3: Merge both mid stores (convergence point)
+      const useMerged = createDerivedStore($ => {
+        deriveCounts.merged += 1;
+        const leftMid = $(useLeftMid);
+        const rightMid = $(useRightMid);
+        return { leftMid, rightMid, sum: leftMid + rightMid };
+      });
+
+      // Layer 4: Final derived store (component watcher will be here)
+      const useFinal = createDerivedStore($ => {
+        deriveCounts.final += 1;
+        const merged = $(useMerged);
+        return merged.sum * 2;
+      });
+
+      const watchers = {
+        left: jest.fn(),
+        final: jest.fn(),
+      };
+
+      const unsubLeft = useLeft.subscribe(s => s, watchers.left);
+      const unsubFinal = useFinal.subscribe(s => s, watchers.final);
+
+      // Initial derivation cascade
+      expect(deriveCounts.left).toBe(1);
+      expect(deriveCounts.right).toBe(1);
+      expect(deriveCounts.leftMid).toBe(1);
+      expect(deriveCounts.rightMid).toBe(1);
+      expect(deriveCounts.merged).toBe(1);
+      expect(deriveCounts.final).toBe(1);
+
+      // All watchers should be at 0 (first derive doesn't notify)
+      expect(watchers.left).toHaveBeenCalledTimes(0);
+      expect(watchers.final).toHaveBeenCalledTimes(0);
+
+      // Initial values:
+      // base1=1, base2=10
+      // left = 1+10 = 11
+      // right = 1*10 = 10
+      // leftMid = 11+10 = 21
+      // rightMid = 11*10 = 110
+      // merged = {leftMid: 21, rightMid: 110, sum: 131}
+      // final = 131*2 = 262
+      expect(useFinal.getState()).toBe(262);
+
+      // Reset counters to measure next update
+      Object.keys(deriveCounts).forEach(key => {
+        deriveCounts[key as keyof typeof deriveCounts] = 0;
+      });
+
+      // Update base1 => triggers cascade
+      base1.setState({ val: 2 });
+
+      // With the cascade scheduler:
+      // - All stores are enlisted in the cascade
+      // - Derivations happen in rank order, each store derives once
+      // - Component notifications are deferred to microtask
+      // Before microtask: no derivations yet (all queued)
+      expect(deriveCounts.left).toBe(0);
+      expect(deriveCounts.right).toBe(0);
+      expect(deriveCounts.leftMid).toBe(0);
+      expect(deriveCounts.rightMid).toBe(0);
+      expect(deriveCounts.merged).toBe(0);
+      expect(deriveCounts.final).toBe(0);
+
+      await flushMicrotasks();
+
+      // After microtask: cascade executes in rank order
+      // Each store derives once despite multiple dependency paths
+      expect(deriveCounts.left).toBe(1);
+      expect(deriveCounts.right).toBe(1);
+      expect(deriveCounts.leftMid).toBe(1);
+      expect(deriveCounts.rightMid).toBe(1);
+      expect(deriveCounts.merged).toBe(1);
+      expect(deriveCounts.final).toBe(1);
+
+      // All watchers notified exactly once
+      expect(watchers.left).toHaveBeenCalledTimes(1);
+      expect(watchers.final).toHaveBeenCalledTimes(1);
+
+      // New values:
+      // base1=2, base2=10
+      // left = 2+10 = 12
+      // right = 2*10 = 20
+      // leftMid = 12+20 = 32
+      // rightMid = 12*20 = 240
+      // merged = {leftMid: 32, rightMid: 240, sum: 272}
+      // final = 272*2 = 544
+      expect(useFinal.getState()).toBe(544);
+      expect(watchers.final).toHaveBeenCalledWith(544, 262);
+
+      // Reset counters again
+      Object.keys(deriveCounts).forEach(key => {
+        deriveCounts[key as keyof typeof deriveCounts] = 0;
+      });
+
+      // Update BOTH bases simultaneously => cascade batches everything
+      base1.setState({ val: 3 });
+      base2.setState({ val: 20 });
+
+      // Before microtask: no derivations yet
+      expect(deriveCounts.left).toBe(0);
+      expect(deriveCounts.right).toBe(0);
+
+      await flushMicrotasks();
+
+      // After microtask, each store derives exactly once despite:
+      // - Two base store updates
+      // - Multiple convergent dependency paths (diamonds)
+      // Demonstrating the cascade scheduler's ability to eliminate inefficiency
+      expect(deriveCounts.left).toBe(1);
+      expect(deriveCounts.right).toBe(1);
+      expect(deriveCounts.leftMid).toBe(1);
+      expect(deriveCounts.rightMid).toBe(1);
+      expect(deriveCounts.merged).toBe(1);
+      expect(deriveCounts.final).toBe(1);
+
+      // Each watcher notified exactly once (second notification)
+      expect(watchers.left).toHaveBeenCalledTimes(2);
+      expect(watchers.final).toHaveBeenCalledTimes(2);
+
+      // New values:
+      // base1=3, base2=20
+      // left = 3+20 = 23
+      // right = 3*20 = 60
+      // leftMid = 23+60 = 83
+      // rightMid = 23*60 = 1380
+      // merged = {leftMid: 83, rightMid: 1380, sum: 1463}
+      // final = 1463*2 = 2926
+      expect(useFinal.getState()).toBe(2926);
+      expect(watchers.final).toHaveBeenLastCalledWith(2926, 544);
+
+      // Cleanup
+      unsubLeft();
+      unsubFinal();
     });
   });
 

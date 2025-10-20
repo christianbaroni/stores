@@ -1,40 +1,87 @@
-import { BaseStore } from '../types';
+import { StoreApi } from 'zustand';
+import { IS_DEV } from '@env';
+import { InferStoreState } from '../types';
+import { isVirtualStore } from './storeUtils';
 
-export type StoreActions<T> = Pick<T, FunctionKeys<T>>;
+export type StoreActions<Store extends StoreApi<unknown>> = Pick<InferStoreState<Store>, FunctionKeys<InferStoreState<Store>>>;
 
-/** Extract the keys of T whose values are functions */
+/** Extract the keys of T whose values are functions. */
 type FunctionKeys<T> = {
-  [K in keyof T]-?: T[K] extends (...args: never[]) => unknown ? K : never;
+  [K in keyof T]-?: T[K] extends UnknownFunction ? K : never;
 }[keyof T];
 
+type Methods = Record<string, UnknownFunction>;
+type NoOverlap<State, Bundled extends Methods> = Extract<keyof Bundled, FunctionKeys<State>> extends never ? Bundled : never;
+type UnknownFunction = (...args: never[]) => unknown;
+
 /**
- * Given a Zustand store, produce a new object containing only its actions.
+ * Given a store instance, produces a new object containing only its actions.
  *
  * Intended for export alongside the associated store.
  *
+ * @param store - The store to create actions for.
+ * @param bundledMethods - Optional extra methods to bundle into the actions object.
+ *
  * @example
- * export const useCounterStore = createBaseStore(set => ({
+ * export const useCounterStore = createRainbowStore(set => ({
  *   count: 0,
  *   increment: () => set(state => ({ count: state.count + 1 })),
  * }));
  *
  * export const exampleActions = createStoreActions(useExampleStore);
- *
  * exampleActions.increment();
  */
-export function createStoreActions<State>(store: BaseStore<State>): StoreActions<State> {
-  const state = store.getState();
-  const isObject = typeof state === 'object' && state !== null;
-  if (!isObject) throw new Error('[createStoreActions]: State is not an object');
-  return extractFunctionProperties(state);
+export function createStoreActions<Store extends StoreApi<unknown>>(store: Store): StoreActions<Store>;
+
+export function createStoreActions<Store extends StoreApi<unknown>, Bundled extends Methods>(
+  store: Store,
+  bundledMethods: NoOverlap<InferStoreState<Store>, Bundled>
+): StoreActions<Store> & Bundled;
+
+export function createStoreActions<Store extends StoreApi<unknown>, Bundled extends Methods>(
+  store: Store,
+  bundledMethods?: NoOverlap<InferStoreState<Store>, Bundled>
+): StoreActions<Store> | (StoreActions<Store> & Bundled) {
+  const storeActions = extractFunctionProperties(store);
+  if (!bundledMethods) return storeActions;
+  return Object.assign(storeActions, bundledMethods);
 }
 
-function extractFunctionProperties<State>(state: State): StoreActions<State> {
-  const result: StoreActions<State> = Object.create(null);
-  for (const key in state) {
-    if (isFunctionKey(state, key)) result[key] = state[key];
+function extractFunctionProperties<Store extends StoreApi<State>, State>(store: Store): StoreActions<Store> {
+  const state = store.getState();
+  const result = Object.create(null);
+
+  if (IS_DEV) {
+    const isObject = typeof state === 'object' && state !== null;
+    if (!isObject) throw new Error('[createStoreActions]: State is not an object');
   }
+
+  if (isVirtualStore(store)) {
+    for (const key in state) {
+      if (isFunctionKey(state, key)) {
+        result[key] = createVirtualStoreAction(store, key);
+      }
+    }
+    return result;
+  }
+
+  for (const key in state) {
+    if (isFunctionKey(state, key)) {
+      result[key] = state[key];
+    }
+  }
+
   return result;
+}
+
+function createVirtualStoreAction<State, K extends keyof State>(store: StoreApi<State>, key: K): UnknownFunction {
+  return function (...args: unknown[]): unknown {
+    const method = store.getState()[key];
+    if (typeof method === 'function') {
+      return method(...args);
+    }
+    throw new Error(`[createVirtualStoreAction]: Method ${String(key)} is not a function`);
+  };
 }
 
 function isFunctionKey<State, K extends keyof State>(state: State, key: K): key is K & FunctionKeys<State> {
