@@ -1,0 +1,23 @@
+{
+  "name": "@stores/chrome-extension-example",
+  "private": true,
+  "scripts": {
+    "dev": "vite --host",
+    "build": "vite build",
+    "preview": "vite preview --host"
+  },
+  "dependencies": {
+    "@stores": "workspace:*",
+    "react": "19.0.0",
+    "react-dom": "19.0.0"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.276",
+    "@types/react": "19.0.0",
+    "@types/react-dom": "19.0.0",
+    "@vitejs/plugin-react": "^4.5.1",
+    "babel-plugin-react-compiler": "19.1.0-rc.2",
+    "typescript": "^5.4.2",
+    "vite": "^6.3.5"
+  }
+}

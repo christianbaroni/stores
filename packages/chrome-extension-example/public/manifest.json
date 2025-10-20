@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "Stores Sync Control Center",
+  "description": "Demonstrates @stores sync across a Manifest V3 extension's service worker, popup, and options page.",
+  "version": "0.1.0",
+  "permissions": ["storage"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Sync Control Center",
+    "default_popup": "popup.html"
+  },
+  "options_page": "options.html"
+}

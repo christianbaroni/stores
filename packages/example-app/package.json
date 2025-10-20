@@ -1,0 +1,26 @@
+{
+  "name": "@stores/example-app",
+  "private": true,
+  "scripts": {
+    "dev": "vite --host",
+    "build": "vite build",
+    "preview": "vite preview --host"
+  },
+  "dependencies": {
+    "@stores": "workspace:*",
+    "@tanstack/react-virtual": "^3.13.9",
+    "framer-motion": "^12.18.1",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "react-router-dom": "^7.9.4"
+  },
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "@types/react": "19.0.0",
+    "@types/react-dom": "19.0.0",
+    "@vitejs/plugin-react": "^4.5.1",
+    "babel-plugin-react-compiler": "19.1.0-rc.2",
+    "typescript": "^5.4.2",
+    "vite": "^6.3.5"
+  }
+}

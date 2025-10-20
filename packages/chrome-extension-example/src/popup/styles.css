@@ -1,0 +1,387 @@
+:root {
+  font-family:
+    'Inter',
+    'SF Pro Display',
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+}
+
+body {
+  background: #0f172a;
+}
+
+#root {
+  min-width: 360px;
+  max-width: 380px;
+  min-height: 620px;
+}
+
+.popup-shell {
+  position: relative;
+  padding: 20px;
+  color: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background-size: cover;
+  background-position: center;
+  overflow-y: auto;
+  border-radius: 18px;
+}
+
+.glow {
+  position: absolute;
+  inset: 16px;
+  border-radius: 16px;
+  z-index: 0;
+}
+
+.popup-header {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.popup-header h1 {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.2;
+}
+
+.popup-header .summary {
+  margin: 8px 0 0;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.pulse {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.6);
+  min-width: 150px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.pulse-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: #22d3ee;
+  animation: pulse 1.6s infinite;
+}
+
+.pulse[data-status='critical'] .pulse-dot {
+  background: #f97316;
+}
+
+.pulse[data-status='elevated'] .pulse-dot {
+  background: #facc15;
+}
+
+.pulse strong {
+  display: block;
+  font-size: 12px;
+  letter-spacing: 1px;
+}
+
+.pulse small {
+  display: block;
+  font-size: 11px;
+  opacity: 0.75;
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(0.95);
+    opacity: 0.7;
+  }
+  50% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.95);
+    opacity: 0.7;
+  }
+}
+
+.panel {
+  position: relative;
+  z-index: 1;
+  padding: 18px;
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.4);
+}
+
+.panel h2 {
+  margin: 0 0 12px;
+  font-size: 16px;
+  letter-spacing: 0.02em;
+}
+
+.presence-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.presence-chip {
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #0f172a;
+  text-shadow: 0 1px 1px rgba(15, 23, 42, 0.3);
+}
+
+.mission-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mission-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  opacity: 0.9;
+}
+
+.mission-form input,
+.mission-form textarea,
+.task-form input,
+.broadcast textarea {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(15, 23, 42, 0.65);
+  color: #f8fafc;
+  padding: 10px 12px;
+  font-size: 14px;
+  transition: border 0.2s ease;
+  resize: none;
+}
+
+.mission-form input:focus,
+.mission-form textarea:focus,
+.task-form input:focus,
+.broadcast textarea:focus {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+.mission-form button,
+.task-form button,
+.broadcast-submit {
+  border: none;
+  border-radius: 12px;
+  color: #0f172a;
+  font-weight: 600;
+  padding: 10px 14px;
+  cursor: pointer;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.mission-form button:hover,
+.task-form button:hover,
+.broadcast-submit:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.35);
+}
+
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.theme-button {
+  position: relative;
+  border-radius: 14px;
+  padding: 12px 10px;
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid transparent;
+  color: inherit;
+  text-transform: capitalize;
+  cursor: pointer;
+  transition:
+    border 0.2s ease,
+    transform 0.2s ease;
+}
+
+.theme-button .swatch {
+  display: block;
+  width: 100%;
+  height: 42px;
+  border-radius: 10px;
+  margin-bottom: 8px;
+}
+
+.theme-button .swatch[data-theme='solstice'] {
+  background: linear-gradient(135deg, #f59e0b, #f97316);
+}
+
+.theme-button .swatch[data-theme='midnight'] {
+  background: linear-gradient(135deg, #4338ca, #7c3aed);
+}
+
+.theme-button .swatch[data-theme='aurora'] {
+  background: linear-gradient(135deg, #0ea5e9, #38bdf8);
+}
+
+.theme-button.active {
+  transform: translateY(-1px);
+}
+
+.task-form {
+  display: flex;
+  gap: 10px;
+}
+
+.task-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.task {
+  display: flex;
+  gap: 10px;
+  background: rgba(15, 23, 42, 0.5);
+  border-radius: 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+}
+
+.task input {
+  width: 18px;
+  height: 18px;
+}
+
+.task span {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.task strong {
+  font-size: 14px;
+}
+
+.task small {
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.task.completed {
+  opacity: 0.6;
+  text-decoration: line-through;
+}
+
+.broadcast {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.broadcast-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.status-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.status-buttons button {
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 8px 12px;
+  color: inherit;
+  cursor: pointer;
+  text-transform: capitalize;
+}
+
+.timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.timeline li {
+  display: flex;
+  gap: 10px;
+  padding: 10px 12px;
+  background: rgba(15, 23, 42, 0.45);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.timeline .indicator {
+  width: 6px;
+  border-radius: 999px;
+  margin-top: 2px;
+}
+
+.timeline-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+}
+
+.timeline-header strong {
+  font-size: 13px;
+}
+
+.timeline li p {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.timeline li.success {
+  border-color: rgba(16, 185, 129, 0.4);
+}
+
+.timeline li.warning {
+  border-color: rgba(249, 115, 22, 0.4);
+}
