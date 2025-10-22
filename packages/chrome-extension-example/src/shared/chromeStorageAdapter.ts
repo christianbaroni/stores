@@ -3,11 +3,11 @@ import type { AsyncStorageInterface } from '@stores';
 const DEFAULT_NAMESPACE = '@stores/chrome-storage';
 
 export type ChromeStorageAdapterOptions = {
-  area?: 'local' | 'session' | 'sync';
+  area?: 'local' | 'session' | 'sync' | 'managed';
   namespace?: string;
 };
 
-function getChromeStorageArea(area: 'local' | 'session' | 'sync'): chrome.storage.StorageArea | null {
+function getChromeStorageArea(area: 'local' | 'session' | 'sync' | 'managed'): chrome.storage.StorageArea | null {
   if (typeof chrome === 'undefined' || !chrome.storage) return null;
   return chrome.storage[area] ?? null;
 }
@@ -19,8 +19,8 @@ function getRuntimeError(): Error | null {
 
 export class ChromeStorageAdapter implements AsyncStorageInterface {
   readonly async = true;
-  private readonly area: 'local' | 'session' | 'sync';
-  private readonly namespace: string;
+  readonly area: 'local' | 'session' | 'sync' | 'managed';
+  readonly namespace: string;
 
   constructor(options?: ChromeStorageAdapterOptions) {
     this.area = options?.area ?? 'local';

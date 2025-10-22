@@ -1,21 +1,18 @@
 import type { SyncEngine, SyncHandle, SyncRegistration, SyncUpdate, SyncValues } from '@stores';
+import { ChromeStorageAdapter } from './chromeStorageAdapter';
 
-export type ChromeExtensionSyncEngineOptions = {
-  namespace?: string;
-};
+export type ChromeExtensionSyncEngineOptions =
+  | {
+      area?: 'local' | 'session' | 'sync' | 'managed';
+      namespace?: string;
+    }
+  | { storage: ChromeStorageAdapter };
 
-const MESSAGE_TYPE = '@stores/chrome-extension-sync';
-
-type SyncMessage = {
-  namespace: string;
-  origin: string;
-  payload: {
-    replace: boolean;
-    storeKey: string;
-    timestamp: number;
-    values: Record<string, unknown>;
-  };
-  type: typeof MESSAGE_TYPE;
+type SyncStoragePayload = {
+  replace: boolean;
+  storeKey: string;
+  timestamp: number;
+  values: Record<string, unknown>;
 };
 
 type RegistrationContainer = {
@@ -27,24 +24,25 @@ function getRuntimeError(): Error | null {
   return new Error(chrome.runtime.lastError.message);
 }
 
-function isRuntimeAvailable(): typeof chrome.runtime | null {
-  return typeof chrome !== 'undefined' && chrome.runtime ? chrome.runtime : null;
-}
-
-function generateSessionId(): string {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
-  return `${Math.random().toString(36).slice(2)}:${Date.now().toString(36)}`;
+function getStorageArea(area: 'local' | 'session' | 'sync' | 'managed'): chrome.storage.StorageArea | null {
+  if (typeof chrome === 'undefined' || !chrome.storage) return null;
+  return chrome.storage[area] ?? null;
 }
 
 export class ChromeExtensionSyncEngine implements SyncEngine {
-  private readonly namespace: string;
-  private readonly origin: string;
+  readonly area: 'local' | 'session' | 'sync' | 'managed';
+  readonly namespace: string;
   private readonly registrations = new Map<string, RegistrationContainer>();
   private isListening = false;
 
   constructor(options?: ChromeExtensionSyncEngineOptions) {
-    this.namespace = options?.namespace ?? '@stores/chrome-extension-sync';
-    this.origin = generateSessionId();
+    if (options && 'storage' in options) {
+      this.area = options.storage.area;
+      this.namespace = options.storage.namespace;
+    } else {
+      this.area = options?.area ?? 'local';
+      this.namespace = options?.namespace ?? '@stores/chrome-extension-sync';
+    }
     this.attachListener();
   }
 
@@ -69,89 +67,73 @@ export class ChromeExtensionSyncEngine implements SyncEngine {
   }
 
   private attachListener(): void {
-    const runtime = isRuntimeAvailable();
-    if (!runtime || this.isListening) return;
-    runtime.onMessage.addListener(this.onMessage);
+    if (typeof chrome === 'undefined' || !chrome.storage || this.isListening) return;
+    chrome.storage.onChanged.addListener(this.onStorageChanged);
     this.isListening = true;
   }
 
   private detachListener(): void {
-    const runtime = isRuntimeAvailable();
-    if (!runtime || !this.isListening) return;
-    runtime.onMessage.removeListener(this.onMessage);
+    if (typeof chrome === 'undefined' || !chrome.storage || !this.isListening) return;
+    chrome.storage.onChanged.removeListener(this.onStorageChanged);
     this.isListening = false;
   }
 
   private publishUpdate<T extends Record<string, unknown>>(storeKey: string, update: SyncUpdate<T>): void {
-    const runtime = isRuntimeAvailable();
-    if (!runtime) return;
+    const storage = getStorageArea(this.area);
+    if (!storage) return;
 
-    const message: SyncMessage = {
-      namespace: this.namespace,
-      origin: this.origin,
-      payload: {
-        replace: update.replace,
-        storeKey,
-        timestamp: update.timestamp,
-        values: { ...update.values },
-      },
-      type: MESSAGE_TYPE,
+    const payload: SyncStoragePayload = {
+      replace: update.replace,
+      storeKey,
+      timestamp: update.timestamp,
+      values: { ...update.values },
     };
 
-    runtime.sendMessage(message, () => {
-      // Ignore chrome.runtime.lastError to suppress expected "no receiver" errors
-      // This is normal when no other extension contexts are listening
+    storage.set({ [this.toStorageKey(storeKey)]: payload }, () => {
+      // Ignore chrome.runtime.lastError to suppress expected storage quota or receiver errors
       void getRuntimeError();
     });
   }
 
-  private onMessage = (
-    rawMessage: unknown,
-    _sender: chrome.runtime.MessageSender,
-    sendResponse?: (response?: unknown) => void
-  ): boolean => {
-    if (!this.isSyncMessage(rawMessage)) return false;
-    if (rawMessage.namespace !== this.namespace) return false;
-    if (rawMessage.origin === this.origin) return false;
+  private onStorageChanged = (
+    changes: Record<string, chrome.storage.StorageChange>,
+    areaName: 'local' | 'session' | 'sync' | 'managed'
+  ): void => {
+    if (areaName !== 'local') return;
 
-    const container = this.registrations.get(rawMessage.payload.storeKey);
-    if (!container) return false;
+    const prefix = this.namespacePrefix();
+    for (const [key, change] of Object.entries(changes)) {
+      if (!key.startsWith(prefix)) continue;
+      if (!change.newValue) continue;
 
-    const filteredValues: SyncValues<Record<string, unknown>> = {};
-    for (const field of container.registration.fields) {
-      if (Object.prototype.hasOwnProperty.call(rawMessage.payload.values, field)) {
-        filteredValues[field] = rawMessage.payload.values[field];
+      const payload = change.newValue;
+      if (payload.storeKey && key !== this.toStorageKey(payload.storeKey)) continue;
+
+      const container = this.registrations.get(payload.storeKey);
+      if (!container) continue;
+
+      const filteredValues: SyncValues<Record<string, unknown>> = {};
+      for (const field of container.registration.fields) {
+        if (Object.prototype.hasOwnProperty.call(payload.values, field)) {
+          filteredValues[field] = payload.values[field];
+        }
       }
+
+      if (!Object.keys(filteredValues).length && !payload.replace) continue;
+
+      container.registration.apply({
+        replace: payload.replace,
+        timestamp: payload.timestamp,
+        values: filteredValues,
+      });
     }
-
-    if (!Object.keys(filteredValues).length && !rawMessage.payload.replace) return false;
-
-    container.registration.apply({
-      replace: rawMessage.payload.replace,
-      timestamp: rawMessage.payload.timestamp,
-      values: filteredValues,
-    });
-
-    // Acknowledge receipt synchronously
-    if (sendResponse) {
-      sendResponse({ received: true });
-    }
-    return false;
   };
 
-  private isSyncMessage(message: unknown): message is SyncMessage {
-    if (typeof message !== 'object' || message === null) return false;
-    const candidate: Partial<SyncMessage> = message;
-    if (candidate.type !== MESSAGE_TYPE) return false;
-    if (typeof candidate.namespace !== 'string' || typeof candidate.origin !== 'string') return false;
-    if (!candidate.payload || typeof candidate.payload !== 'object') return false;
-    const { payload } = candidate;
-    return (
-      typeof payload.storeKey === 'string' &&
-      typeof payload.timestamp === 'number' &&
-      typeof payload.replace === 'boolean' &&
-      typeof payload.values === 'object' &&
-      payload.values !== null
-    );
+  private namespacePrefix(): string {
+    return `${this.namespace}:`;
+  }
+
+  private toStorageKey(key: string): string {
+    return `${this.namespacePrefix()}${key}`;
   }
 }
