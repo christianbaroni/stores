@@ -2,7 +2,7 @@ export { configureStores } from './config';
 export { createBaseStore } from './createBaseStore';
 export * from './createDerivedStore';
 export * from './createQueryStore';
-export * from './hooks/useLazyRef';
+export * from './createVirtualStore';
 export * from './hooks/useListen';
 export * from './hooks/useStableValue';
 export * from './queryStore/types';
