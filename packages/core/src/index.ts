@@ -1,5 +1,5 @@
 export { configureStores } from './config';
-export { BaseStoreOptions, createBaseStore } from './createBaseStore';
+export { createBaseStore } from './createBaseStore';
 export * from './createDerivedStore';
 export * from './createQueryStore';
 export * from './hooks/useLazyRef';
