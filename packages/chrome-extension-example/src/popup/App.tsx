@@ -1,4 +1,5 @@
 import { memo, useEffect } from 'react';
+import { time } from '@stores';
 import { useSortedCrew, useTimelinePreview, useThemeTokens } from '../shared/derivedStores';
 import {
   ExtensionIdentity,
@@ -22,32 +23,6 @@ type AppProps = {
 
 const THEMES: MissionTheme[] = ['solstice', 'midnight', 'aurora'];
 const STATUSES: PulseStatus[] = ['nominal', 'elevated', 'critical'];
-
-function useHeartbeat(identity: ExtensionIdentity): void {
-  useEffect(() => {
-    // Initial heartbeat
-    heartbeat(identity);
-
-    // Create a long-lived connection to the service worker
-    // The service worker's onDisconnect will fire when this popup closes
-    const port = chrome.runtime?.connect({ name: `popup-${identity.sessionId}` });
-
-    // Regular heartbeat interval
-    const interval = setInterval(() => heartbeat(identity), 2000);
-
-    return () => {
-      clearInterval(interval);
-      port?.disconnect();
-    };
-  }, [identity]);
-}
-
-function formatRelativeTime(timestamp: number): string {
-  const delta = Date.now() - timestamp;
-  if (delta < 60000) return 'moments ago';
-  if (delta < 3600000) return `${Math.floor(delta / 60000)} min ago`;
-  return `${Math.floor(delta / 3600000)} hr ago`;
-}
 
 const PopupHeader = memo(function PopupHeader() {
   const missionName = useMissionControlStore(state => state.missionName);
@@ -271,3 +246,33 @@ export function App({ identity }: AppProps) {
 }
 
 export default App;
+
+/**
+ * This is purely to visualize active threads in the example extension.
+ * Not needed in production.
+ */
+function useHeartbeat(identity: ExtensionIdentity): void {
+  useEffect(() => {
+    // Initial heartbeat
+    heartbeat(identity);
+
+    // Create a long-lived connection to the service worker
+    // The service worker's onDisconnect will fire when this popup closes
+    const port = chrome.runtime?.connect({ name: `popup-${identity.sessionId}` });
+
+    // Regular heartbeat interval
+    const interval = setInterval(() => heartbeat(identity), time.seconds(2));
+
+    return () => {
+      clearInterval(interval);
+      port?.disconnect();
+    };
+  }, [identity]);
+}
+
+function formatRelativeTime(timestamp: number): string {
+  const delta = Date.now() - timestamp;
+  if (delta < 60000) return 'moments ago';
+  if (delta < 3600000) return `${Math.floor(delta / 60000)} min ago`;
+  return `${Math.floor(delta / 3600000)} hr ago`;
+}

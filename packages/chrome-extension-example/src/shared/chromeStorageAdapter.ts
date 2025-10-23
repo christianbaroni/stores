@@ -18,6 +18,7 @@ function getRuntimeError(): Error | null {
 }
 
 export class ChromeStorageAdapter implements AsyncStorageInterface {
+  readonly async = true as const;
   private readonly area: 'local' | 'session' | 'sync';
   private readonly namespace: string;
 
@@ -81,7 +82,7 @@ export class ChromeStorageAdapter implements AsyncStorageInterface {
   }
 
   private namespacePrefix(): string {
-    return `${this.namespace}:`;
+    return this.namespace ? `${this.namespace}:` : '';
   }
 
   private toStorageKey(key: string): string {

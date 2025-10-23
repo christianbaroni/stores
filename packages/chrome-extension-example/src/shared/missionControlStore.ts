@@ -1,8 +1,6 @@
-import { createBaseStore } from '@stores';
-import { ensureExtensionStoresConfigured } from './setupStores';
-
-// Configure before creating any stores
-ensureExtensionStoresConfigured();
+import { createBaseStore, time } from '@stores';
+import { ChromeExtensionSyncEngine } from './chromeExtensionSyncEngine';
+import { ChromeStorageAdapter } from './chromeStorageAdapter';
 
 export type MissionTheme = 'solstice' | 'midnight' | 'aurora';
 export type PulseStatus = 'nominal' | 'elevated' | 'critical';
@@ -77,71 +75,12 @@ export function getTimelineTone(value: FormDataEntryValue | null): TimelineTone 
   }
 }
 
-const PRESENCE_TTL_MS = 8000; // 8 seconds - instances disappear 8s after last heartbeat
 const MAX_TIMELINE_ITEMS = 12;
+const PRESENCE_TTL_MS = time.seconds(8);
+const STORAGE_NAMESPACE = '@stores/chrome-extension';
 
-function now(): number {
-  return Date.now();
-}
-
-function coerceNonEmpty(value: string, fallback: string, maxLength: number): string {
-  const trimmed = value.trim();
-  if (!trimmed.length) return fallback;
-  if (trimmed.length <= maxLength) return trimmed;
-  return `${trimmed.slice(0, maxLength - 1)}…`;
-}
-
-function pruneCrew(members: Record<string, CrewMember>, currentTime: number): Record<string, CrewMember> {
-  let didPrune = false;
-  const next: Record<string, CrewMember> = {};
-  for (const [sessionId, info] of Object.entries(members)) {
-    if (currentTime - info.lastSeenAt <= PRESENCE_TTL_MS) {
-      next[sessionId] = info;
-    } else {
-      didPrune = true;
-    }
-  }
-  return didPrune ? next : members;
-}
-
-function recordHeartbeat(
-  members: Record<string, CrewMember>,
-  identity: ExtensionIdentity,
-  currentTime: number
-): Record<string, CrewMember> {
-  const existing = members[identity.sessionId];
-
-  // No change needed if member exists with same identity and recent timestamp
-  if (existing && existing.color === identity.color && existing.label === identity.label && currentTime - existing.lastSeenAt < 500) {
-    return members;
-  }
-
-  // Add or update this member only
-  return {
-    ...members,
-    [identity.sessionId]: {
-      color: identity.color,
-      label: identity.label,
-      lastSeenAt: currentTime,
-    },
-  };
-}
-
-function limitTimeline(entries: TimelineEntry[]): TimelineEntry[] {
-  if (entries.length <= MAX_TIMELINE_ITEMS) return entries;
-  return entries.slice(entries.length - MAX_TIMELINE_ITEMS);
-}
-
-function generateId(prefix: string): string {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
-    return `${prefix}-${crypto.randomUUID()}`;
-  }
-  return `${prefix}-${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`;
-}
-
-function describeActor(identity: ExtensionIdentity): string {
-  return identity.label;
-}
+const syncEngine = new ChromeExtensionSyncEngine({ namespace: STORAGE_NAMESPACE });
+const storage = new ChromeStorageAdapter({ namespace: STORAGE_NAMESPACE });
 
 export const useMissionControlStore = createBaseStore<MissionControlState>(
   set => ({
@@ -229,7 +168,7 @@ export const useMissionControlStore = createBaseStore<MissionControlState>(
               authorLabel: identity.label,
               createdAt: timestamp,
               id: generateId('event'),
-              message: `${describeActor(identity)} added “${trimmed}”.`,
+              message: `${describeActor(identity)} added "${trimmed}".`,
               tone: 'info',
             },
           ]),
@@ -338,8 +277,8 @@ export const useMissionControlStore = createBaseStore<MissionControlState>(
         const toggledTask = nextTasks.find(task => task.id === taskId);
         const tone: TimelineTone = toggledTask?.completed ? 'success' : 'warning';
         const message = toggledTask?.completed
-          ? `${describeActor(identity)} cleared “${toggledTask.title}”.`
-          : `${describeActor(identity)} reopened “${toggledTask?.title ?? 'a task'}”.`;
+          ? `${describeActor(identity)} cleared "${toggledTask.title}".`
+          : `${describeActor(identity)} reopened "${toggledTask?.title ?? 'a task'}".`;
         return {
           crew: recordHeartbeat(state.crew, identity, timestamp),
           tasks: nextTasks,
@@ -382,10 +321,74 @@ export const useMissionControlStore = createBaseStore<MissionControlState>(
       }),
   }),
   {
+    storage,
     storageKey: 'extension:missionControlStore',
-    sync: true,
+    sync: { engine: syncEngine },
   }
 );
 
 export const { acknowledgeMission, addTask, addTimelineEntry, heartbeat, removeCrew, setTheme, toggleTask, updateSystemPulse } =
   useMissionControlStore.getState();
+
+function now(): number {
+  return Date.now();
+}
+
+function coerceNonEmpty(value: string, fallback: string, maxLength: number): string {
+  const trimmed = value.trim();
+  if (!trimmed.length) return fallback;
+  if (trimmed.length <= maxLength) return trimmed;
+  return `${trimmed.slice(0, maxLength - 1)}…`;
+}
+
+function pruneCrew(members: Record<string, CrewMember>, currentTime: number): Record<string, CrewMember> {
+  let didPrune = false;
+  const next: Record<string, CrewMember> = {};
+  for (const [sessionId, info] of Object.entries(members)) {
+    if (currentTime - info.lastSeenAt <= PRESENCE_TTL_MS) {
+      next[sessionId] = info;
+    } else {
+      didPrune = true;
+    }
+  }
+  return didPrune ? next : members;
+}
+
+function recordHeartbeat(
+  members: Record<string, CrewMember>,
+  identity: ExtensionIdentity,
+  currentTime: number
+): Record<string, CrewMember> {
+  const existing = members[identity.sessionId];
+
+  // No change needed if member exists with same identity and recent timestamp
+  if (existing && existing.color === identity.color && existing.label === identity.label && currentTime - existing.lastSeenAt < 500) {
+    return members;
+  }
+
+  // Add or update this member only
+  return {
+    ...members,
+    [identity.sessionId]: {
+      color: identity.color,
+      label: identity.label,
+      lastSeenAt: currentTime,
+    },
+  };
+}
+
+function limitTimeline(entries: TimelineEntry[]): TimelineEntry[] {
+  if (entries.length <= MAX_TIMELINE_ITEMS) return entries;
+  return entries.slice(entries.length - MAX_TIMELINE_ITEMS);
+}
+
+function generateId(prefix: string): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return `${prefix}-${crypto.randomUUID()}`;
+  }
+  return `${prefix}-${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`;
+}
+
+function describeActor(identity: ExtensionIdentity): string {
+  return identity.label;
+}

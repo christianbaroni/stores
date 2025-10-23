@@ -1,9 +1,6 @@
 import { addTimelineEntry, heartbeat, removeCrew, updateSystemPulse } from '../shared/missionControlStore';
 import { PulseStatus } from '../shared/missionControlStore';
 import { createIdentity } from '../shared/identity';
-import { ensureExtensionStoresConfigured } from '../shared/setupStores';
-
-ensureExtensionStoresConfigured();
 
 const identity = createIdentity('Service Worker');
 
