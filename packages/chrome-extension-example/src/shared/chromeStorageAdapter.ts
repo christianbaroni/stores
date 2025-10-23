@@ -18,7 +18,7 @@ function getRuntimeError(): Error | null {
 }
 
 export class ChromeStorageAdapter implements AsyncStorageInterface {
-  readonly async = true as const;
+  readonly async = true;
   private readonly area: 'local' | 'session' | 'sync';
   private readonly namespace: string;
 
