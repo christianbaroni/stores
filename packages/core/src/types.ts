@@ -1,11 +1,35 @@
 import { Mutate, StateCreator as ZustandStateCreator, StoreApi } from 'zustand';
 import { PersistOptions, StorageValue } from 'zustand/middleware';
 import { UseBoundStoreWithEqualityFn } from 'zustand/traditional';
+import { SyncConfig } from './sync/types';
 
 // ============ Middleware Helpers ============================================= //
 
 type SubscribeWithSelector = ['zustand/subscribeWithSelector', never];
-type Persist<PersistedState> = ['zustand/persist', PersistedState];
+
+type PersistListener<S> = (state: S) => void;
+
+type StorePersist<Store, PersistedState, PersistReturn> = Store extends {
+  getState: () => infer S;
+  setState: {
+    (...args: infer SetPartialArgs): infer _;
+    (...args: infer SetFullArgs): infer _;
+  };
+}
+  ? {
+      setState(...args: SetPartialArgs): PersistReturn;
+      setState(...args: SetFullArgs): PersistReturn;
+      persist: {
+        clearStorage: () => void;
+        getOptions: () => Partial<PersistOptions<S, PersistedState, PersistReturn>>;
+        hasHydrated: () => boolean;
+        onHydrate: (listener: PersistListener<S>) => () => void;
+        onFinishHydration: (listener: PersistListener<S>) => () => void;
+        rehydrate: () => Promise<void> | void;
+        setOptions: (options: Partial<PersistOptions<S, PersistedState, PersistReturn>>) => void;
+      };
+    }
+  : never;
 
 // ============ Core Store Types =============================================== //
 
@@ -17,19 +41,22 @@ export type BaseStore<S, ExtraSubscribeOptions extends boolean = false> = UseBou
   subscribe: SubscribeOverloads<S, ExtraSubscribeOptions>;
 };
 
-export type PersistedStore<S, PersistedState = Partial<S>, ExtraSubscribeOptions extends boolean = false> = UseBoundStoreWithEqualityFn<
-  Mutate<BaseStore<S, ExtraSubscribeOptions>, [Persist<PersistedState>]>
->;
+export type PersistedStore<S, PersistedState = Partial<S>, ExtraSubscribeOptions extends boolean = false, PersistReturn = unknown> = {
+  (): S;
+  <U>(selector: (state: S) => U, equalityFn?: (a: U, b: U) => boolean): U;
+} & Omit<BaseStore<S, ExtraSubscribeOptions>, 'setState' | 'persist'> &
+  StorePersist<BaseStore<S, ExtraSubscribeOptions>, PersistedState, PersistReturn>;
 
-export type Store<S, PersistedState extends Partial<S> = never, ExtraSubscribeOptions extends boolean = false> = [PersistedState] extends [
-  never,
-]
+export type Store<S, PersistedState extends Partial<S> = never, ExtraSubscribeOptions extends boolean = false, PersistReturn = unknown> = [
+  PersistedState,
+] extends [never]
   ? BaseStore<S, ExtraSubscribeOptions>
-  : PersistedStore<S, PersistedState, ExtraSubscribeOptions>;
+  : PersistedStore<S, PersistedState, ExtraSubscribeOptions, PersistReturn>;
 
-export type OptionallyPersistedStore<S, PersistedState> = Store<S> & {
-  persist?: PersistedStore<S, PersistedState>['persist'];
-};
+export type OptionallyPersistedStore<S, PersistedState, PersistReturn = void> = WithAsyncSet<Store<S>, PersistReturn> &
+  UseStoreCallSignatures<S> & {
+    persist?: PersistedStore<S, PersistedState, false, PersistReturn>['persist'];
+  };
 
 // ============ Common Utility Types =========================================== //
 
@@ -60,6 +87,11 @@ export type SetStatePartialArgs<S, ExtraArgs extends unknown[] = []> = [update: 
 
 export type SetStateArgs<S, ExtraArgs extends unknown[] = []> = SetStatePartialArgs<S, ExtraArgs> | SetStateReplaceArgs<S, ExtraArgs>;
 export type SetState<S, ExtraArgs extends unknown[] = []> = (...args: SetStateArgs<S, ExtraArgs>) => void;
+
+export type WithAsyncSet<Store extends StoreApi<unknown>, PersistReturn> = Omit<Store, 'setState'> & {
+  setState(update: SetPartial<InferStoreState<Store>>, replace?: false): PersistReturn;
+  setState(update: SetFull<InferStoreState<Store>>, replace: true): PersistReturn;
+};
 
 // ============ Subscribe Types ================================================ //
 
@@ -188,13 +220,18 @@ export type DeriveOptions<DerivedState = unknown> =
 
 // ============ Persistence Types ============================================== //
 
-export type MaybePromise<T> = T | Promise<T>;
+/**
+ * Generic storage interface that can be either synchronous or asynchronous.
+ * This is the base type used in the config.
+ */
+export type StorageInterface = SyncStorageInterface | AsyncStorageInterface;
 
 /**
  * Synchronous storage interface.
  * Used for localStorage and MMKV implementations.
  */
 export interface SyncStorageInterface {
+  readonly async?: false;
   clearAll(): void;
   contains(key: string): boolean;
   delete(key: string): void;
@@ -208,6 +245,7 @@ export interface SyncStorageInterface {
  * Used for Chrome storage and other async storage implementations.
  */
 export interface AsyncStorageInterface {
+  readonly async: true;
   clearAll(): Promise<void>;
   contains(key: string): Promise<boolean>;
   delete(key: string): Promise<void>;
@@ -215,12 +253,6 @@ export interface AsyncStorageInterface {
   getString(key: string): Promise<string | undefined>;
   set(key: string, value: string): Promise<void>;
 }
-
-/**
- * Generic storage interface that can be either synchronous or asynchronous.
- * This is the base type used in the config.
- */
-export type StorageInterface = SyncStorageInterface | AsyncStorageInterface;
 
 /**
  * Configuration options for creating a persistable store.
@@ -282,6 +314,29 @@ export type LazyPersistParams<S, PersistedState extends Partial<S>> = {
   serializer: NonNullable<PersistConfig<S, PersistedState>['serializer']>;
   storageKey: string;
   value: StorageValue<S> | StorageValue<PersistedState>;
+};
+
+// ============ Store Options ================================================== //
+
+export type BaseStoreOptions<S, PersistedState extends Partial<S> = Partial<S>, PersistReturn = void> =
+  | SyncOptions<S>
+  | PersistWithOptionalSync<S, PersistedState, PersistReturn>;
+
+/**
+ * The `sync` option can be:
+ * - `SyncConfig` object
+ * - `string` (shorthand for `{ key: string }`)
+ * - `true` (inherits key from `storageKey` — only valid with persistence)
+ */
+export type SyncOption<S extends Record<string, unknown>> = SyncConfig<S> | string | true;
+
+export type SyncOptions<S> = {
+  sync: S extends Record<string, unknown> ? SyncConfig<S> | string : never;
+};
+
+export type PersistWithOptionalSync<S, PersistedState extends Partial<S>, PersistReturn> = PersistConfig<S, PersistedState> & {
+  sync?: S extends Record<string, unknown> ? SyncConfig<S> | string | true : never;
+  storage?: PersistReturn extends Promise<unknown> ? AsyncStorageInterface : PersistReturn extends void ? SyncStorageInterface : never;
 };
 
 // ============ Common Store Settings ========================================== //

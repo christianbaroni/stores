@@ -1,4 +1,4 @@
-import { BaseStoreOptions, createBaseStore } from './createBaseStore';
+import { createBaseStore } from './createBaseStore';
 import { IS_DEV, IS_TEST } from '@env';
 import { StoresError, ensureError, logger } from './logger';
 import { SubscriptionManager } from './queryStore/classes/SubscriptionManager';
@@ -17,6 +17,7 @@ import {
 import { $, AttachValue, SignalFunction, Unsubscribe, attachValueSubscriptionMap } from './signal';
 import {
   BaseStore,
+  BaseStoreOptions,
   OptionallyPersistedStore,
   PersistConfig,
   PersistedStore,
@@ -857,11 +858,10 @@ export function createQueryStore<
     : undefined;
 
   const queryStore: Store<S> | Store<S, PersistedState> = combinedPersistConfig
-    ? createBaseStore<S, PersistedState>(
-        createState,
-        options && 'sync' in options ? { ...combinedPersistConfig, sync: options.sync } : combinedPersistConfig
-      )
-    : createBaseStore<S>(createState, !options || !('storageKey' in options) ? options : undefined);
+    ? createBaseStore(createState, combinedPersistConfig)
+    : options && !('storageKey' in options)
+      ? createBaseStore(createState, options)
+      : createBaseStore(createState);
 
   const { enabled: initialStoreEnabled, error, queryKey } = queryStore.getState();
   if (queryKey && !error) lastFetchKey = queryKey;
