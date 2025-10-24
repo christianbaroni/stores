@@ -79,8 +79,8 @@ const MAX_TIMELINE_ITEMS = 12;
 const PRESENCE_TTL_MS = time.seconds(8);
 const STORAGE_NAMESPACE = '@stores/chrome-extension';
 
-const syncEngine = new ChromeExtensionSyncEngine({ namespace: STORAGE_NAMESPACE });
 const storage = new ChromeStorageAdapter({ namespace: STORAGE_NAMESPACE });
+const syncEngine = new ChromeExtensionSyncEngine({ storage });
 
 export const useMissionControlStore = createBaseStore<MissionControlState>(
   set => ({
