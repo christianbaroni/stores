@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, '@janek/sync-engine-chrome-impl']
   pull_request:
 
 jobs:
@@ -88,6 +88,20 @@ jobs:
           name: build-artifacts
           path: packages/core/dist
           retention-days: 1
+
+
+      - name: Pack core package
+        working-directory: packages/core
+        run: |
+            mkdir -p ../../dist
+            pnpm pack --pack-destination ../../dist
+
+      - name: Upload core package
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-package
+          path: dist/core-*.tgz
+          retention-days: 30
 
   # Test core runs in parallel with test-chrome after build
   test-core:
