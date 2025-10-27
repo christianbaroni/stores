@@ -16,7 +16,7 @@
     "baseUrl": ".",
     "paths": {
       "@env": ["src/env.web.ts"],
-      "@storesStorage": ["src/storesStorage.web.ts"]
+      "storesStorage": ["src/storesStorage.web.ts"]
     }
   },
   "include": ["src/**/*"],

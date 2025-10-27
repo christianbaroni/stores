@@ -1,4 +1,4 @@
-import { createBaseStore, createDerivedStore } from '@stores';
+import { createBaseStore, createDerivedStore } from 'stores';
 
 export type VirtualizedListItem = {
   id: string;

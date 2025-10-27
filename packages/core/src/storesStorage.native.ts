@@ -9,7 +9,7 @@ try {
   storageInstance = new MMKV({ id: 'stores-storage' });
 } catch (e) {
   throw new Error(
-    `[@stores]: You must install react-native-mmkv for persistence to work in React Native.\n
+    `[stores]: You must install react-native-mmkv for persistence to work in React Native.\n
     See: https://github.com/mrousavy/react-native-mmkv
     ${e instanceof Error ? `\n\nError: ${e.message}` : ''}`
   );
@@ -23,7 +23,7 @@ function assertMMKV(instance: SyncStorageInterface): asserts instance is SyncSto
     typeof instance.delete !== 'function' ||
     typeof instance.clearAll !== 'function'
   ) {
-    throw new Error('[@stores]: Storage instance does not conform to expected interface');
+    throw new Error('[stores]: Storage instance does not conform to expected interface');
   }
 }
 

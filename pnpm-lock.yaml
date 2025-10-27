@@ -50,15 +50,15 @@ importers:
 
   packages/chrome-extension-example:
     dependencies:
-      '@stores':
-        specifier: workspace:*
-        version: link:../core
       react:
         specifier: 19.0.0
         version: 19.0.0
       react-dom:
         specifier: 19.0.0
         version: 19.0.0(react@19.0.0)
+      stores:
+        specifier: workspace:*
+        version: link:../core
     devDependencies:
       '@types/chrome':
         specifier: ^0.0.276
@@ -133,9 +133,6 @@ importers:
 
   packages/example-app:
     dependencies:
-      '@stores':
-        specifier: workspace:*
-        version: link:../core
       '@tanstack/react-virtual':
         specifier: ^3.13.9
         version: 3.13.12(react-dom@19.0.0(react@19.0.0))(react@19.0.0)
@@ -151,6 +148,9 @@ importers:
       react-router-dom:
         specifier: ^7.9.4
         version: 7.9.4(react-dom@19.0.0(react@19.0.0))(react@19.0.0)
+      stores:
+        specifier: workspace:*
+        version: link:../core
     devDependencies:
       '@types/node':
         specifier: ^24.5.2

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { createDerivedStore, time, useStableValue } from '@stores';
+import { createDerivedStore, time, useStableValue } from 'stores';
 import { SyncTheme, useSyncPlaygroundStore, syncPlaygroundActions } from '../stores/syncPlaygroundStore';
 
 const THEME_STYLES: Record<SyncTheme, { accent: string; background: string; panel: string }> = {

@@ -1,4 +1,4 @@
-import { createQueryStore, time } from '@stores';
+import { createQueryStore, time } from 'stores';
 
 export type Film = {
   id: string;

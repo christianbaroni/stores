@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { createBaseStore } from '@stores';
+import { createBaseStore } from 'stores';
 import { ChromeExtensionSyncEngine } from '../chromeExtensionSyncEngine';
 import { ChromeStorageAdapter } from '../chromeStorageAdapter';
 import { MockChromeStorage, setupMockChrome, cleanupMockChrome } from './mockChromeStorage';

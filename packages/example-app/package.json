@@ -7,7 +7,7 @@
     "preview": "vite preview --host"
   },
   "dependencies": {
-    "@stores": "workspace:*",
+    "stores": "workspace:*",
     "@tanstack/react-virtual": "^3.13.9",
     "framer-motion": "^12.18.1",
     "react": "19.0.0",

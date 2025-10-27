@@ -3,7 +3,7 @@ import { addFavorite, removeFavorite, useFavoritesStore } from '../stores/favori
 import { useFilteredFilmsStore } from '../stores/filteredFilmsStore';
 import { setQuery, useSearchStore } from '../stores/searchStore';
 import { getSortBy, setSortBy, toggleSortOrder, useSortStore } from '../stores/sortStore';
-import { useStableValue } from '@stores';
+import { useStableValue } from 'stores';
 
 export function FilmList() {
   const favorites = useFavoritesStore(s => s.favorites);

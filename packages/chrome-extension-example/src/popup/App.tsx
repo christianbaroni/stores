@@ -1,5 +1,5 @@
 import { memo, useEffect } from 'react';
-import { time } from '@stores';
+import { time } from 'stores';
 import { useSortedCrew, useTimelinePreview, useThemeTokens } from '../shared/derivedStores';
 import {
   ExtensionIdentity,

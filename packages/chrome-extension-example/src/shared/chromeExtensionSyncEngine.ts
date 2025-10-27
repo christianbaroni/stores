@@ -1,4 +1,4 @@
-import type { SyncEngine, SyncHandle, SyncRegistration, SyncUpdate, SyncValues } from '@stores';
+import type { SyncEngine, SyncHandle, SyncRegistration, SyncUpdate, SyncValues } from 'stores';
 import { ChromeStorageAdapter } from './chromeStorageAdapter';
 
 export type ChromeExtensionSyncEngineOptions =
@@ -41,7 +41,7 @@ export class ChromeExtensionSyncEngine implements SyncEngine {
       this.namespace = options.storage.namespace;
     } else {
       this.area = options?.area ?? 'local';
-      this.namespace = options?.namespace ?? '@stores/chrome-extension-sync';
+      this.namespace = options?.namespace ?? 'stores/chrome-extension-sync';
     }
     this.attachListener();
   }

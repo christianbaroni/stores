@@ -1,4 +1,4 @@
-import { createBaseStore, createStoreActions } from '@stores';
+import { createBaseStore, createStoreActions } from 'stores';
 
 export type SyncTheme = 'sunrise' | 'deep-ocean' | 'midnight';
 

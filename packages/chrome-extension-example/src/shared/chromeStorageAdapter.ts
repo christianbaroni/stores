@@ -1,4 +1,4 @@
-import type { AsyncStorageInterface } from '@stores';
+import type { AsyncStorageInterface } from 'stores';
 
 const DEFAULT_NAMESPACE = '@stores/chrome-storage';
 
