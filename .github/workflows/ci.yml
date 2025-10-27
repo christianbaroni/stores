@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, '@janek/sync-engine-chrome-impl']
+    branches: [main]
   pull_request:
 
 jobs:
