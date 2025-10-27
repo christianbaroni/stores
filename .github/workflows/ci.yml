@@ -89,12 +89,11 @@ jobs:
           path: packages/core/dist
           retention-days: 1
 
-
       - name: Pack core package
         working-directory: packages/core
         run: |
-            mkdir -p ../../dist
-            pnpm pack --pack-destination ../../dist
+          mkdir -p ../../dist
+          pnpm pack --pack-destination ../../dist
 
       - name: Upload core package
         uses: actions/upload-artifact@v4
