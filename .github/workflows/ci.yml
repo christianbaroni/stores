@@ -99,7 +99,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: core-package
-          path: dist/core-*.tgz
+          path: dist/stores-*.tgz
           retention-days: 30
 
   # Test core runs in parallel with test-chrome after build
