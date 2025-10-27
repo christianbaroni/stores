@@ -8,7 +8,8 @@
     "esModuleInterop": true,
     "strict": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    "types": ["chrome"]
   },
   "include": ["src/**/*"],
   "references": [{ "path": "../core" }]
