@@ -1,9 +1,8 @@
-import { memo, useEffect } from 'react';
+import { memo } from 'react';
 import {
   addTask,
   addTimelineEntry,
   acknowledgeMission,
-  heartbeat,
   setTheme,
   toggleTask,
   updateSystemPulse,
@@ -13,6 +12,7 @@ import {
 } from '../shared/missionControlStore';
 import type { ExtensionIdentity, MissionTheme, TimelineTone } from '../shared/missionControlStore';
 import { useSortedCrew, useReversedTimeline, useThemeTokens } from '../shared/derivedStores';
+import { useHeartbeat } from '../shared/useHeartbeat';
 import './styles.css';
 
 type AppProps = {
@@ -21,26 +21,6 @@ type AppProps = {
 
 const THEMES: MissionTheme[] = ['solstice', 'midnight', 'aurora'];
 const TONES: TimelineTone[] = ['info', 'success', 'warning'];
-
-function useHeartbeat(identity: ExtensionIdentity): void {
-  useEffect(() => {
-    // Initial heartbeat
-    heartbeat(identity);
-
-    // Create a long-lived connection to the service worker
-    // The port name contains the sessionId so service worker can track it
-    // When this options page closes, Chrome automatically disconnects the port
-    const port = chrome.runtime?.connect({ name: `options-${identity.sessionId}` });
-
-    // Regular heartbeat interval
-    const interval = setInterval(() => heartbeat(identity), 2000);
-
-    return () => {
-      clearInterval(interval);
-      port?.disconnect();
-    };
-  }, [identity]);
-}
 
 function formatTimestamp(timestamp: number): string {
   const formatter = new Intl.DateTimeFormat(undefined, {

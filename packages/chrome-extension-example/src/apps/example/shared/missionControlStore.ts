@@ -1,6 +1,6 @@
 import { createBaseStore, time } from '@stores';
-import { ChromeExtensionSyncEngine } from './chromeExtensionSyncEngine';
-import { ChromeStorageAdapter } from './chromeStorageAdapter';
+import { ChromeExtensionSyncEngine } from '../../../shared/chromeExtensionSyncEngine';
+import { ChromeStorageAdapter } from '../../../shared/chromeStorageAdapter';
 
 export type MissionTheme = 'solstice' | 'midnight' | 'aurora';
 export type PulseStatus = 'nominal' | 'elevated' | 'critical';
@@ -51,7 +51,7 @@ export type MissionControlState = {
   acknowledgeMission: (name: string, summary: string, identity: ExtensionIdentity) => void;
   addTask: (title: string, identity: ExtensionIdentity) => void;
   addTimelineEntry: (message: string, tone: TimelineTone, identity: ExtensionIdentity) => void;
-  heartbeat: (identity: ExtensionIdentity) => void;
+  heartbeat: (identity: ExtensionIdentity, status?: PulseStatus) => void;
   pruneExpiredCrew: () => void;
   removeCrew: (sessionId: string) => void;
   setTheme: (theme: MissionTheme, identity: ExtensionIdentity) => void;
@@ -76,11 +76,10 @@ export function getTimelineTone(value: FormDataEntryValue | null): TimelineTone 
 }
 
 const MAX_TIMELINE_ITEMS = 12;
-const PRESENCE_TTL_MS = time.seconds(8);
-const STORAGE_NAMESPACE = '@stores/chrome-extension';
+const PRESENCE_TTL_MS = time.seconds(2);
 
-const syncEngine = new ChromeExtensionSyncEngine({ namespace: STORAGE_NAMESPACE });
-const storage = new ChromeStorageAdapter({ namespace: STORAGE_NAMESPACE });
+const storage = new ChromeStorageAdapter();
+const syncEngine = new ChromeExtensionSyncEngine({ storage });
 
 export const useMissionControlStore = createBaseStore<MissionControlState>(
   set => ({
@@ -129,7 +128,6 @@ export const useMissionControlStore = createBaseStore<MissionControlState>(
         const timestamp = now();
         const message = `${describeActor(identity)} re-centered the mission focus.`;
         return {
-          crew: recordHeartbeat(state.crew, identity, timestamp),
           missionName: nextName,
           missionSummary: nextSummary,
           timeline: limitTimeline([
@@ -159,7 +157,6 @@ export const useMissionControlStore = createBaseStore<MissionControlState>(
           updatedBy: describeActor(identity),
         };
         return {
-          crew: recordHeartbeat(state.crew, identity, timestamp),
           tasks: [nextTask, ...state.tasks],
           timeline: limitTimeline([
             ...state.timeline,
@@ -181,7 +178,6 @@ export const useMissionControlStore = createBaseStore<MissionControlState>(
         if (!trimmed) return state;
         const timestamp = now();
         return {
-          crew: recordHeartbeat(state.crew, identity, timestamp),
           timeline: limitTimeline([
             ...state.timeline,
             {
@@ -196,7 +192,7 @@ export const useMissionControlStore = createBaseStore<MissionControlState>(
         };
       }),
 
-    heartbeat: identity =>
+    heartbeat: (identity, _status) =>
       set(state => {
         const timestamp = now();
         const nextCrew = recordHeartbeat(state.crew, identity, timestamp);
@@ -207,8 +203,8 @@ export const useMissionControlStore = createBaseStore<MissionControlState>(
 
         // Always return both crew and crewRemovals to ensure they sync together
         return {
-          crew: nextCrew,
-          crewRemovals: remainingRemovals,
+          crew: pruneCrew(nextCrew, timestamp),
+          crewRemovals: pruneCrewRemovals(remainingRemovals, nextCrew),
         };
       }),
 
@@ -238,12 +234,9 @@ export const useMissionControlStore = createBaseStore<MissionControlState>(
 
     setTheme: (theme, identity) =>
       set(state => {
-        if (state.theme === theme) {
-          return { crew: recordHeartbeat(state.crew, identity, now()) };
-        }
+        if (state.theme === theme) return state;
         const timestamp = now();
         return {
-          crew: recordHeartbeat(state.crew, identity, timestamp),
           theme,
           timeline: limitTimeline([
             ...state.timeline,
@@ -280,7 +273,6 @@ export const useMissionControlStore = createBaseStore<MissionControlState>(
           ? `${describeActor(identity)} cleared "${toggledTask.title}".`
           : `${describeActor(identity)} reopened "${toggledTask?.title ?? 'a task'}".`;
         return {
-          crew: recordHeartbeat(state.crew, identity, timestamp),
           tasks: nextTasks,
           timeline: limitTimeline([
             ...state.timeline,
@@ -300,7 +292,6 @@ export const useMissionControlStore = createBaseStore<MissionControlState>(
       set(state => {
         const timestamp = now();
         return {
-          crew: recordHeartbeat(state.crew, identity, timestamp),
           systemPulse: {
             lastPingAt: timestamp,
             reportedBy: describeActor(identity),
@@ -322,8 +313,11 @@ export const useMissionControlStore = createBaseStore<MissionControlState>(
   }),
   {
     storage,
-    storageKey: 'extension:missionControlStore',
-    sync: { engine: syncEngine },
+    storageKey: 'missionControlStore',
+    sync: {
+      engine: syncEngine,
+      merge: { crew: mergeCrew },
+    },
   }
 );
 
@@ -341,6 +335,22 @@ function coerceNonEmpty(value: string, fallback: string, maxLength: number): str
   return `${trimmed.slice(0, maxLength - 1)}…`;
 }
 
+function mergeCrew(
+  incoming: MissionControlState['crew'],
+  current: MissionControlState['crew'],
+  currentState: MissionControlState,
+  incomingValues: Partial<MissionControlState>
+): MissionControlState['crew'] {
+  const newCrew: Record<string, CrewMember> = { ...current, ...incoming };
+  for (const entry of Object.entries(newCrew)) {
+    const id = entry[0];
+    if (currentState.crewRemovals[id] || incomingValues.crewRemovals?.[id]) {
+      delete newCrew[id];
+    }
+  }
+  return newCrew;
+}
+
 function pruneCrew(members: Record<string, CrewMember>, currentTime: number): Record<string, CrewMember> {
   let didPrune = false;
   const next: Record<string, CrewMember> = {};
@@ -352,6 +362,16 @@ function pruneCrew(members: Record<string, CrewMember>, currentTime: number): Re
     }
   }
   return didPrune ? next : members;
+}
+
+function pruneCrewRemovals(removals: Record<string, number>, crew: Record<string, CrewMember>): Record<string, number> {
+  const next: Record<string, number> = {};
+  for (const [sessionId, removalTime] of Object.entries(removals)) {
+    if (crew[sessionId]) {
+      next[sessionId] = removalTime;
+    }
+  }
+  return next;
 }
 
 function recordHeartbeat(

@@ -11,3 +11,6 @@ coverage
 
 # Logs
 *.log
+
+# Claude
+.claude/

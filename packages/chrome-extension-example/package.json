@@ -2,9 +2,15 @@
   "name": "@stores/chrome-extension-example",
   "private": true,
   "scripts": {
-    "dev": "vite --host",
-    "build": "vite build",
-    "preview": "vite preview --host"
+    "dev": "APP=example vite --host",
+    "dev:example": "APP=example vite --host",
+    "dev:sync-test": "APP=sync-test vite --host",
+    "build": "pnpm build:example && pnpm build:sync-test",
+    "build:example": "APP=example vite build",
+    "build:sync-test": "APP=sync-test vite build",
+    "preview": "APP=example vite preview --host",
+    "preview:example": "APP=example vite preview --host",
+    "preview:sync-test": "APP=sync-test vite preview --host"
   },
   "dependencies": {
     "@stores": "workspace:*",

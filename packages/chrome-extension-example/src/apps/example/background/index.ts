@@ -1,6 +1,6 @@
-import { addTimelineEntry, heartbeat, removeCrew, updateSystemPulse } from '../shared/missionControlStore';
-import { PulseStatus } from '../shared/missionControlStore';
+import { time } from '@stores';
 import { createIdentity } from '../shared/identity';
+import { PulseStatus, addTimelineEntry, heartbeat, removeCrew, updateSystemPulse } from '../shared/missionControlStore';
 
 const identity = createIdentity('Service Worker');
 
@@ -22,7 +22,7 @@ function schedulePulse(): void {
   }
   cycleIndex += 1;
   // Heartbeat every 2 seconds to match popup interval and stay within 8s TTL
-  setTimeout(schedulePulse, 2000);
+  setTimeout(schedulePulse, time.seconds(2));
 }
 
 schedulePulse();

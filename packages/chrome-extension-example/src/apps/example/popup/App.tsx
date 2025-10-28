@@ -1,5 +1,4 @@
-import { memo, useEffect } from 'react';
-import { time } from '@stores';
+import { memo } from 'react';
 import { useSortedCrew, useTimelinePreview, useThemeTokens } from '../shared/derivedStores';
 import {
   ExtensionIdentity,
@@ -9,12 +8,12 @@ import {
   addTimelineEntry,
   acknowledgeMission,
   getString,
-  heartbeat,
   setTheme,
   toggleTask,
   updateSystemPulse,
   useMissionControlStore,
 } from '../shared/missionControlStore';
+import { useHeartbeat } from '../shared/useHeartbeat';
 import './styles.css';
 
 type AppProps = {
@@ -246,29 +245,6 @@ export function App({ identity }: AppProps) {
 }
 
 export default App;
-
-/**
- * This is purely to visualize active threads in the example extension.
- * Not needed in production.
- */
-function useHeartbeat(identity: ExtensionIdentity): void {
-  useEffect(() => {
-    // Initial heartbeat
-    heartbeat(identity);
-
-    // Create a long-lived connection to the service worker
-    // The service worker's onDisconnect will fire when this popup closes
-    const port = chrome.runtime?.connect({ name: `popup-${identity.sessionId}` });
-
-    // Regular heartbeat interval
-    const interval = setInterval(() => heartbeat(identity), time.seconds(2));
-
-    return () => {
-      clearInterval(interval);
-      port?.disconnect();
-    };
-  }, [identity]);
-}
 
 function formatRelativeTime(timestamp: number): string {
   const delta = Date.now() - timestamp;
