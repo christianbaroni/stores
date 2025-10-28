@@ -1,8 +1,11 @@
 import { Link } from 'react-router-dom';
 import { removeFavorite, useFavoritesStore } from '../stores/favoritesStore';
+import { usePageBackground } from '../utils/usePageBackground';
 
 export function Favorites() {
   const favorites = useFavoritesStore(s => Object.values(s.favorites));
+
+  usePageBackground('#000000');
 
   return (
     <div

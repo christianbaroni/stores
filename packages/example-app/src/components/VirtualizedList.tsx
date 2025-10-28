@@ -3,10 +3,13 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useLayoutEffect, useRef } from 'react';
 import { useFilteredList, setVirtualizedListQuery } from '../stores/virtualizedListStore';
+import { usePageBackground } from '../utils/usePageBackground';
 
 export function VirtualizedList() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const items = useFilteredList();
+
+  usePageBackground('#f1f3f7');
 
   // eslint-disable-next-line react-hooks/incompatible-library
   const rowVirtualizer = useVirtualizer({

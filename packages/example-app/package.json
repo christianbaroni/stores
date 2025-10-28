@@ -9,7 +9,7 @@
   "dependencies": {
     "@stores": "workspace:*",
     "@tanstack/react-virtual": "^3.13.9",
-    "framer-motion": "^12.18.1",
+    "framer-motion": "^12.23.24",
     "react": "19.0.0",
     "react-dom": "19.0.0",
     "react-router-dom": "^7.9.4"

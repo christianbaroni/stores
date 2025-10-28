@@ -1,22 +1,25 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { createDerivedStore, time, useStableValue } from '@stores';
+import { createDerivedStore, time, useListen, useStableValue } from '@stores';
 import { SyncTheme, useSyncPlaygroundStore, syncPlaygroundActions } from '../stores/syncPlaygroundStore';
 
-const THEME_STYLES: Record<SyncTheme, { accent: string; background: string; panel: string }> = {
+const THEME_STYLES: Record<SyncTheme, { accent: string; background: string; bodyBg: string; panel: string }> = {
   'deep-ocean': {
     accent: '#1AA3FF',
     background: 'linear-gradient(135deg, #0B1D3C 0%, #01203A 50%, #023959 100%)',
+    bodyBg: '#0B1D3C',
     panel: 'rgba(3, 22, 45, 0.78)',
   },
   'midnight': {
     accent: '#9B6BFF',
     background: 'linear-gradient(135deg, #16102C 0%, #1E1038 50%, #38125D 100%)',
+    bodyBg: '#16102C',
     panel: 'rgba(22, 16, 44, 0.78)',
   },
   'sunrise': {
     accent: '#FF7A45',
     background: 'linear-gradient(135deg, #FFEFBA 0%, #FFFFFF 50%, #FFD9A0 100%)',
+    bodyBg: '#FFEFBA',
     panel: 'rgba(255, 255, 255, 0.85)',
   },
 };
@@ -33,6 +36,24 @@ export function SyncPlayground() {
   const { defaultName, sessionId } = useStableValue(buildConfig);
   const theme = useSyncPlaygroundStore(s => s.theme);
   const themeStyles = THEME_STYLES[theme];
+
+  useListen(
+    useSyncPlaygroundStore,
+    s => s.theme,
+    theme => {
+      const backgroundColor = THEME_STYLES[theme].bodyBg;
+      document.body.style.backgroundColor = backgroundColor;
+
+      let meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+      if (!meta) {
+        meta = document.createElement('meta');
+        meta.setAttribute('name', 'theme-color');
+        document.head.appendChild(meta);
+      }
+      meta.setAttribute('content', backgroundColor);
+    },
+    { fireImmediately: true }
+  );
 
   useEffect(() => {
     syncPlaygroundActions.initializeSession(sessionId, defaultName);
@@ -61,18 +82,19 @@ export function SyncPlayground() {
           alignItems: 'center',
           padding: '20px 24px',
           paddingTop: `max(20px, env(safe-area-inset-top))`,
-          backdropFilter: 'blur(18px)',
-          WebkitBackdropFilter: 'blur(18px)',
-          background: 'rgba(20, 20, 20, 0.12)',
+          backdropFilter: 'blur(18px) saturate(180%)',
+          WebkitBackdropFilter: 'blur(18px) saturate(180%)',
+          background: 'transparent',
         }}
       >
         <Link
           to="/"
           style={{
-            color: theme === 'sunrise' ? '#111' : 'rgba(255, 255, 255, 0.8)',
+            color: theme === 'sunrise' ? 'rgba(0, 0, 0, 0.7)' : 'rgba(255, 255, 255, 0.7)',
             fontWeight: 600,
             fontSize: 16,
             textDecoration: 'none',
+            transition: 'color 0.2s ease',
           }}
         >
           ‹ Back to films
@@ -82,7 +104,7 @@ export function SyncPlayground() {
             fontSize: 14,
             fontWeight: 600,
             letterSpacing: '0.04em',
-            color: theme === 'sunrise' ? '#222' : 'rgba(255, 255, 255, 0.85)',
+            color: theme === 'sunrise' ? 'rgba(0, 0, 0, 0.8)' : 'rgba(255, 255, 255, 0.8)',
             textTransform: 'uppercase',
           }}
         >

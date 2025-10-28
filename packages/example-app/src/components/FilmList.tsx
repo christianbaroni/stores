@@ -4,6 +4,7 @@ import { useFilteredFilmsStore } from '../stores/filteredFilmsStore';
 import { setQuery, useSearchStore } from '../stores/searchStore';
 import { getSortBy, setSortBy, toggleSortOrder, useSortStore } from '../stores/sortStore';
 import { useStableValue } from '@stores';
+import { usePageBackground } from '../utils/usePageBackground';
 
 export function FilmList() {
   const favorites = useFavoritesStore(s => s.favorites);
@@ -12,6 +13,8 @@ export function FilmList() {
   const sortBy = useSortStore(s => s.sortBy);
 
   const initialQuery = useStableValue(() => useSearchStore.getState().query);
+
+  usePageBackground('#000000');
 
   return (
     <div

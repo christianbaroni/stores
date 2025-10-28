@@ -3,6 +3,7 @@ import { useFilmsStore } from '../stores/filmsStore';
 import { addFavorite, removeFavorite, useFavoritesStore } from '../stores/favoritesStore';
 import { useFilteredFilmsStore } from '../stores/filteredFilmsStore';
 import { useState, useEffect } from 'react';
+import { usePageBackground } from '../utils/usePageBackground';
 
 export function FilmDetail() {
   const { id } = useParams<{ id: string }>();
@@ -11,6 +12,8 @@ export function FilmDetail() {
   const film = useFilmsStore(s => s.getData()?.find(f => f.id === id));
   const isFavorited = useFavoritesStore(s => id && s.favorites[id] !== undefined);
   const filteredFilms = useFilteredFilmsStore();
+
+  usePageBackground('#000000');
 
   const [isMobile, setIsMobile] = useState(() => {
     if (typeof window === 'undefined') return true;
