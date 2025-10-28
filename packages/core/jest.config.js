@@ -6,7 +6,7 @@ module.exports = {
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
   moduleNameMapper: {
     '^@env$': '<rootDir>/env.web.ts',
-    '^@storesStorage$': '<rootDir>/storesStorage.web.ts',
+    '^storesStorage$': '<rootDir>/storesStorage.web.ts',
     '^src/(.*)$': '<rootDir>/$1',
   },
 };

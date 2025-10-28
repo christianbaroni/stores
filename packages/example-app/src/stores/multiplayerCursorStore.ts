@@ -1,4 +1,4 @@
-import { createBaseStore, createStoreActions, time } from '@stores';
+import { createBaseStore, createStoreActions, time } from 'stores';
 
 // ============ Types ========================================================== //
 

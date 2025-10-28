@@ -50,7 +50,7 @@ importers:
 
   packages/chrome-extension-example:
     dependencies:
-      '@stores':
+      'stores':
         specifier: workspace:*
         version: link:../core
       react:
@@ -130,7 +130,7 @@ importers:
 
   packages/example-app:
     dependencies:
-      '@stores':
+      'stores':
         specifier: workspace:*
         version: link:../core
       '@tanstack/react-virtual':

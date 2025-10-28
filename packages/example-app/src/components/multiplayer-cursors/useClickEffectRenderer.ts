@@ -1,6 +1,6 @@
 import { RefObject, useEffect, useRef } from 'react';
 import { animate, AnimationPlaybackControls } from 'framer-motion';
-import { useListen } from '@stores';
+import { useListen } from 'stores';
 import { ClickEffect, multiplayerCursorActions, useMultiplayerCursorStore } from '../../stores/multiplayerCursorStore';
 
 // ============ Types ========================================================== //

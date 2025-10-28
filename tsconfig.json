@@ -22,7 +22,7 @@
       "@/derivedStore/*": ["packages/core/src/derivedStore/*"],
       "@/tests/*": ["packages/core/src/tests/*"],
       "@/storesStorage": ["packages/core/src/storesStorage"],
-      "@stores": ["packages/core/src"]
+      "stores": ["packages/core/src"]
     }
   },
   "include": ["packages/*/src/**/*"],

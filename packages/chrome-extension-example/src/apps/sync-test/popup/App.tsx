@@ -1,4 +1,4 @@
-import { useStableValue } from '@stores';
+import { useStableValue } from 'stores';
 import { memo, useCallback, useState } from 'react';
 import { useSortedContexts, useRecentOperations, useOperationStats } from '../shared/derivedStores';
 import type { ExtensionContext } from '../shared/syncTestStore';

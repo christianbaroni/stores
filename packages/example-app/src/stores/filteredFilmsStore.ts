@@ -1,4 +1,4 @@
-import { createDerivedStore } from '@stores';
+import { createDerivedStore } from 'stores';
 import { useFilmsStore } from './filmsStore';
 import { useSearchStore } from './searchStore';
 import { useSortStore } from './sortStore';

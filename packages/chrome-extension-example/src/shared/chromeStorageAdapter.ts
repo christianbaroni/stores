@@ -1,6 +1,6 @@
-import type { AsyncStorageInterface } from '@stores';
+import type { AsyncStorageInterface } from 'stores';
 
-export const CHROME_STORAGE_NAMESPACE = '@stores/chrome-storage';
+export const CHROME_STORAGE_NAMESPACE = 'stores/chrome-storage';
 const ENABLE_LOGS = false;
 
 export type AreaName = keyof Pick<typeof chrome.storage, 'local' | 'managed' | 'session' | 'sync'>;

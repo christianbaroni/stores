@@ -1,5 +1,5 @@
 {
-  "name": "@stores",
+  "name": "stores",
   "main": "dist/web/index.js",
   "module": "dist/web/index.mjs",
   "types": "dist/web/index.d.ts",

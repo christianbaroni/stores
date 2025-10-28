@@ -1,4 +1,4 @@
-import { createBaseStore } from '@stores';
+import { createBaseStore } from 'stores';
 
 export type SearchState = {
   query: string;

@@ -1,4 +1,4 @@
-import { createDerivedStore, shallowEqual } from '@stores';
+import { createDerivedStore, shallowEqual } from 'stores';
 import { useMissionControlStore } from './missionControlStore';
 import { THEME_TOKENS } from './theme';
 

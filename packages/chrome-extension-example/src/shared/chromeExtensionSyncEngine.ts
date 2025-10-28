@@ -1,4 +1,4 @@
-import { StorageValue, SyncEngine, SyncHandle, SyncRegistration, SyncValues } from '@stores';
+import { StorageValue, SyncEngine, SyncHandle, SyncRegistration, SyncValues } from 'stores';
 import { AreaName, CHROME_STORAGE_NAMESPACE, ChromeStorageAdapter } from './chromeStorageAdapter';
 
 const ENABLE_LOGS = false;

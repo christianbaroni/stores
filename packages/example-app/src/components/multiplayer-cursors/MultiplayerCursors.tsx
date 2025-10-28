@@ -1,6 +1,6 @@
 import { JSX, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { useStableValue } from '@stores';
+import { useStableValue } from 'stores';
 import { multiplayerCursorActions, useMultiplayerCursorStore } from '../../stores/multiplayerCursorStore';
 import { useActiveCursorsStore } from '../../stores/activeCursorsStore';
 import { useClickEffectRenderer } from './useClickEffectRenderer';

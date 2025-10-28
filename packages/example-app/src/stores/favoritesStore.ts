@@ -1,4 +1,4 @@
-import { createBaseStore, time } from '@stores';
+import { createBaseStore, time } from 'stores';
 import { Film } from './filmsStore';
 
 export type FavoritesState = {

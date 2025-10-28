@@ -1,4 +1,4 @@
-import { createDerivedStore, time } from '@stores';
+import { createDerivedStore, time } from 'stores';
 import { CursorPosition, useMultiplayerCursorStore } from './multiplayerCursorStore';
 
 // ============ Types ========================================================== //

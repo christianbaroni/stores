@@ -1,5 +1,5 @@
 {
-  "name": "@stores/example-app",
+  "name": "stores/example-app",
   "private": true,
   "scripts": {
     "dev": "vite --host",
@@ -7,7 +7,7 @@
     "preview": "vite preview --host"
   },
   "dependencies": {
-    "@stores": "workspace:*",
+    "stores": "workspace:*",
     "@tanstack/react-virtual": "^3.13.9",
     "framer-motion": "^12.23.24",
     "react": "19.0.0",

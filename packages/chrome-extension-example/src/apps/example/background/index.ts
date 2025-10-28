@@ -1,4 +1,4 @@
-import { time } from '@stores';
+import { time } from 'stores';
 import { createIdentity } from '../shared/identity';
 import { PulseStatus, addTimelineEntry, heartbeat, removeCrew, updateSystemPulse } from '../shared/missionControlStore';
 

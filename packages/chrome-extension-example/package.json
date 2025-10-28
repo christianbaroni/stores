@@ -1,5 +1,5 @@
 {
-  "name": "@stores/chrome-extension-example",
+  "name": "stores/chrome-extension-example",
   "private": true,
   "scripts": {
     "dev": "APP=example vite --host",
@@ -13,7 +13,7 @@
     "preview:sync-test": "APP=sync-test vite preview --host"
   },
   "dependencies": {
-    "@stores": "workspace:*",
+    "stores": "workspace:*",
     "react": "19.0.0",
     "react-dom": "19.0.0"
   },

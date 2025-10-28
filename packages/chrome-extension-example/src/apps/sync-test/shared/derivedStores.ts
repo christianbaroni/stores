@@ -1,4 +1,4 @@
-import { createDerivedStore, shallowEqual } from '@stores';
+import { createDerivedStore, shallowEqual } from 'stores';
 import { useSyncTestStore } from './syncTestStore';
 
 const CONTEXT_TTL_MS = 3000;

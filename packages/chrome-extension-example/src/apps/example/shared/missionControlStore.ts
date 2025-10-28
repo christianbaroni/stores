@@ -1,4 +1,4 @@
-import { createBaseStore, time } from '@stores';
+import { createBaseStore, time } from 'stores';
 import { ChromeExtensionSyncEngine } from '../../../shared/chromeExtensionSyncEngine';
 import { ChromeStorageAdapter } from '../../../shared/chromeStorageAdapter';
 

@@ -1,4 +1,4 @@
-import { time } from '@stores';
+import { time } from 'stores';
 import { useEffect } from 'react';
 import { ExtensionIdentity, heartbeat } from './missionControlStore';
 

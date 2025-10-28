@@ -1,6 +1,6 @@
 import { RefObject, useEffect, useRef } from 'react';
 import { animate, AnimationOptions, AnimationPlaybackControls } from 'framer-motion';
-import { useListen } from '@stores';
+import { useListen } from 'stores';
 import { ActiveCursor, useActiveCursorsStore } from '../../stores/activeCursorsStore';
 
 // ============ Types ========================================================== //

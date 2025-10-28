@@ -1,4 +1,4 @@
-import { time } from '@stores';
+import { time } from 'stores';
 import { syncTestActions, useSyncTestStore } from '../shared/syncTestStore';
 import { createContext } from '../shared/identity';
 

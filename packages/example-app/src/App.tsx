@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef } from 'react';
 import { Route, Routes, Link, useLocation } from 'react-router-dom';
-import { useListen } from '@stores';
+import { useListen } from 'stores';
 import { Favorites } from './components/Favorites';
 import { FilmDetail } from './components/FilmDetail';
 import { FilmList } from './components/FilmList';

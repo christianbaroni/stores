@@ -1,4 +1,4 @@
-import { time } from '@stores';
+import { time } from 'stores';
 import { useEffect } from 'react';
 import type { ExtensionContext } from './syncTestStore';
 import { syncTestActions } from './syncTestStore';

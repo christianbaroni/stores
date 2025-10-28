@@ -4,7 +4,7 @@ import { SyncEngine, SyncHandle, SyncRegistration, SyncUpdate, SyncValues } from
 
 // ============ Browser Sync Engine ============================================ //
 
-const CHANNEL_NAME = '@stores/core/sync-channel';
+const CHANNEL_NAME = 'stores/core/sync-channel';
 const STORAGE_EVENT_KEY = `${CHANNEL_NAME}:storage`;
 const STORAGE_PREFIX = `${STORAGE_EVENT_KEY}:`;
 
