@@ -1,6 +1,6 @@
 import { RefObject, useLayoutEffect } from 'react';
 import { useLazyRef as useRef } from './useLazyRef';
-import { BaseStore, EqualityFn, Selector } from '../types';
+import { BaseStore, EqualityFn, InferStoreState, Selector } from '../types';
 
 // ============ Types ========================================================== //
 
@@ -116,8 +116,8 @@ const DEFAULT_OPTIONS = Object.freeze({
  * );
  * ```
  */
-export function useListen<S, Selected>(
-  store: BaseStore<S>,
+export function useListen<Store extends BaseStore<S>, Selected, S = InferStoreState<Store>>(
+  store: Store,
   selector: Selector<S, Selected>,
   react: (current: Selected, previous: Selected, unsubscribe: () => void) => void,
   optionsOrEqualityFn: UseListenOptions<Selected> | UseListenOptions<Selected>['equalityFn'] = DEFAULT_OPTIONS
@@ -145,8 +145,8 @@ const DEFAULT_RESUBSCRIBE_OPTIONS = Object.freeze({
   forceResubscribe: false,
 }) satisfies Readonly<ResubscribeOptions>;
 
-function attachListener<S, Selected>(
-  store: BaseStore<S>,
+function attachListener<Store extends BaseStore<S>, Selected, S>(
+  store: Store,
   listenerRef: RefObject<ListenerRef<S, Selected>>,
   resubscribeOptions: ResubscribeOptions = DEFAULT_RESUBSCRIBE_OPTIONS
 ): void {

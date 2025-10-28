@@ -7,52 +7,30 @@ import { AsyncStorageInterface, SyncStorageInterface } from './types';
 
 // ============ Types ========================================================== //
 
-export type StoresConfig = { syncEngine: SyncEngine } & (
-  | {
-      async: true;
-      storage: AsyncStorageInterface;
-    }
-  | {
-      async: false;
-      storage: SyncStorageInterface;
-    }
-);
-
-export type StoresConfigUpdate =
-  | { async?: undefined; storage?: undefined; syncEngine: SyncEngine }
-  | {
-      async: true;
-      storage: AsyncStorageInterface;
-      syncEngine?: SyncEngine;
-    }
-  | {
-      async: false;
-      storage: SyncStorageInterface;
-      syncEngine?: SyncEngine;
-    };
+export type StoresConfig = {
+  storage: AsyncStorageInterface | SyncStorageInterface;
+  syncEngine: SyncEngine;
+};
 
 // ============ Stores Configuration =========================================== //
 
 let activeConfig: StoresConfig = createDefaultConfig();
-let storeCreated = false;
+let configLocked = false;
 
 function createDefaultConfig(): StoresConfig {
   return {
-    async: false,
     storage: storesStorage,
     syncEngine: IS_BROWSER ? createBrowserSyncEngine() : createNoopSyncEngine(),
   };
 }
 
-export function configureStores(update: StoresConfigUpdate): void {
-  if (IS_DEV && storeCreated) {
+export function configureStores(update: Partial<StoresConfig>): void {
+  if (IS_DEV && configLocked) {
     throw new Error(
       '[configureStores]: Configuration cannot be changed after the first store has been created. ' +
         'Call configureStores before creating any stores.'
     );
   }
-
-  if (update.async !== undefined) activeConfig.async = update.async;
   if (update.storage) activeConfig.storage = update.storage;
   if (update.syncEngine) activeConfig.syncEngine = update.syncEngine;
 }
@@ -62,5 +40,5 @@ export function getStoresConfig(): StoresConfig {
 }
 
 export function markStoreCreated(): void {
-  storeCreated = true;
+  configLocked = true;
 }

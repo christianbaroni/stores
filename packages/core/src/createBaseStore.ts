@@ -2,10 +2,11 @@ import { persist, subscribeWithSelector } from 'zustand/middleware';
 import { createWithEqualityFn } from 'zustand/traditional';
 import { getStoresConfig, markStoreCreated } from './config';
 import { StoresError } from './logger';
+import { createHydrationGate } from './middleware/createHydrationGate';
+import { createPersistStorage } from './storage/storageCreators';
 import { createSyncedStateCreator } from './sync/syncEnhancer';
 import { NormalizedSyncConfig } from './sync/types';
 import { BaseStoreOptions, OptionallyPersistedStore, Store, StateCreator, SyncOption } from './types';
-import { createPersistStorage } from './utils/storageCreators';
 
 /**
  * Creates a base store without persistence.
@@ -69,33 +70,56 @@ export function createBaseStore<S, PersistedState extends Partial<S>, PersistRet
   options?: BaseStoreOptions<S, PersistedState, PersistReturn>
 ): Store<S> | Store<S, PersistedState, false, PersistReturn> {
   markStoreCreated();
-
-  const isPersisted = options && 'storageKey' in options;
+  const isPersisted = options && typeof options.storageKey === 'string';
   const storageKey = isPersisted ? options.storageKey : undefined;
-  const normalizedSync = options?.sync ? normalizeSyncOption(options.sync, storageKey) : null;
+  const normalizedSync = options?.sync ? normalizeSyncOption(options.sync, storageKey) : undefined;
+  const parsedStorage = isPersisted ? (options.storage ?? getStoresConfig().storage) : undefined;
 
-  const stateCreator = normalizedSync
-    ? createSyncedStateCreator(createState, normalizedSync, normalizedSync.engine ?? getStoresConfig().syncEngine)
-    : createState;
+  const syncMiddleware = normalizedSync ? createSyncedStateCreator(createState, normalizedSync, parsedStorage?.async ?? false) : undefined;
+  const stateCreator = syncMiddleware?.stateCreator ?? createState;
 
   if (!isPersisted) {
     return createWithEqualityFn<S>()(subscribeWithSelector(stateCreator), Object.is);
   }
 
-  const { persistStorage, version } = createPersistStorage<S, PersistedState, PersistReturn>(options);
+  const hydrationGate = parsedStorage?.async ? createHydrationGate(stateCreator) : null;
+  const storageConfig = createPersistStorage<S, PersistedState, PersistReturn>(options, parsedStorage, syncMiddleware?.syncContext);
 
-  return createWithEqualityFn<S>()(
+  const wrappedOnRehydrateStorage = hydrationGate
+    ? hydrationGate.wrapOnRehydrateStorage(
+        options.onRehydrateStorage,
+        () => syncMiddleware?.syncContext?.onHydrationComplete?.(),
+        () => syncMiddleware?.syncContext?.onHydrationFlushEnd?.()
+      )
+    : options.onRehydrateStorage;
+
+  const finalStateCreator: StateCreator<S> = hydrationGate
+    ? (set, get, api) => {
+        if (syncMiddleware?.syncContext) syncMiddleware.syncContext.setWithoutPersist = api.setState;
+        return hydrationGate.stateCreator(set, get, api);
+      }
+    : stateCreator;
+
+  const store = createWithEqualityFn<S>()(
     subscribeWithSelector(
-      persist(stateCreator, {
+      persist(finalStateCreator, {
         migrate: options.migrate,
         name: options.storageKey,
-        onRehydrateStorage: options.onRehydrateStorage,
-        storage: persistStorage,
-        version,
+        onRehydrateStorage: wrappedOnRehydrateStorage,
+        storage: storageConfig.persistStorage,
+        version: storageConfig.version,
       })
     ),
     Object.is
   );
+
+  if (hydrationGate) {
+    return Object.assign(store, {
+      persist: Object.assign(store.persist, { hydrationPromise: hydrationGate.hydrationPromise }),
+    });
+  }
+
+  return store;
 }
 
 /**

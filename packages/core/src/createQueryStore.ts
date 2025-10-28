@@ -32,6 +32,7 @@ import { debounce } from './utils/debounce';
 import { dequal } from './utils/equality';
 import { omitStoreMethods } from './utils/persistUtils';
 import { time } from './utils/time';
+import { markStoreCreated } from './config';
 
 const [persist, discard] = [true, false];
 
@@ -170,9 +171,7 @@ export function createQueryStore<
   PersistedState extends Partial<QueryStoreState<TData, TParams>> = Partial<QueryStoreState<TData, TParams>>,
 >(
   config: QueryStoreConfig<TQueryFnData, TParams, TData, QueryStoreState<TData, TParams>>,
-  options:
-    | (PersistConfig<QueryStoreState<TData, TParams>, PersistedState> | BaseStoreOptions<QueryStoreState<TData, TParams>, PersistedState>)
-    | undefined
+  options: BaseStoreOptions<QueryStoreState<TData, TParams>, PersistedState> | undefined
 ): OptionallyPersistedStore<QueryStoreState<TData, TParams>, PersistedState>;
 
 /**
@@ -197,6 +196,7 @@ export function createQueryStore<
     | BaseStoreOptions<QueryStoreState<TData, TParams, CustomState>, PersistedState>,
   maybeOptions?: BaseStoreOptions<QueryStoreState<TData, TParams, CustomState>, PersistedState>
 ): Store<QueryStoreState<TData, TParams, CustomState>> | Store<QueryStoreState<TData, TParams, CustomState>, PersistedState> {
+  markStoreCreated();
   type S = QueryStoreState<TData, TParams, CustomState>;
 
   /* If arg1 is a function, it's the custom state creator; otherwise, it's options */

@@ -1,5 +1,16 @@
 import { StoreApi } from 'zustand';
-import { BaseStore, DerivedStore, PersistedStore, WithGetSnapshot } from '../types';
+import { BaseStore, DerivedStore, PersistedStore, SetFull, SetPartial, SetStateArgs, WithGetSnapshot } from '../types';
+
+/**
+ * Helper that applies a `setState` update to the current state.
+ */
+export function applyStateUpdate<S>(state: S, ...setArgs: SetStateArgs<S>): S {
+  if (setArgs[1] === true) {
+    return isFunctionSetter(setArgs[0]) ? setArgs[0](state) : setArgs[0];
+  } else {
+    return { ...state, ...(isFunctionSetter(setArgs[0]) ? setArgs[0](state) : setArgs[0]) };
+  }
+}
 
 /**
  * Calls the appropriate reset or destroy method on the store, if available.
@@ -43,6 +54,15 @@ export function hasReset<S>(store: BaseStore<S> | StoreApi<S>): store is BaseSto
  */
 export function isDerivedStore<S>(store: BaseStore<S> | StoreApi<S>): store is DerivedStore<S> {
   return 'flushUpdates' in store;
+}
+
+/**
+ * Checks if a `setState` payload is a function setter.
+ */
+export function isFunctionSetter<S>(update: SetPartial<S>): update is (state: S) => Partial<S>;
+export function isFunctionSetter<S>(update: SetFull<S>): update is (state: S) => S;
+export function isFunctionSetter<S>(update: SetPartial<S> | SetFull<S>): update is (state: S) => S | Partial<S> {
+  return typeof update === 'function';
 }
 
 /**

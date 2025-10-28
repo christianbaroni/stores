@@ -6,6 +6,7 @@ export * from './createVirtualStore';
 export * from './hooks/useListen';
 export * from './hooks/useStableValue';
 export * from './queryStore/types';
+export * from './storage/storageTypes';
 export * from './sync/types';
 export * from './types';
 export * from './utils/createStoreActions';

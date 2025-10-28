@@ -13,6 +13,8 @@ class NoopSyncHandle<T extends Record<string, unknown>> implements SyncHandle<T>
 }
 
 class NoopSyncEngine implements SyncEngine {
+  readonly sessionId = 'noop';
+
   register<T extends Record<string, unknown>>(_registration: SyncRegistration<T>): SyncHandle<T> {
     return new NoopSyncHandle<T>();
   }

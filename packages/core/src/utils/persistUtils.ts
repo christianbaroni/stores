@@ -1,5 +1,5 @@
-import { StorageValue } from 'zustand/middleware';
 import { StoresError, logger } from '../logger';
+import { StorageValue } from '../storage/storageTypes';
 
 /**
  * Default partialize function if none is provided. It omits top-level store
@@ -20,13 +20,9 @@ export function omitStoreMethods<S, PersistedState extends Partial<S>>(state: S)
   return state as unknown as PersistedState;
 }
 
-export function defaultSerializeState<PersistedState>(
-  state: StorageValue<PersistedState>['state'],
-  version: StorageValue<PersistedState>['version'],
-  shouldUseReplacer: boolean
-): string {
+export function defaultSerializeState<PersistedState>(storageValue: StorageValue<PersistedState>, shouldUseReplacer: boolean): string {
   try {
-    return JSON.stringify({ state, version }, shouldUseReplacer ? replacer : undefined);
+    return JSON.stringify(storageValue, shouldUseReplacer ? replacer : undefined);
   } catch (error) {
     logger.error(new StoresError(`[createBaseStore]: Failed to serialize Rainbow store data`), { error });
     throw error;

@@ -11,6 +11,7 @@ const STORAGE_PREFIX = `${STORAGE_EVENT_KEY}:`;
 type SyncEnvelope = {
   origin: string;
   replace: boolean;
+  sessionId: string;
   storeKey: string;
   timestamp: number;
   values: Record<string, unknown>;
@@ -47,13 +48,14 @@ class BrowserSyncHandle<T extends Record<string, unknown>> implements SyncHandle
   }
 
   publish(update: SyncUpdate<T>): void {
-    const values: Record<string, unknown> = {};
+    const values: Record<string, unknown> = Object.create(null);
     for (const [key, value] of Object.entries(update.values)) {
       values[key] = value;
     }
     const payload: SyncEnvelope = {
       origin: this.origin,
       replace: update.replace,
+      sessionId: update.sessionId,
       storeKey: this.storeKey,
       timestamp: update.timestamp,
       values,
@@ -77,10 +79,14 @@ class BrowserSyncEngine implements SyncEngine {
     if (IS_BROWSER) window.addEventListener('storage', this.onStorageEvent);
   }
 
+  get sessionId(): string {
+    return this.origin;
+  }
+
   register<T extends Record<string, unknown>>(registration: SyncRegistration<T>): SyncHandle<T> {
     const listener: Listener = envelope => {
       if (envelope.origin === this.origin || envelope.storeKey !== registration.key) return;
-      const filteredValues: SyncValues<T> = {};
+      const filteredValues: SyncValues<T> = Object.create(null);
       for (const key of registration.fields) {
         if (Object.prototype.hasOwnProperty.call(envelope.values, key)) {
           // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
@@ -88,7 +94,12 @@ class BrowserSyncEngine implements SyncEngine {
         }
       }
       if (!Object.keys(filteredValues).length) return;
-      registration.apply({ replace: envelope.replace, timestamp: envelope.timestamp, values: filteredValues });
+      registration.apply({
+        replace: envelope.replace,
+        sessionId: envelope.sessionId,
+        timestamp: envelope.timestamp,
+        values: filteredValues,
+      });
     };
 
     let listeners = this.listeners.get(registration.key);
