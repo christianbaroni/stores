@@ -82,7 +82,7 @@ export class ChromeStorageAdapter implements AsyncStorageInterface {
   }
 
   private namespacePrefix(): string {
-    return this.namespace ? `${this.namespace}:` : '';
+    return this.namespace ? `${this.namespace}` : '';
   }
 
   private toStorageKey(key: string): string {

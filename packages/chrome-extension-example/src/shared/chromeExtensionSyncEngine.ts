@@ -130,7 +130,7 @@ export class ChromeExtensionSyncEngine implements SyncEngine {
   };
 
   private namespacePrefix(): string {
-    return `${this.namespace}:`;
+    return `${this.namespace}`;
   }
 
   private toStorageKey(key: string): string {
