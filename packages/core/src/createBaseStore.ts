@@ -70,7 +70,7 @@ export function createBaseStore<S, PersistedState extends Partial<S>, PersistRet
   options?: BaseStoreOptions<S, PersistedState, PersistReturn>
 ): Store<S> | Store<S, PersistedState, false, PersistReturn> {
   markStoreCreated();
-  const isPersisted = options && typeof options.storageKey === 'string';
+  const isPersisted = options !== undefined && typeof options.storageKey === 'string';
   const storageKey = isPersisted ? options.storageKey : undefined;
   const normalizedSync = options?.sync ? normalizeSyncOption(options.sync, storageKey) : undefined;
   const parsedStorage = isPersisted ? (options.storage ?? getStoresConfig().storage) : undefined;
