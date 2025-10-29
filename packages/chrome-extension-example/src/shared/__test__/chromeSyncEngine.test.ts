@@ -73,6 +73,8 @@ describe('ChromeExtensionSyncEngine', () => {
       }
     );
 
+    await Promise.all([store1.persist.hydrationPromise(), store2.persist.hydrationPromise()]);
+
     // Initial state should be the same
     expect(store1.getState().count).toBe(0);
     expect(store2.getState().count).toBe(0);
@@ -132,6 +134,8 @@ describe('ChromeExtensionSyncEngine', () => {
 
     const todoStore1 = createTodoStore(storageAdapter1, syncEngine1);
     const todoStore2 = createTodoStore(storageAdapter2, syncEngine2);
+
+    await Promise.all([todoStore1.persist.hydrationPromise(), todoStore2.persist.hydrationPromise()]);
 
     // Add a todo from store1
     todoStore1.getState().addTodo('Buy groceries');
@@ -208,6 +212,8 @@ describe('ChromeExtensionSyncEngine', () => {
       }
     );
 
+    await Promise.all([store1.persist.hydrationPromise(), store2.persist.hydrationPromise()]);
+
     // Perform rapid updates from store1
     for (let i = 0; i < 5; i++) {
       store1.getState().increment();
@@ -257,6 +263,8 @@ describe('ChromeExtensionSyncEngine', () => {
         sync: { engine: syncEngine2, fields: ['syncedField'] }, // Only sync syncedField
       }
     );
+
+    await Promise.all([store1.persist.hydrationPromise(), store2.persist.hydrationPromise()]);
 
     // Update synced field in store1
     store1.getState().updateSynced('synced-value');
@@ -346,6 +354,13 @@ describe('ChromeExtensionSyncEngine', () => {
       }
     );
 
+    await Promise.all([
+      storeA1.persist.hydrationPromise(),
+      storeB1.persist.hydrationPromise(),
+      storeA2.persist.hydrationPromise(),
+      storeB2.persist.hydrationPromise(),
+    ]);
+
     // Update storeA1
     storeA1.getState().updateA(42);
     expect(storeA1.getState().valueA).toBe(42);
@@ -404,8 +419,7 @@ describe('ChromeExtensionSyncEngine', () => {
       }
     );
 
-    // Wait for both to hydrate
-    await waitForMicrotasks();
+    await Promise.all([store1.persist.hydrationPromise(), store2.persist.hydrationPromise()]);
 
     // Both should start with the same initial state
     expect(store1.getState().counter).toBe(0);
@@ -470,6 +484,8 @@ describe('ChromeExtensionSyncEngine', () => {
         sync: { engine: syncEngine2, fields: ['value'] },
       }
     );
+
+    await Promise.all([store1.persist.hydrationPromise(), store2.persist.hydrationPromise()]);
 
     // Track subscription calls
     const subscriber = vi.fn();
