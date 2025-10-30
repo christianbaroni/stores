@@ -58,6 +58,6 @@ Icon?
 # Storybook
 storybook-static/
 
-# Broken pnpm symlinks (workspace hoisting bug workaround)
-packages/core/chrome-extension-example
-packages/core/example-app
+# Temporary build files
+packages/core/src/env.ts
+packages/core/src/storesStorage.ts

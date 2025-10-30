@@ -1,5 +1,7 @@
 {
-  "name": "stores",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "workspaces": [
     "packages/*"
   ],
@@ -19,6 +21,8 @@
     "typescript": "^5.9.2"
   },
   "scripts": {
+    "ci:local": "./scripts/test-ci.sh",
+    "ci:docker": "./scripts/test-ci-docker.sh",
     "lint": "pnpm run lint:eslint && pnpm run lint:prettier",
     "lint:eslint": "eslint . --ext .ts,.tsx",
     "lint:prettier": "prettier --check ."

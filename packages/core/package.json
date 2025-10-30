@@ -1,6 +1,14 @@
 {
   "name": "stores",
   "version": "0.0.1",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "main": "dist/web/index.js",
   "module": "dist/web/index.mjs",
   "types": "dist/web/index.d.ts",
@@ -39,16 +47,19 @@
     "tsup": "^8.5.0"
   },
   "scripts": {
-    "prebuild:web": "cp src/storesStorage.web.ts src/storesStorage.ts && cp src/env.web.ts src/env.ts",
-    "prebuild:native": "cp src/storesStorage.native.ts src/storesStorage.ts && cp src/env.native.ts src/env.ts",
-    "postbuild:web": "rm -f src/storesStorage.ts src/env.ts",
-    "postbuild:native": "rm -f src/storesStorage.ts src/env.ts",
-    "build:web": "pnpm run prebuild:web && tsup --config tsup.config.ts --out-dir dist/web && pnpm run postbuild:web",
-    "build:native": "pnpm run prebuild:native && tsup --config tsup.config.ts --out-dir dist/native --platform node && pnpm run postbuild:native",
-    "build:types": "tsc -p tsconfig.build.json --emitDeclarationOnly",
+    "analyze": "pnpm run prebuild:web && npx -y tsx analyze-bundle.ts && pnpm run postbuild:web",
     "build": "pnpm run build:types && NODE_ENV=production pnpm run build:web && NODE_ENV=production pnpm run build:native",
     "build:dev": "pnpm run build:types && NODE_ENV=development pnpm run build:web && NODE_ENV=development pnpm run build:native",
-    "analyze": "pnpm run prebuild:web && npx -y tsx analyze-bundle.ts && pnpm run postbuild:web",
+    "build:native": "pnpm run prebuild:native && tsup --config tsup.config.ts --out-dir dist/native --platform node && pnpm run postbuild:native",
+    "build:types": "tsc -p tsconfig.build.json --emitDeclarationOnly",
+    "build:web": "pnpm run prebuild:web && tsup --config tsup.config.ts --out-dir dist/web && pnpm run postbuild:web",
+    "lint": "pnpm -w run lint",
+    "lint:eslint": "pnpm -w run lint:eslint",
+    "lint:prettier": "pnpm -w run lint:prettier",
+    "postbuild:native": "rm -f src/storesStorage.ts src/env.ts",
+    "postbuild:web": "rm -f src/storesStorage.ts src/env.ts",
+    "prebuild:native": "cp src/storesStorage.native.ts src/storesStorage.ts && cp src/env.native.ts src/env.ts",
+    "prebuild:web": "cp src/storesStorage.web.ts src/storesStorage.ts && cp src/env.web.ts src/env.ts",
     "test": "jest --detectOpenHandles --forceExit"
   }
 }
