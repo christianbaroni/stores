@@ -5,6 +5,19 @@
  * Simulates a single shared storage area that can be used across multiple "processes"
  */
 
+type MockChromeAPI = {
+  storage: {
+    local: MockStorageArea;
+    session: MockStorageArea;
+    sync: MockStorageArea;
+    managed: MockStorageArea;
+    onChanged: MockStorageChangedEvent;
+  };
+  runtime: {
+    lastError: undefined;
+  };
+};
+
 type StorageChangeListener = (
   changes: Record<string, chrome.storage.StorageChange>,
   areaName: 'local' | 'session' | 'sync' | 'managed'
@@ -13,6 +26,7 @@ type StorageChangeListener = (
 class MockStorageArea {
   private data: Record<string, unknown> = {};
   private listeners: Set<StorageChangeListener> = new Set();
+  public readonly QUOTA_BYTES = 5242880;
 
   constructor(
     private readonly areaName: 'local' | 'session' | 'sync' | 'managed',
@@ -21,6 +35,21 @@ class MockStorageArea {
       removeListener: (callback: StorageChangeListener) => void;
     }
   ) {}
+
+  private notifyAndResolve(
+    changes: Record<string, chrome.storage.StorageChange>,
+    callback: (() => void) | undefined,
+    resolve: () => void
+  ): void {
+    // Notify listeners and resolve asynchronously
+    queueMicrotask(() => {
+      this.listeners.forEach(listener => {
+        listener(changes, this.areaName);
+      });
+      callback?.();
+      resolve();
+    });
+  }
 
   get(
     keys?: string | string[] | Record<string, unknown> | null,
@@ -72,17 +101,7 @@ class MockStorageArea {
         };
       }
 
-      // Notify listeners asynchronously (simulating Chrome's behavior)
-      queueMicrotask(() => {
-        this.listeners.forEach(listener => {
-          listener(changes, this.areaName);
-        });
-      });
-
-      if (callback) {
-        callback();
-      }
-      resolve();
+      this.notifyAndResolve(changes, callback, resolve);
     });
   }
 
@@ -101,19 +120,7 @@ class MockStorageArea {
         }
       }
 
-      // Notify listeners asynchronously
-      if (Object.keys(changes).length > 0) {
-        queueMicrotask(() => {
-          this.listeners.forEach(listener => {
-            listener(changes, this.areaName);
-          });
-        });
-      }
-
-      if (callback) {
-        callback();
-      }
-      resolve();
+      this.notifyAndResolve(changes, callback, resolve);
     });
   }
 
@@ -130,19 +137,7 @@ class MockStorageArea {
 
       this.data = {};
 
-      // Notify listeners asynchronously
-      if (Object.keys(changes).length > 0) {
-        queueMicrotask(() => {
-          this.listeners.forEach(listener => {
-            listener(changes, this.areaName);
-          });
-        });
-      }
-
-      if (callback) {
-        callback();
-      }
-      resolve();
+      this.notifyAndResolve(changes, callback, resolve);
     });
   }
 
@@ -175,108 +170,105 @@ class MockStorageArea {
   }
 }
 
-export class MockChromeStorage {
-  private localArea: MockStorageArea;
-  private sessionArea: MockStorageArea;
-  private syncArea: MockStorageArea;
-  private managedArea: MockStorageArea;
+class MockStorageChangedEvent {
   private changeListeners: Set<StorageChangeListener> = new Set();
 
-  constructor() {
-    // Create a simpler onChanged object that doesn't cause circular registration
-    const onChanged = {
-      addListener: (callback: StorageChangeListener) => {
-        this.changeListeners.add(callback);
-      },
-      removeListener: (callback: StorageChangeListener) => {
-        this.changeListeners.delete(callback);
-      },
-    };
+  constructor(
+    private localArea: MockStorageArea,
+    private sessionArea: MockStorageArea,
+    private syncArea: MockStorageArea,
+    private managedArea: MockStorageArea
+  ) {}
 
-    this.localArea = new MockStorageArea('local', onChanged);
-    this.sessionArea = new MockStorageArea('session', onChanged);
-    this.syncArea = new MockStorageArea('sync', onChanged);
-    this.managedArea = new MockStorageArea('managed', onChanged);
+  addListener(callback: StorageChangeListener): void {
+    this.changeListeners.add(callback);
+    this.localArea.registerListener(callback);
+    this.sessionArea.registerListener(callback);
+    this.syncArea.registerListener(callback);
+    this.managedArea.registerListener(callback);
+  }
+
+  removeListener(callback: StorageChangeListener): void {
+    this.changeListeners.delete(callback);
+    this.localArea.unregisterListener(callback);
+    this.sessionArea.unregisterListener(callback);
+    this.syncArea.unregisterListener(callback);
+    this.managedArea.unregisterListener(callback);
+  }
+
+  hasListener(callback: StorageChangeListener): boolean {
+    return this.changeListeners.has(callback);
+  }
+
+  hasListeners(): boolean {
+    return this.changeListeners.size > 0;
   }
 
   cleanup(): void {
-    // Clear all listeners to prevent leaks
     this.changeListeners.clear();
   }
 
-  get local(): chrome.storage.StorageArea {
-    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-    return this.localArea as unknown as chrome.storage.StorageArea;
+  // ========== Unimplemented Methods ==========
+
+  addRules(): void {
+    throw new Error('addRules is not implemented');
   }
 
-  get session(): chrome.storage.StorageArea {
-    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-    return this.sessionArea as unknown as chrome.storage.StorageArea;
+  getRules(): void {
+    throw new Error('getRules is not implemented');
   }
 
-  get sync(): chrome.storage.StorageArea {
-    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-    return this.syncArea as unknown as chrome.storage.StorageArea;
-  }
-
-  get managed(): chrome.storage.StorageArea {
-    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-    return this.managedArea as unknown as chrome.storage.StorageArea;
-  }
-
-  get onChanged(): chrome.storage.StorageChangedEvent {
-    // Arrow functions preserve 'this' context, avoiding the need for aliasing
-    // Type assertion is required to match Chrome's StorageChangedEvent interface which includes Event properties
-    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-    return {
-      addListener: (callback: StorageChangeListener) => {
-        this.changeListeners.add(callback);
-        this.localArea.registerListener(callback);
-        this.sessionArea.registerListener(callback);
-        this.syncArea.registerListener(callback);
-        this.managedArea.registerListener(callback);
-      },
-      removeListener: (callback: StorageChangeListener) => {
-        this.changeListeners.delete(callback);
-        this.localArea.unregisterListener(callback);
-        this.sessionArea.unregisterListener(callback);
-        this.syncArea.unregisterListener(callback);
-        this.managedArea.unregisterListener(callback);
-      },
-      hasListener: (callback: StorageChangeListener) => {
-        return this.changeListeners.has(callback);
-      },
-      hasListeners: () => {
-        return this.changeListeners.size > 0;
-      },
-      getRules: () => {
-        throw new Error('Not implemented');
-      },
-      addRules: () => {
-        throw new Error('Not implemented');
-      },
-      removeRules: () => {
-        throw new Error('Not implemented');
-      },
-    } as chrome.storage.StorageChangedEvent;
+  removeRules(): void {
+    throw new Error('removeRules is not implemented');
   }
 }
 
-export const setupMockChrome = (storage: MockChromeStorage): void => {
-  // Mocking global chrome object for testing purposes
-  // Type assertions are necessary to mock the complex Chrome API types
-  // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-  global.chrome = {
-    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-    storage: storage as unknown as typeof chrome.storage,
-    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+export class MockChromeStorage {
+  public readonly local: MockStorageArea;
+  public readonly session: MockStorageArea;
+  public readonly sync: MockStorageArea;
+  public readonly managed: MockStorageArea;
+  public readonly onChanged: MockStorageChangedEvent;
+
+  constructor() {
+    // Create onChanged first so we can pass it to storage areas
+    const onChangedStub = {
+      addListener: (_callback: StorageChangeListener) => {
+        // Will be properly wired through MockStorageChangedEvent
+      },
+      removeListener: (_callback: StorageChangeListener) => {
+        // Will be properly wired through MockStorageChangedEvent
+      },
+    };
+
+    this.local = new MockStorageArea('local', onChangedStub);
+    this.session = new MockStorageArea('session', onChangedStub);
+    this.sync = new MockStorageArea('sync', onChangedStub);
+    this.managed = new MockStorageArea('managed', onChangedStub);
+    this.onChanged = new MockStorageChangedEvent(this.local, this.session, this.sync, this.managed);
+  }
+
+  cleanup(): void {
+    this.onChanged.cleanup();
+  }
+}
+
+export function setupMockChrome(storage: MockChromeStorage): void {
+  const mockChrome: MockChromeAPI = {
+    storage: {
+      local: storage.local,
+      session: storage.session,
+      sync: storage.sync,
+      managed: storage.managed,
+      onChanged: storage.onChanged,
+    },
     runtime: {
       lastError: undefined,
-    } as typeof chrome.runtime,
-  } as typeof chrome;
-};
+    },
+  };
+  Object.assign(globalThis, { chrome: mockChrome });
+}
 
-export const cleanupMockChrome = (): void => {
-  // @ts-expect-error - Cleaning up global chrome object
-  delete global.chrome;
-};
+export function cleanupMockChrome(): void {
+  Reflect.deleteProperty(globalThis, 'chrome');
+}
