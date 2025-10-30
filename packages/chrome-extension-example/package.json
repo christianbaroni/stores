@@ -10,7 +10,8 @@
     "build:sync-test": "APP=sync-test vite build",
     "preview": "APP=example vite preview --host",
     "preview:example": "APP=example vite preview --host",
-    "preview:sync-test": "APP=sync-test vite preview --host"
+    "preview:sync-test": "APP=sync-test vite preview --host",
+    "test": "vitest"
   },
   "dependencies": {
     "stores": "workspace:*",
@@ -24,6 +25,7 @@
     "@vitejs/plugin-react": "^4.5.1",
     "babel-plugin-react-compiler": "19.1.0-rc.2",
     "typescript": "^5.4.2",
-    "vite": "^6.3.5"
+    "vite": "^6.3.5",
+    "vitest": "^2.0.0"
   }
 }

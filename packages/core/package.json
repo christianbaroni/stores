@@ -1,5 +1,6 @@
 {
   "name": "stores",
+  "version": "0.0.1",
   "main": "dist/web/index.js",
   "module": "dist/web/index.mjs",
   "types": "dist/web/index.d.ts",
