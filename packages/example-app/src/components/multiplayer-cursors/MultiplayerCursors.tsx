@@ -1,6 +1,6 @@
 import { JSX, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { useStableValue } from 'stores';
+import { time, useStableValue } from 'stores';
 import { multiplayerCursorActions, useMultiplayerCursorStore } from '../../stores/multiplayerCursorStore';
 import { useActiveCursorsStore } from '../../stores/activeCursorsStore';
 import { useClickEffectRenderer } from './useClickEffectRenderer';
@@ -48,6 +48,11 @@ export function MultiplayerCursors(): JSX.Element {
       multiplayerCursorActions.removeSession(sessionId);
     };
   }, [color, displayName, sessionId]);
+
+  useEffect(() => {
+    const interval = setInterval(multiplayerCursorActions.pruneStaleCursors, time.seconds(5));
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     const page = pageRef.current;

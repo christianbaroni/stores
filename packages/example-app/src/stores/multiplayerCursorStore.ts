@@ -32,7 +32,7 @@ export type MultiplayerCursorState = {
   localDisplayName: string;
   localSessionId: string;
   addClickEffect: (x: number, y: number) => void;
-  cleanupStaleClickEffects: () => void;
+  pruneStaleCursors: () => void;
   initializeSession: (sessionId: string, displayName: string, color: string) => void;
   removeClickEffect: (effectId: string) => void;
   removeSession: (sessionId: string) => void;
@@ -42,7 +42,6 @@ export type MultiplayerCursorState = {
 // ============ Constants ====================================================== //
 
 const CURSOR_STALE_TIME_MS = time.seconds(10);
-const CLICK_EFFECT_DURATION_MS = time.seconds(2);
 
 const CURSOR_COLORS = [
   '#FF6B6B', // Red
@@ -95,31 +94,35 @@ export const useMultiplayerCursorStore = createBaseStore<MultiplayerCursorState>
     addClickEffect: (x, y) =>
       set(state => {
         if (!state.localSessionId) return state;
-        const now = Date.now();
         const newEffect: ClickEffect = {
           color: state.localColor,
           id: createClickEffectId(),
           sessionId: state.localSessionId,
-          timestamp: now,
+          timestamp: Date.now(),
           x,
           y,
         };
         return {
-          clickEffects: [...pruneStaleClickEffects(state.clickEffects, now), newEffect],
+          clickEffects: [...state.clickEffects, newEffect],
         };
       }),
 
     removeClickEffect: effectId =>
       set(state => ({
-        clickEffects: state.clickEffects.filter(e => e.id !== effectId),
+        clickEffects: state.clickEffects.filter(effect => effect.id !== effectId),
       })),
 
-    cleanupStaleClickEffects: () =>
+    pruneStaleCursors: () =>
       set(state => {
         const now = Date.now();
-        const pruned = pruneStaleClickEffects(state.clickEffects, now);
-        if (pruned.length === state.clickEffects.length) return state;
-        return { clickEffects: pruned };
+        const cursors: Record<string, CursorPosition> = Object.create(null);
+        for (const [sessionId, cursor] of Object.entries(state.cursors)) {
+          if (now - cursor.timestamp < CURSOR_STALE_TIME_MS) {
+            cursors[sessionId] = cursor;
+          }
+        }
+        if (Object.keys(cursors).length === Object.keys(state.cursors).length) return state;
+        return { cursors };
       }),
 
     removeSession: sessionId =>
@@ -131,12 +134,8 @@ export const useMultiplayerCursorStore = createBaseStore<MultiplayerCursorState>
   }),
   {
     sync: {
-      key: 'multiplayerStore',
       fields: ['clickEffects', 'cursors'],
-      merge: {
-        clickEffects: mergeClickEffects,
-        cursors: mergeCursors,
-      },
+      key: 'multiplayerStore',
     },
   }
 );
@@ -160,51 +159,4 @@ function assignCursorColor(sessionId: string): string {
 
 function createClickEffectId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-}
-
-function pruneStaleClickEffects(effects: ClickEffect[], now: number): ClickEffect[] {
-  return effects.filter(effect => now - effect.timestamp < CLICK_EFFECT_DURATION_MS);
-}
-
-function mergeCursors(
-  incomingCursors: Record<string, CursorPosition>,
-  currentCursors: Record<string, CursorPosition>
-): Record<string, CursorPosition> {
-  const now = Date.now();
-  const merged: Record<string, CursorPosition> = {};
-
-  for (const [sessionId, cursor] of Object.entries(incomingCursors)) {
-    if (now - cursor.timestamp < CURSOR_STALE_TIME_MS) {
-      merged[sessionId] = cursor;
-    }
-  }
-
-  for (const [sessionId, cursor] of Object.entries(currentCursors)) {
-    if (merged[sessionId]) continue;
-    if (now - cursor.timestamp < CURSOR_STALE_TIME_MS) {
-      merged[sessionId] = cursor;
-    }
-  }
-
-  return merged;
-}
-
-function mergeClickEffects(incomingEffects: ClickEffect[], currentEffects: ClickEffect[]): ClickEffect[] {
-  const now = Date.now();
-  const effectsMap = new Map<string, ClickEffect>();
-
-  for (const effect of incomingEffects) {
-    if (now - effect.timestamp < CLICK_EFFECT_DURATION_MS) {
-      effectsMap.set(effect.id, effect);
-    }
-  }
-
-  for (const effect of currentEffects) {
-    if (effectsMap.has(effect.id)) continue;
-    if (now - effect.timestamp < CLICK_EFFECT_DURATION_MS) {
-      effectsMap.set(effect.id, effect);
-    }
-  }
-
-  return Array.from(effectsMap.values()).sort((a, b) => a.timestamp - b.timestamp);
 }

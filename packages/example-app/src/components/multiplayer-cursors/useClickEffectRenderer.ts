@@ -45,7 +45,7 @@ export function useClickEffectRenderer(containerRef: RefObject<HTMLElement | nul
       if (!container) return;
 
       const effectsMap = effectsMapRef.current;
-      const currentEffectIds = new Set(currentEffects.map(e => e.id));
+      const currentEffectIds = new Set(currentEffects.map(effect => effect.id));
 
       for (const [effectId, effectElement] of effectsMap.entries()) {
         if (!currentEffectIds.has(effectId)) {
