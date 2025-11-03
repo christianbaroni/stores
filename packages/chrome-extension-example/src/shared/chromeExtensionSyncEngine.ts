@@ -78,8 +78,13 @@ export class ChromeExtensionSyncEngine implements SyncEngine {
        *
        * This onStorageChanged handler receives the change with embedded metadata
        * and applies it after filtering out self-updates via origin check.
+       *
+       * Therefore, publish is a no-op - broadcasts happen automatically via storage events.
        */
-      publish: null,
+      publish: () => {
+        // No-op: Broadcasting happens automatically via chrome.storage.onChanged
+        // when persist middleware writes to storage with injectStorageMetadata: true
+      },
     };
   }
 
