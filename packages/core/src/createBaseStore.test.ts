@@ -3,13 +3,13 @@
  */
 
 import { createBaseStore } from './createBaseStore';
-import { storesStorage } from '@storesStorage';
+import { storesStorage } from 'storesStorage';
 
 // Mock localStorage for node environment
 const mockLocalStorage: Record<string, string> = {};
 
 // Mock storesStorage to use in-memory storage
-jest.mock('@storesStorage', () => {
+jest.mock('storesStorage', () => {
   const mockStorage: typeof storesStorage = {
     clearAll: jest.fn(() => {
       Object.keys(mockLocalStorage).forEach(key => delete mockLocalStorage[key]);
@@ -261,7 +261,7 @@ describe('createBaseStore - merge functionality', () => {
       mockLocalStorage['test-store:test-store'] = JSON.stringify(persistedState);
 
       // Create store and wait for auto-hydration (with timeout fallback)
-      let store: ReturnType<typeof createBaseStore<TestState>>;
+      let store: any;
       await Promise.race([
         new Promise<void>(resolve => {
           store = createBaseStore<TestState>(createState, {
