@@ -39,6 +39,60 @@ describe('createBaseStore - merge functionality', () => {
     Object.keys(mockLocalStorage).forEach(key => delete mockLocalStorage[key]);
   });
 
+  // Type guard helper functions
+  function isTestState(state: unknown): state is { count: number; nested: { value: string; items: string[] } } {
+    if (typeof state !== 'object' || state === null) return false;
+    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+    const obj = state as Record<string, unknown>;
+    if (typeof obj.count !== 'number') return false;
+    if (typeof obj.nested !== 'object' || obj.nested === null) return false;
+    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+    const nested = obj.nested as Record<string, unknown>;
+    return typeof nested.value === 'string' && Array.isArray(nested.items);
+  }
+
+  function isSimpleTestState(state: unknown): state is { count: number; nested: { value: string } } {
+    if (typeof state !== 'object' || state === null) return false;
+    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+    const obj = state as Record<string, unknown>;
+    if (typeof obj.count !== 'number') return false;
+    if (typeof obj.nested !== 'object' || obj.nested === null) return false;
+    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+    const nested = obj.nested as Record<string, unknown>;
+    return typeof nested.value === 'string';
+  }
+
+  function isFeatureFlagsState(state: unknown): state is {
+    featureFlags: { enabled: boolean; settings: { theme?: string; language?: string } };
+  } {
+    if (typeof state !== 'object' || state === null) return false;
+    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+    const obj = state as Record<string, unknown>;
+    if (typeof obj.featureFlags !== 'object' || obj.featureFlags === null) return false;
+    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+    const flags = obj.featureFlags as Record<string, unknown>;
+    if (typeof flags.enabled !== 'boolean') return false;
+    if (typeof flags.settings !== 'object' || flags.settings === null) return false;
+    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+    const settings = flags.settings as Record<string, unknown>;
+    // Allow partial settings - only check that theme exists (language is optional)
+    return typeof settings.theme === 'string';
+  }
+
+  function isVersionState(state: unknown): state is { count: number; version: number } {
+    if (typeof state !== 'object' || state === null) return false;
+    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+    const obj = state as Record<string, unknown>;
+    return typeof obj.count === 'number' && typeof obj.version === 'number';
+  }
+
+  function isValueState(state: unknown): state is { value: string } {
+    if (typeof state !== 'object' || state === null) return false;
+    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+    const obj = state as Record<string, unknown>;
+    return typeof obj.value === 'string';
+  }
+
   describe('merge function', () => {
     it('should call merge during hydration when persisted state exists', async () => {
       interface TestState {
@@ -49,14 +103,16 @@ describe('createBaseStore - merge functionality', () => {
         };
       }
 
-      const mergeFn = jest.fn((persistedState: unknown, currentState: TestState) => {
-        const persisted = persistedState as TestState;
+      const mergeFn = jest.fn((persistedState: unknown, currentState: TestState): TestState => {
+        if (!isTestState(persistedState)) {
+          return currentState;
+        }
         return {
           ...currentState,
-          ...persisted,
+          ...persistedState,
           nested: {
             ...currentState.nested,
-            ...persisted.nested,
+            ...persistedState.nested,
           },
         };
       });
@@ -80,7 +136,7 @@ describe('createBaseStore - merge functionality', () => {
         },
         version: 0,
       };
-      mockLocalStorage['test-store:test-store'] = JSON.stringify(persistedState);
+      mockLocalStorage['test-store'] = JSON.stringify(persistedState);
 
       // Create store and wait for hydration
       const store = createBaseStore<TestState>(createState, {
@@ -113,12 +169,14 @@ describe('createBaseStore - merge functionality', () => {
         };
       }
 
-      const mergeFn = jest.fn((persistedState: unknown, currentState: TestState) => {
-        const persisted = persistedState as TestState;
+      const mergeFn = jest.fn((persistedState: unknown, currentState: TestState): TestState => {
+        if (!isSimpleTestState(persistedState)) {
+          return currentState;
+        }
         return {
-          count: currentState.count + persisted.count,
+          count: currentState.count + persistedState.count,
           nested: {
-            value: `${currentState.nested.value}-${persisted.nested.value}`,
+            value: `${currentState.nested.value}-${persistedState.nested.value}`,
           },
         };
       });
@@ -139,7 +197,7 @@ describe('createBaseStore - merge functionality', () => {
         },
         version: 0,
       };
-      mockLocalStorage['test-store:test-store'] = JSON.stringify(persistedState);
+      mockLocalStorage['test-store'] = JSON.stringify(persistedState);
 
       const store = createBaseStore<TestState>(createState, {
         storageKey: 'test-store',
@@ -173,20 +231,27 @@ describe('createBaseStore - merge functionality', () => {
         };
       }
 
-      const mergeFn = jest.fn((persistedState: unknown, currentState: TestState) => {
-        const persisted = persistedState as TestState;
-        return {
+      const mergeFn = jest.fn((persistedState: unknown, currentState: TestState): TestState => {
+        if (!isFeatureFlagsState(persistedState)) {
+          return currentState;
+        }
+        // Perform deep merge: merge persisted state into current state
+        // Note: Order matters - later spreads override earlier ones
+        const merged = {
           ...currentState,
-          ...persisted,
+          ...persistedState,
           featureFlags: {
             ...currentState.featureFlags,
-            ...persisted.featureFlags,
+            ...persistedState.featureFlags,
+            // Deep merge settings - must come after spreading persistedState.featureFlags
+            // to override the settings from the spread
             settings: {
               ...currentState.featureFlags.settings,
-              ...persisted.featureFlags.settings,
+              ...persistedState.featureFlags.settings,
             },
           },
         };
+        return merged;
       });
 
       const createState = () => ({
@@ -210,7 +275,7 @@ describe('createBaseStore - merge functionality', () => {
         },
         version: 0,
       };
-      mockLocalStorage['test-store:test-store'] = JSON.stringify(persistedState);
+      mockLocalStorage['test-store'] = JSON.stringify(persistedState);
 
       const store = createBaseStore<TestState>(createState, {
         storageKey: 'test-store',
@@ -227,6 +292,33 @@ describe('createBaseStore - merge functionality', () => {
           });
         }
       });
+
+      expect(mergeFn).toHaveBeenCalled();
+      const [persisted, current] = mergeFn.mock.calls[mergeFn.mock.calls.length - 1];
+      // Verify merge was called with correct arguments
+      expect(persisted).toEqual({
+        featureFlags: {
+          enabled: false,
+          settings: {
+            theme: 'dark',
+          },
+        },
+      });
+      expect(current).toEqual({
+        featureFlags: {
+          enabled: true,
+          settings: {
+            theme: 'light',
+            language: 'en',
+          },
+        },
+      });
+
+      // Check what the merge function returned
+      const mergeReturnValue = mergeFn.mock.results[mergeFn.mock.results.length - 1].value;
+      expect(mergeReturnValue.featureFlags.enabled).toBe(false);
+      expect(mergeReturnValue.featureFlags.settings.theme).toBe('dark');
+      expect(mergeReturnValue.featureFlags.settings.language).toBe('en');
 
       const finalState = store.getState();
       expect(finalState.featureFlags.enabled).toBe(false); // from persisted
@@ -258,16 +350,14 @@ describe('createBaseStore - merge functionality', () => {
         },
         version: 0,
       };
-      mockLocalStorage['test-store:test-store'] = JSON.stringify(persistedState);
+      mockLocalStorage['test-store'] = JSON.stringify(persistedState);
 
       // Create store and wait for auto-hydration (with timeout fallback)
-      let store: any;
+      const store = createBaseStore<TestState>(createState, {
+        storageKey: 'test-store',
+      });
       await Promise.race([
         new Promise<void>(resolve => {
-          store = createBaseStore<TestState>(createState, {
-            storageKey: 'test-store',
-          });
-
           // Wait for hydration to complete
           if (store.persist?.hasHydrated()) {
             resolve();
@@ -280,11 +370,11 @@ describe('createBaseStore - merge functionality', () => {
         new Promise<void>(resolve => setTimeout(resolve, 100)),
       ]);
 
-      const finalState = store!.getState();
+      const finalState = store.getState();
       // Note: In node test environment, hydration might not work perfectly
       // This test primarily verifies that stores work without merge function
       // The merge functionality is tested in other tests above
-      if (store!.persist?.hasHydrated()) {
+      if (store.persist?.hasHydrated()) {
         expect(finalState.count).toBe(5);
         expect(finalState.nested.value).toBe('persisted');
       }
@@ -296,24 +386,28 @@ describe('createBaseStore - merge functionality', () => {
         version: number;
       }
 
-      const migrateFn = jest.fn((persistedState: unknown, version: number) => {
-        const state = persistedState as TestState;
+      const migrateFn = jest.fn((persistedState: unknown, version: number): TestState => {
+        if (!isVersionState(persistedState)) {
+          return { count: 0, version };
+        }
         return {
-          ...state,
+          ...persistedState,
           version,
         };
       });
 
-      const mergeFn = jest.fn((persistedState: unknown, currentState: TestState) => {
-        const persisted = persistedState as TestState;
+      const mergeFn = jest.fn((persistedState: unknown, currentState: TestState): TestState => {
+        if (!isVersionState(persistedState)) {
+          return currentState;
+        }
         // Merge receives migrated persisted state and current state
         // Preserve version from migrated persisted state
         return {
           ...currentState,
-          ...persisted,
-          count: currentState.count + persisted.count,
+          ...persistedState,
+          count: currentState.count + persistedState.count,
           // Explicitly preserve version from persisted (which should be migrated to 2)
-          version: persisted.version,
+          version: persistedState.version,
         };
       });
 
@@ -329,7 +423,7 @@ describe('createBaseStore - merge functionality', () => {
         },
         version: 1,
       };
-      mockLocalStorage['test-store:test-store'] = JSON.stringify(persistedState);
+      mockLocalStorage['test-store'] = JSON.stringify(persistedState);
 
       const store = createBaseStore<TestState>(createState, {
         storageKey: 'test-store',
@@ -370,7 +464,11 @@ describe('createBaseStore - merge functionality', () => {
         };
       });
 
-      const mergeFn = jest.fn((persistedState: unknown, currentState: TestState) => {
+      const mergeFn = jest.fn((persistedState: unknown, currentState: TestState): TestState => {
+        if (typeof persistedState !== 'object' || persistedState === null) {
+          return currentState;
+        }
+        // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
         const persisted = persistedState as Partial<TestState>;
         return {
           ...currentState,
@@ -417,9 +515,11 @@ describe('createBaseStore - merge functionality', () => {
       }
 
       const mergeFn = jest.fn((persistedState: unknown, currentState: TestState): TestState => {
-        const persisted = persistedState as TestState;
+        if (!isValueState(persistedState)) {
+          return currentState;
+        }
         return {
-          value: `${currentState.value}-${persisted.value}`,
+          value: `${currentState.value}-${persistedState.value}`,
         };
       });
 
@@ -433,7 +533,7 @@ describe('createBaseStore - merge functionality', () => {
         },
         version: 0,
       };
-      mockLocalStorage['test-store:test-store'] = JSON.stringify(persistedState);
+      mockLocalStorage['test-store'] = JSON.stringify(persistedState);
 
       const store = createBaseStore<TestState>(createState, {
         storageKey: 'test-store',
