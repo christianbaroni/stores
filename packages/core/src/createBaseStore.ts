@@ -103,6 +103,7 @@ export function createBaseStore<S, PersistedState extends Partial<S>, PersistRet
   const store = createWithEqualityFn<S>()(
     subscribeWithSelector(
       persist(finalStateCreator, {
+        merge: options.merge,
         migrate: options.migrate,
         name: options.storageKey,
         onRehydrateStorage: wrappedOnRehydrateStorage,
