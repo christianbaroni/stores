@@ -5,7 +5,6 @@ import {
   EqualityFn,
   InferStoreState,
   OptionallyPersistedStore,
-  PersistedStore,
   Selector,
   SubscribeArgs,
   UnsubscribeFn,
@@ -53,31 +52,37 @@ type VirtualStoreOptions = {
  * ```
  */
 export function createVirtualStore<
-  Store extends OptionallyPersistedStore<InferStoreState<Store>, PersistedState>,
+  Store extends OptionallyPersistedStore<InferStoreState<Store>, PersistedState, PersistReturn>,
   PersistedState extends Partial<InferStoreState<Store>>,
->(createStore: ($: DeriveGetter) => Store, options?: VirtualStoreOptions): OptionallyPersistedStore<InferStoreState<Store>, PersistedState>;
+  PersistReturn = void,
+>(
+  createStore: ($: DeriveGetter) => Store,
+  options?: VirtualStoreOptions
+): OptionallyPersistedStore<InferStoreState<Store>, PersistedState, PersistReturn>;
 
 export function createVirtualStore<
-  Store extends OptionallyPersistedStore<InferStoreState<Store>, PersistedState>,
+  Store extends OptionallyPersistedStore<InferStoreState<Store>, PersistedState, PersistReturn>,
   PersistedState extends Partial<InferStoreState<Store>>,
-  Overrides extends MethodOverrides<Store>,
+  PersistReturn = void,
+  Overrides extends MethodOverrides<Store> = Record<string, never>,
 >(
   createStore: ($: DeriveGetter) => Store,
   overrides: (getStore: () => Store) => Overrides,
   options?: VirtualStoreOptions
-): OptionallyPersistedStore<InferStoreState<Store>, PersistedState> & Overrides;
+): OptionallyPersistedStore<InferStoreState<Store>, PersistedState, PersistReturn> & Overrides;
 
 export function createVirtualStore<
-  Store extends OptionallyPersistedStore<InferStoreState<Store>, PersistedState>,
+  Store extends OptionallyPersistedStore<InferStoreState<Store>, PersistedState, PersistReturn>,
   PersistedState extends Partial<InferStoreState<Store>>,
+  PersistReturn = void,
   Overrides extends MethodOverrides<Store> = Record<string, never>,
 >(
   createStore: ($: DeriveGetter) => Store,
   overridesOrOptions?: VirtualStoreOptions | ((getStore: () => Store) => Overrides),
   options?: VirtualStoreOptions
 ):
-  | OptionallyPersistedStore<InferStoreState<Store>, PersistedState>
-  | (OptionallyPersistedStore<InferStoreState<Store>, PersistedState> & Overrides) {
+  | OptionallyPersistedStore<InferStoreState<Store>, PersistedState, PersistReturn>
+  | (OptionallyPersistedStore<InferStoreState<Store>, PersistedState, PersistReturn> & Overrides) {
   type State = InferStoreState<Store>;
   type Subscription = PortableSubscription<Store, State>;
 
@@ -159,7 +164,18 @@ export function createVirtualStore<
     return selector ? store(selector, equalityFn) : store();
   }
 
-  const persist = buildPersistObject<Store, PersistedState>(() => useCachedStore.getState());
+  const persist = buildPersistObject<Store, PersistedState, PersistReturn>(() => useCachedStore.getState());
+
+  // Create setState wrapper that preserves the return type
+  // We need to call getCurrentStore() each time because the underlying store can change
+  const getCurrentStore = () => useCachedStore.getState();
+  const virtualSetState = ((update: Parameters<Store['setState']>[0], replace?: boolean) => {
+    const store = getCurrentStore();
+    if (!replace) {
+      return store.setState(update);
+    }
+    return store.setState(update, replace);
+  }) satisfies Store['setState'];
 
   const virtualStore = Object.assign(
     useVirtualStore,
@@ -169,7 +185,7 @@ export function createVirtualStore<
       getInitialState: () => useCachedStore.getState().getInitialState(),
       getState: () => useCachedStore.getState().getState(),
       persist,
-      setState: createSetState(useCachedStore.getState),
+      setState: virtualSetState,
       subscribe: portableSubscribe,
     },
     parsedOverrides ? parsedOverrides(useCachedStore.getState) : undefined
@@ -178,31 +194,11 @@ export function createVirtualStore<
   return virtualStore;
 }
 
-function buildPersistObject<Store extends OptionallyPersistedStore<State, PersistedState>, PersistedState, State = InferStoreState<Store>>(
-  getStore: () => Store
-): PersistedStore<State, PersistedState>['persist'] {
-  return {
-    clearStorage: () => getStore().persist?.clearStorage(),
-    getOptions: () => getStore().persist?.getOptions() ?? {},
-    hasHydrated: () => getStore().persist?.hasHydrated() ?? false,
-    onFinishHydration: fn =>
-      getStore().persist?.onFinishHydration(fn) ??
-      (() => {
-        return;
-      }),
-    onHydrate: fn =>
-      getStore().persist?.onHydrate(fn) ??
-      (() => {
-        return;
-      }),
-    rehydrate: () => getStore().persist?.rehydrate(),
-    setOptions: options => getStore().persist?.setOptions(options),
-  };
-}
-
-function createSetState<Store extends BaseStore<State>, State = InferStoreState<Store>>(getStore: () => Store): Store['setState'] {
-  return function setState(update: Parameters<Store['setState']>[0], replace?: boolean): void {
-    if (!replace) getStore().setState(update);
-    else getStore().setState(update, replace);
-  };
+function buildPersistObject<
+  Store extends OptionallyPersistedStore<State, PersistedState, PersistReturn>,
+  PersistedState,
+  PersistReturn,
+  State = InferStoreState<Store>,
+>(getStore: () => Store): OptionallyPersistedStore<State, PersistedState, PersistReturn>['persist'] {
+  return getStore().persist;
 }
