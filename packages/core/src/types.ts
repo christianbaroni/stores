@@ -280,6 +280,12 @@ export type PersistConfig<S, PersistedState = Partial<S>, PersistReturn = void> 
   deserializer?: (serializedState: string) => StorageValue<PersistedState>;
 
   /**
+   * A function to merge persisted state with current state during hydration.
+   * By default, zustand does a shallow merge, but this allows custom logic for deep merging nested objects.
+   */
+  merge?: PersistOptions<S, PersistedState>['merge'];
+
+  /**
    * A function to perform persisted state migration.
    * This function will be called when persisted state versions mismatch with the one specified here.
    */
