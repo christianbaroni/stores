@@ -4,7 +4,7 @@
 
 import { createQueryStore, getQueryKey } from '../../createQueryStore';
 import { QueryStatuses } from '../../queryStore/types';
-import { time } from '../../utils/time';
+import { time, waitForMicrotask } from '../../utils/time';
 
 // For these tests we use a simple type for the fetched data and query parameters.
 type TestData = string;
@@ -571,6 +571,87 @@ describe('createQueryStore', () => {
       // Since getQueryKey sorts keys and then returns the JSON string of the values,
       // the expected output is the JSON string for the object { a: 1, b: 2 }.
       expect(key).toBe(JSON.stringify({ a: 1, b: 2 }));
+    });
+  });
+
+  // ──────────────────────────────────────────────
+  // Async Storage Support
+  // ──────────────────────────────────────────────
+  describe('Async Storage Support', () => {
+    it('should support async storage with Promise<void> return type for setState', async () => {
+      const mockStorage: Record<string, string> = {};
+
+      const mockAsyncStorage: {
+        async: true;
+        clearAll: jest.Mock<Promise<void>, []>;
+        contains: jest.Mock<Promise<boolean>, [string]>;
+        delete: jest.Mock<Promise<void>, [string]>;
+        getAllKeys: jest.Mock<Promise<string[]>, []>;
+        getString: jest.Mock<Promise<string | undefined>, [string]>;
+        set: jest.Mock<Promise<void>, [string, string]>;
+      } = {
+        async: true,
+        clearAll: jest.fn(async () => {
+          return;
+        }),
+        contains: jest.fn(async (key: string) => {
+          return key in mockStorage;
+        }),
+        delete: jest.fn(async (key: string) => {
+          delete mockStorage[key];
+        }),
+        getAllKeys: jest.fn(async () => {
+          return Object.keys(mockStorage);
+        }),
+        getString: jest.fn(async (key: string) => {
+          return mockStorage[key];
+        }),
+        set: jest.fn(async (key: string, value: string) => {
+          mockStorage[key] = value;
+        }),
+      };
+
+      const fetcher = jest.fn(async (params: TestParams) => {
+        return `data-${params.id}`;
+      });
+
+      const store = createQueryStore<TestData, TestParams>(
+        {
+          fetcher,
+          params: { id: 1 },
+        },
+        {
+          storageKey: 'async-query-store',
+          storage: mockAsyncStorage,
+        }
+      );
+
+      // Wait for hydration to complete before testing setState
+      if (store.persist && !store.persist.hasHydrated()) {
+        await new Promise<void>(resolve => {
+          store.persist?.onFinishHydration(() => {
+            resolve();
+          });
+        });
+      }
+
+      // Verify setState returns Promise<void> for async storage
+      const setStateResult = store.setState({ enabled: false });
+      expect(setStateResult).toBeInstanceOf(Promise);
+      await setStateResult;
+
+      // Allow persistence to complete (async storage uses microtask scheduler)
+      await waitForMicrotask();
+
+      // Verify setState was called and storage.set was called
+      expect(mockAsyncStorage.set).toHaveBeenCalled();
+
+      // Test that persistence works
+      await store.setState({ enabled: true });
+      await waitForMicrotask(); // Allow persistence to complete
+
+      // Verify storage was called at least 2 times (may be more due to hydration or initial state)
+      expect(mockAsyncStorage.set.mock.calls.length).toBeGreaterThanOrEqual(2);
     });
   });
 });
