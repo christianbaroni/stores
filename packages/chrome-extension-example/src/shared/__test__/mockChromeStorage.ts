@@ -1,5 +1,7 @@
 /// <reference types="chrome" />
 
+import { deepEqual, isPlainObject } from 'stores';
+
 /**
  * Mock implementation of Chrome Storage API
  * Simulates a single shared storage area that can be used across multiple "processes"
@@ -41,11 +43,14 @@ class MockStorageArea {
     callback: (() => void) | undefined,
     resolve: () => void
   ): void {
+    const hasChanges = Object.keys(changes).length > 0;
     // Notify listeners and resolve asynchronously
     queueMicrotask(() => {
-      this.listeners.forEach(listener => {
-        listener(changes, this.areaName);
-      });
+      if (hasChanges) {
+        this.listeners.forEach(listener => {
+          listener(changes, this.areaName);
+        });
+      }
       callback?.();
       resolve();
     });
@@ -92,13 +97,22 @@ class MockStorageArea {
       const changes: Record<string, chrome.storage.StorageChange> = {};
 
       for (const [key, newValue] of Object.entries(items)) {
-        const oldValue = this.data[key];
-        this.data[key] = newValue;
+        const hasExistingValue = Object.prototype.hasOwnProperty.call(this.data, key);
+        const currentValue = this.data[key];
 
-        changes[key] = {
-          oldValue,
-          newValue,
-        };
+        if (hasExistingValue && deepEqual(currentValue, newValue)) {
+          continue;
+        }
+
+        const storedValue = cloneStorageValue(newValue);
+        this.data[key] = storedValue;
+
+        const change: chrome.storage.StorageChange = {};
+        if (hasExistingValue) {
+          change.oldValue = cloneStorageValue(currentValue);
+        }
+        change.newValue = cloneStorageValue(storedValue);
+        changes[key] = change;
       }
 
       this.notifyAndResolve(changes, callback, resolve);
@@ -111,11 +125,10 @@ class MockStorageArea {
       const changes: Record<string, chrome.storage.StorageChange> = {};
 
       for (const key of keysArray) {
-        if (key in this.data) {
-          changes[key] = {
-            oldValue: this.data[key],
-            newValue: undefined,
-          };
+        if (Object.prototype.hasOwnProperty.call(this.data, key)) {
+          const change: chrome.storage.StorageChange = {};
+          change.oldValue = cloneStorageValue(this.data[key]);
+          changes[key] = change;
           delete this.data[key];
         }
       }
@@ -129,10 +142,9 @@ class MockStorageArea {
       const changes: Record<string, chrome.storage.StorageChange> = {};
 
       for (const [key, oldValue] of Object.entries(this.data)) {
-        changes[key] = {
-          oldValue,
-          newValue: undefined,
-        };
+        const change: chrome.storage.StorageChange = {};
+        change.oldValue = cloneStorageValue(oldValue);
+        changes[key] = change;
       }
 
       this.data = {};
@@ -271,4 +283,18 @@ export function setupMockChrome(storage: MockChromeStorage): void {
 
 export function cleanupMockChrome(): void {
   Reflect.deleteProperty(globalThis, 'chrome');
+}
+
+function cloneStorageValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(item => cloneStorageValue(item));
+  }
+  if (isPlainObject(value)) {
+    const cloned: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value)) {
+      cloned[key] = cloneStorageValue(item);
+    }
+    return cloned;
+  }
+  return value;
 }

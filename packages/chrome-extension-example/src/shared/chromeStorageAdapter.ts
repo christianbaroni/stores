@@ -1,4 +1,4 @@
-import type { AsyncStorageInterface } from 'stores';
+import { AsyncStorageInterface, StorageValue, replacer, reviver } from 'stores';
 
 export const CHROME_STORAGE_NAMESPACE = 'stores/chrome-storage';
 const ENABLE_LOGS = false;
@@ -10,10 +10,15 @@ export type ChromeStorageAdapterOptions = {
   namespace?: string;
 };
 
+export type ChromeStorageValue<PersistedState = unknown> = StorageValue<PersistedState>;
+
 export class ChromeStorageAdapter implements AsyncStorageInterface {
   readonly area: 'local' | 'session' | 'sync' | 'managed';
-  readonly async = true;
   readonly namespace: string;
+
+  readonly async = true;
+  readonly deserializer = deserializeChromeStorageValue;
+  readonly serializer = serializeChromeStorageValue;
 
   constructor(options?: ChromeStorageAdapterOptions) {
     this.area = options?.area ?? 'local';
@@ -54,19 +59,18 @@ export class ChromeStorageAdapter implements AsyncStorageInterface {
       .map(key => key.slice(prefix.length));
   }
 
-  async getString(key: string): Promise<string | undefined> {
+  async get(key: string): Promise<unknown> {
     const storage = this.ensureStorage();
     if (!storage) return undefined;
     const storageKey = this.toStorageKey(key);
     const result = await this.getFromStorage(storage, storageKey);
     const value = result[storageKey];
-    const hasValue = typeof value === 'string';
-    if (ENABLE_LOGS)
-      console.log(`[ChromeStorageAdapter] getString("${key}"): ${hasValue ? 'FOUND' : 'NOT FOUND'}`, hasValue ? JSON.parse(value) : null);
-    return hasValue ? value : undefined;
+    if (!isChromeStorageValue(value)) return undefined;
+    if (ENABLE_LOGS) console.log(`[ChromeStorageAdapter] get("${key}"): FOUND`, value);
+    return value;
   }
 
-  async set(key: string, value: string): Promise<void> {
+  async set(key: string, value: unknown): Promise<void> {
     if (ENABLE_LOGS) console.log('[💾 storage.set 💾] Persisting value for key:', key);
     const storage = this.ensureStorage();
     if (!storage) return;
@@ -134,4 +138,57 @@ function getChromeStorageArea(area: AreaName): chrome.storage.StorageArea | null
 function getRuntimeError(): Error | null {
   if (typeof chrome === 'undefined' || !chrome.runtime || !chrome.runtime.lastError) return null;
   return new Error(chrome.runtime.lastError.message);
+}
+
+export function serializeChromeStorageValue<PersistedState>(storageValue: StorageValue<PersistedState>): unknown {
+  return {
+    state: applyReplacerToState(storageValue.state),
+    syncMetadata: storageValue.syncMetadata,
+    version: storageValue.version,
+  };
+}
+
+export function deserializeChromeStorageValue<PersistedState>(serializedState: unknown): StorageValue<PersistedState> {
+  if (!isChromeStorageValue(serializedState)) {
+    throw new Error('[ChromeStorageAdapter] Invalid serialized state format');
+  }
+  return {
+    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+    state: applyReviverToState(serializedState.state) as PersistedState,
+    syncMetadata: serializedState.syncMetadata,
+    version: serializedState.version,
+  };
+}
+
+function isChromeStorageValue(value: unknown): value is StorageValue<unknown> {
+  if (!value || typeof value !== 'object') return false;
+  return Object.prototype.hasOwnProperty.call(value, 'state');
+}
+
+function applyReplacerToState(value: unknown, replacerFn = replacer): unknown {
+  if (value instanceof Map || value instanceof Set) return replacerFn.call(undefined, '', value);
+  if (!isPlainObject(value)) return value;
+  const result: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(value)) {
+    result[key] = replacerFn.call(value, key, child);
+  }
+  return result;
+}
+
+function applyReviverToState(value: unknown, reviverFn = reviver): unknown {
+  const revivedRoot = reviverFn.call(undefined, '', value);
+  if (!isPlainObject(revivedRoot)) return revivedRoot;
+  const result: Record<string, unknown> = {};
+  for (const entry of Object.entries(revivedRoot)) {
+    const key = entry[0];
+    const child = entry[1];
+    result[key] = reviverFn.call(revivedRoot, key, child);
+  }
+  return result;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== 'object' || value === null) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
 }

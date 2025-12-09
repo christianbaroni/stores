@@ -1,5 +1,5 @@
-import { ChromeExtensionSyncEngine } from '../../../shared/chromeExtensionSyncEngine';
-import { ChromeStorageAdapter } from '../../../shared/chromeStorageAdapter';
+import { ChromeExtensionSyncEngine } from './chromeExtensionSyncEngine';
+import { ChromeStorageAdapter } from './chromeStorageAdapter';
 
 /**
  * Creates a synced Chrome storage engine for extension environments.

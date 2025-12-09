@@ -1,6 +1,5 @@
 import { createBaseStore, time } from 'stores';
-import { ChromeExtensionSyncEngine } from '../../../shared/chromeExtensionSyncEngine';
-import { ChromeStorageAdapter } from '../../../shared/chromeStorageAdapter';
+import { createSyncedChromeStorage } from '../../../shared/createSyncedStorage';
 
 export type MissionTheme = 'solstice' | 'midnight' | 'aurora';
 export type PulseStatus = 'nominal' | 'elevated' | 'critical';
@@ -78,8 +77,7 @@ export function getTimelineTone(value: FormDataEntryValue | null): TimelineTone 
 const MAX_TIMELINE_ITEMS = 12;
 const PRESENCE_TTL_MS = time.seconds(2);
 
-const storage = new ChromeStorageAdapter();
-const syncEngine = new ChromeExtensionSyncEngine({ storage });
+const { storage, syncEngine } = createSyncedChromeStorage();
 
 export const useMissionControlStore = createBaseStore<MissionControlState>(
   set => ({

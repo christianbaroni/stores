@@ -1,5 +1,11 @@
 import { StorageValue, SyncEngine, SyncHandle, SyncRegistration, SyncValues } from 'stores';
-import { AreaName, CHROME_STORAGE_NAMESPACE, ChromeStorageAdapter } from './chromeStorageAdapter';
+import {
+  AreaName,
+  CHROME_STORAGE_NAMESPACE,
+  ChromeStorageAdapter,
+  ChromeStorageValue,
+  deserializeChromeStorageValue,
+} from './chromeStorageAdapter';
 
 const ENABLE_LOGS = false;
 const ENABLE_METADATA_LOGS = false;
@@ -81,10 +87,7 @@ export class ChromeExtensionSyncEngine implements SyncEngine {
        *
        * Therefore, publish is a no-op - broadcasts happen automatically via storage events.
        */
-      publish: () => {
-        // No-op: Broadcasting happens automatically via chrome.storage.onChanged
-        // when persist middleware writes to storage with injectStorageMetadata: true
-      },
+      publish: null,
     };
   }
 
@@ -110,7 +113,7 @@ export class ChromeExtensionSyncEngine implements SyncEngine {
       if (container.destroyed) continue;
 
       const change = changes[this.toStorageKey(storeKey)];
-      if (!change || !change.newValue) continue;
+      if (!change || change.newValue === undefined) continue;
 
       try {
         const persistValue = this.parsePersistValue(change.newValue);
@@ -150,7 +153,7 @@ export class ChromeExtensionSyncEngine implements SyncEngine {
   private extractChangedFields(
     container: RegistrationContainer,
     incomingState: Record<string, unknown>,
-    metadata: StorageValue<Record<string, unknown>>['syncMetadata'] | undefined,
+    metadata: ChromeStorageValue['syncMetadata'] | undefined,
     oldValue: unknown
   ): SyncValues<Record<string, unknown>> {
     const values: SyncValues<Record<string, unknown>> = Object.create(null);
@@ -174,7 +177,7 @@ export class ChromeExtensionSyncEngine implements SyncEngine {
 
     // Fallback to state diff if no field metadata available
     if (ENABLE_METADATA_LOGS) console.log('[🟡 SyncEngine 🟡] No field metadata available — falling back to full state diff');
-    const oldPersistValue = this.parsePersistValue(oldValue);
+    const oldPersistValue = this.parsePersistValue<Record<string, unknown>>(oldValue);
 
     for (const field of container.registration.fields) {
       const newVal = incomingState[field];
@@ -193,19 +196,7 @@ export class ChromeExtensionSyncEngine implements SyncEngine {
     return `${this.namespacePrefix()}${key}`;
   }
 
-  private parsePersistValue(value: unknown): {
-    state: Record<string, unknown>;
-    version?: number;
-    syncMetadata?: { origin?: string; timestamp?: number; fields?: Record<string, number> };
-  } | null {
-    if (!value || typeof value !== 'string') return null;
-    try {
-      const parsed = JSON.parse(value);
-      if (!parsed || typeof parsed !== 'object') return null;
-      if (!parsed.state || typeof parsed.state !== 'object') return null;
-      return parsed;
-    } catch {
-      return null;
-    }
+  private parsePersistValue<T extends Record<string, unknown>>(value: unknown): StorageValue<T> | null {
+    return deserializeChromeStorageValue<T>(value);
   }
 }

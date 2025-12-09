@@ -1,5 +1,5 @@
 import { createBaseStore, createStoreActions, time } from 'stores';
-import { createSyncedChromeStorage } from './createSyncedStorage';
+import { createSyncedChromeStorage } from '../../../shared/createSyncedStorage';
 
 // ============ Types ======================================================== //
 
