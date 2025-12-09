@@ -15,6 +15,7 @@ Thumbs.db
 # Editor
 .idea/
 .vscode/
+.claude/
 *.swp
 
 # Build output
@@ -51,9 +52,14 @@ Icon?
 # Temporary files
 *.tmp
 *.temp
+tmp/
 
 # Lint cache
 .eslintcache
 
 # Storybook
-storybook-static/ 
+storybook-static/
+
+# Temporary build files
+packages/core/src/env.ts
+packages/core/src/storesStorage.ts

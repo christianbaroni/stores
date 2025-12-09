@@ -1051,14 +1051,14 @@ describe('createDerivedStore', () => {
       const base1 = createBaseStore(() => ({ val: 1 }));
       const base2 = createBaseStore(() => ({ val: 10 }));
 
-      const deriveCounts = {
-        left: 0,
-        right: 0,
-        leftMid: 0,
-        rightMid: 0,
-        merged: 0,
+      const deriveCounts: Record<string, number> = {
         final: 0,
-      };
+        left: 0,
+        leftMid: 0,
+        merged: 0,
+        right: 0,
+        rightMid: 0,
+      } satisfies Record<'final' | 'left' | 'leftMid' | 'merged' | 'right' | 'rightMid', number>;
 
       // Layer 1: Both depend on both bases (diamond pattern)
       const useLeft = createDerivedStore($ => {
@@ -1129,7 +1129,7 @@ describe('createDerivedStore', () => {
 
       // Reset counters to measure next update
       Object.keys(deriveCounts).forEach(key => {
-        deriveCounts[key as keyof typeof deriveCounts] = 0;
+        deriveCounts[key] = 0;
       });
 
       // Update base1 => triggers cascade
@@ -1175,7 +1175,7 @@ describe('createDerivedStore', () => {
 
       // Reset counters again
       Object.keys(deriveCounts).forEach(key => {
-        deriveCounts[key as keyof typeof deriveCounts] = 0;
+        deriveCounts[key] = 0;
       });
 
       // Update BOTH bases simultaneously => cascade batches everything

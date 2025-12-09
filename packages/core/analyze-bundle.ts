@@ -1,12 +1,31 @@
 import * as esbuild from 'esbuild';
 import * as fs from 'fs';
+import * as zlib from 'zlib';
+import { promisify } from 'util';
+
+const gzip = promisify(zlib.gzip);
 
 type ModuleStats = {
   [key: string]: number;
 };
 
+function formatSize(bytes: number): string {
+  return `${(bytes / 1024).toFixed(2)} KB`;
+}
+
+async function getGzipSize(filePath: string): Promise<number> {
+  const content = fs.readFileSync(filePath);
+  const compressed = await gzip(content);
+  return compressed.length;
+}
+
 async function analyzeBundle(): Promise<void> {
   console.log('🔍 Analyzing bundle composition...\n');
+
+  // Ensure tmp directory exists
+  if (!fs.existsSync('tmp')) {
+    fs.mkdirSync('tmp', { recursive: true });
+  }
 
   const result = await esbuild.build({
     entryPoints: ['src/index.ts'],
@@ -14,7 +33,7 @@ async function analyzeBundle(): Promise<void> {
     format: 'esm',
     platform: 'browser',
     metafile: true,
-    outfile: 'dist/analyze.js',
+    outfile: 'tmp/analyze.js',
     external: ['react', 'react-native', 'react-native-mmkv'],
     write: false,
     minify: false,
@@ -53,25 +72,44 @@ async function analyzeBundle(): Promise<void> {
   }
 
   console.log('📦 MODULE SIZES (unminified):');
-  console.log('==============================');
+  console.log('============================');
   const sortedModules = Object.entries(moduleStats).sort((a, b) => b[1] - a[1]);
   for (const [module, bytes] of sortedModules) {
-    console.log(`${module}: ${(bytes / 1024).toFixed(2)} KB`);
+    console.log(`${module}: ${formatSize(bytes)}`);
   }
 
   console.log('\n📁 LOCAL CODE BREAKDOWN:');
-  console.log('========================');
+  console.log('=======================');
   const sortedLocal = Object.entries(inputStats).sort((a, b) => b[1] - a[1]);
   for (const [category, bytes] of sortedLocal) {
-    console.log(`${category}: ${(bytes / 1024).toFixed(2)} KB`);
+    console.log(`${category}: ${formatSize(bytes)}`);
   }
 
-  console.log('\n📊 TOTAL BUNDLE SIZE:');
-  console.log('====================');
-  console.log(`Unminified: ${(output.bytes / 1024).toFixed(2)} KB`);
+  console.log('\n📊 BUNDLE SIZE ANALYSIS:');
+  console.log('=======================');
+  console.log(`Unminified: ${formatSize(output.bytes)}`);
 
-  fs.writeFileSync('dist/bundle-analysis.json', JSON.stringify(meta, null, 2));
-  console.log('\nAnalysis saved to dist/bundle-analysis.json');
+  // Analyze production builds
+  const builds = [
+    { name: 'Web (ESM)', path: 'dist/web/index.mjs' },
+    { name: 'Web (CJS)', path: 'dist/web/index.js' },
+    { name: 'Native (ESM)', path: 'dist/native/index.mjs' },
+    { name: 'Native (CJS)', path: 'dist/native/index.js' },
+  ];
+
+  console.log('\n💾 PRODUCTION BUILDS [ALL EXPORTS]:');
+  console.log('==================================');
+
+  for (const build of builds) {
+    if (fs.existsSync(build.path)) {
+      const stats = fs.statSync(build.path);
+      const gzipSize = await getGzipSize(build.path);
+      console.log(`${build.name.padEnd(15)} Minified: ${formatSize(stats.size).padEnd(10)} Gzipped: ${formatSize(gzipSize)}`);
+    }
+  }
+
+  fs.writeFileSync('tmp/bundle-analysis.json', JSON.stringify(meta, null, 2));
+  console.log('\n✅ Analysis saved to tmp/bundle-analysis.json');
 }
 
 analyzeBundle().catch(console.error);

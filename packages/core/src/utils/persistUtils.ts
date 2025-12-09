@@ -1,5 +1,6 @@
-import { StorageValue } from 'zustand/middleware';
 import { StoresError, logger } from '../logger';
+import { StorageValue } from '../storage/storageTypes';
+import { replacer, reviver } from './serialization';
 
 /**
  * Default partialize function if none is provided. It omits top-level store
@@ -13,18 +14,16 @@ export function omitStoreMethods<S, PersistedState extends Partial<S>>(state: S)
         result[key] = val;
       }
     }
+    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
     return result as PersistedState;
   }
+  // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
   return state as unknown as PersistedState;
 }
 
-export function defaultSerializeState<PersistedState>(
-  state: StorageValue<PersistedState>['state'],
-  version: StorageValue<PersistedState>['version'],
-  shouldUseReplacer: boolean
-): string {
+export function defaultSerializeState<PersistedState>(storageValue: StorageValue<PersistedState>, shouldUseReplacer: boolean): string {
   try {
-    return JSON.stringify({ state, version }, shouldUseReplacer ? replacer : undefined);
+    return JSON.stringify(storageValue, shouldUseReplacer ? replacer : undefined);
   } catch (error) {
     logger.error(new StoresError(`[createBaseStore]: Failed to serialize Rainbow store data`), { error });
     throw error;
@@ -38,38 +37,4 @@ export function defaultDeserializeState<PersistedState>(serializedState: string,
     logger.error(new StoresError(`[createBaseStore]: Failed to deserialize persisted Rainbow store data`), { error });
     throw error;
   }
-}
-
-type SerializedMap = {
-  __type: 'Map';
-  entries: [unknown, unknown][];
-};
-
-export function isSerializedMap(value: unknown): value is SerializedMap {
-  return typeof value === 'object' && value !== null && (value as Record<string, unknown>).__type === 'Map';
-}
-
-type SerializedSet = {
-  __type: 'Set';
-  values: unknown[];
-};
-
-export function isSerializedSet(value: unknown): value is SerializedSet {
-  return typeof value === 'object' && value !== null && (value as Record<string, unknown>).__type === 'Set';
-}
-
-export function replacer(_: string, value: unknown): unknown {
-  if (value instanceof Map) {
-    return { __type: 'Map', entries: Array.from(value.entries()) };
-  }
-  if (value instanceof Set) {
-    return { __type: 'Set', values: Array.from(value) };
-  }
-  return value;
-}
-
-export function reviver(_: string, value: unknown): unknown {
-  if (isSerializedMap(value)) return new Map(value.entries);
-  if (isSerializedSet(value)) return new Set(value.values);
-  return value;
 }

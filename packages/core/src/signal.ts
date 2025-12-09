@@ -1,4 +1,5 @@
-import { StoreApi } from 'zustand';
+/* eslint-disable @typescript-eslint/consistent-type-assertions */
+import { BaseStore, UnsubscribeFn } from './types';
 import { dequal } from './utils/equality';
 import { hasGetSnapshot } from './utils/storeUtils';
 
@@ -9,7 +10,7 @@ export const attachValueSubscriptionMap = new WeakMap<AttachValue<unknown>, Subs
 
 /* Global caching for top-level attachValues */
 const storeSignalCache = new WeakMap<
-  StoreApi<unknown>,
+  BaseStore<unknown>,
   Map<(state: unknown) => unknown, Map<(a: unknown, b: unknown) => boolean, AttachValue<unknown>>>
 >();
 
@@ -20,19 +21,18 @@ export type AttachValue<T> = {
 } & NestedAttachValue<T>;
 
 export type SignalFunction = {
-  <T>(store: StoreApi<T>): AttachValue<T>;
-  <T, S>(store: StoreApi<T>, selector: (state: T) => S, equalityFn?: (a: S, b: S) => boolean): AttachValue<S>;
+  <T>(store: BaseStore<T>): AttachValue<T>;
+  <T, S>(store: BaseStore<T>, selector: (state: T) => S, equalityFn?: (a: S, b: S) => boolean): AttachValue<S>;
 };
 
-export type Unsubscribe = () => void;
-export type Subscribe = (callback: () => void) => Unsubscribe;
+export type Subscribe = (callback: () => void) => UnsubscribeFn;
 export type GetValue = () => unknown;
 export type SetValue = (path: unknown[], value: unknown) => void;
 
-export function $<T>(store: StoreApi<T>): AttachValue<T>;
-export function $<T, S>(store: StoreApi<T>, selector: (state: T) => S, equalityFn?: (a: S, b: S) => boolean): AttachValue<S>;
+export function $<T>(store: BaseStore<T>): AttachValue<T>;
+export function $<T, S>(store: BaseStore<T>, selector: (state: T) => S, equalityFn?: (a: S, b: S) => boolean): AttachValue<S>;
 export function $(
-  store: StoreApi<unknown>,
+  store: BaseStore<unknown>,
   selector: (state: unknown) => unknown = identity,
   equalityFn: (a: unknown, b: unknown) => boolean = dequal
 ) {
@@ -57,25 +57,30 @@ const updateValue = <T>(obj: T, path: unknown[], value: unknown): T => {
 };
 
 export const createSignal = <T, S>(
-  store: StoreApi<T>,
+  store: BaseStore<T>,
   selector: (state: T) => S,
   equalityFn: (a: S, b: S) => boolean
 ): [Subscribe, GetValue, SetValue] => {
   const listeners = new Set<() => void>();
-  let selected = selector(hasGetSnapshot(store) ? store.getSnapshot() : store.getState());
-  let unsubscribe: Unsubscribe | undefined;
+  const isDerivedStore = hasGetSnapshot(store);
+
+  let selected = selector(isDerivedStore ? store.getSnapshot() : store.getState());
+  let unsubscribe: UnsubscribeFn | undefined;
 
   const sub: Subscribe = callback => {
     if (!listeners.size) {
-      unsubscribe = store.subscribe(() => {
-        const nextSelected = selector(store.getState());
-        if (!equalityFn(selected, nextSelected)) {
-          selected = nextSelected;
-          for (const listener of listeners) listener();
-        }
-      });
+      unsubscribe = store.subscribe(
+        selector,
+        next => {
+          selected = next;
+          listeners.forEach(listener => listener());
+        },
+        { equalityFn, isDerivedStore }
+      );
     }
+
     listeners.add(callback);
+
     return () => {
       listeners.delete(callback);
       if (!listeners.size && unsubscribe) {
@@ -102,7 +107,7 @@ export const createSignal = <T, S>(
   return [sub, get, set];
 };
 
-function getOrCreateAttachValue<T, S>(store: StoreApi<T>, selector: (state: T) => S, equalityFn: (a: S, b: S) => boolean): AttachValue<S> {
+function getOrCreateAttachValue<T, S>(store: BaseStore<T>, selector: (state: T) => S, equalityFn: (a: S, b: S) => boolean): AttachValue<S> {
   let bySelector = storeSignalCache.get(store);
   if (!bySelector) {
     bySelector = new Map();

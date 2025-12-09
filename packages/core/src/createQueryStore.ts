@@ -1,5 +1,3 @@
-import { subscribeWithSelector } from 'zustand/middleware';
-import { createWithEqualityFn } from 'zustand/traditional';
 import { createBaseStore } from './createBaseStore';
 import { IS_DEV, IS_TEST } from '@env';
 import { StoresError, ensureError, logger } from './logger';
@@ -16,9 +14,10 @@ import {
   ResolvedParamsResult,
   QueryStatusInfo,
 } from './queryStore/types';
-import { $, AttachValue, SignalFunction, Unsubscribe, attachValueSubscriptionMap } from './signal';
+import { $, AttachValue, SignalFunction, attachValueSubscriptionMap } from './signal';
 import {
   BaseStore,
+  BaseStoreOptions,
   OptionallyPersistedStore,
   PersistConfig,
   PersistedStore,
@@ -27,12 +26,14 @@ import {
   SubscribeArgs,
   SubscribeOverloads,
   Timeout,
+  UnsubscribeFn,
 } from './types';
 import { createMicrotaskScheduler } from './utils/createMicrotaskScheduler';
 import { debounce } from './utils/debounce';
 import { dequal } from './utils/equality';
 import { omitStoreMethods } from './utils/persistUtils';
 import { time } from './utils/time';
+import { markStoreCreated } from './config';
 
 const [persist, discard] = [true, false];
 
@@ -61,7 +62,7 @@ const SHOULD_PERSIST_INTERNAL_STATE_MAP: Record<string, boolean> = {
 const MIN_STALE_TIME = time.seconds(5);
 
 /**
- * Creates a persisted, query-enabled store with data fetching capabilities.
+ * Creates a persisted, query-enabled store with data fetching capabilities (sync storage).
  *
  * @template TQueryFnData - The raw data type returned by the fetcher
  * @template TParams - Parameters passed to the fetcher function
@@ -73,13 +74,33 @@ export function createQueryStore<
   TParams extends Record<string, unknown> = Record<string, never>,
   TData = TQueryFnData,
   PersistedState extends Partial<QueryStoreState<TData, TParams>> = Partial<QueryStoreState<TData, TParams>>,
+  PersistReturn extends void = void,
 >(
   config: QueryStoreConfig<TQueryFnData, TParams, TData>,
-  persistConfig: PersistConfig<QueryStoreState<TData, TParams>, PersistedState>
-): PersistedStore<QueryStoreState<TData, TParams>, PersistedState>;
+  options: BaseStoreOptions<QueryStoreState<TData, TParams>, PersistedState, PersistReturn>
+): PersistedStore<QueryStoreState<TData, TParams>, PersistedState, false, PersistReturn>;
 
 /**
- * Creates a persisted, query-enabled store with data fetching capabilities.
+ * Creates a persisted, query-enabled store with data fetching capabilities (async storage).
+ *
+ * @template TQueryFnData - The raw data type returned by the fetcher
+ * @template TParams - Parameters passed to the fetcher function
+ * @template TData - The transformed data type, if applicable (defaults to `TQueryFnData`)
+ * @template PersistedState - The persisted state type, if a stricter type than `Partial<CustomState>` is desired
+ */
+export function createQueryStore<
+  TQueryFnData,
+  TParams extends Record<string, unknown> = Record<string, never>,
+  TData = TQueryFnData,
+  PersistedState extends Partial<QueryStoreState<TData, TParams>> = Partial<QueryStoreState<TData, TParams>>,
+  PersistReturn extends Promise<void> = Promise<void>,
+>(
+  config: QueryStoreConfig<TQueryFnData, TParams, TData>,
+  options: BaseStoreOptions<QueryStoreState<TData, TParams>, PersistedState, PersistReturn>
+): PersistedStore<QueryStoreState<TData, TParams>, PersistedState, false, PersistReturn>;
+
+/**
+ * Creates a persisted, query-enabled store with data fetching capabilities (sync storage).
  *
  * @template TQueryFnData - The raw data type returned by the fetcher
  * @template TParams - Parameters passed to the fetcher function
@@ -92,12 +113,35 @@ export function createQueryStore<
   TParams extends Record<string, unknown> = Record<string, never>,
   CustomState = unknown,
   TData = TQueryFnData,
-  PersistedState extends Partial<CustomState> = Partial<CustomState>,
+  PersistedState extends Partial<QueryStoreState<TData, TParams, CustomState>> = Partial<QueryStoreState<TData, TParams, CustomState>>,
+  PersistReturn extends void = void,
 >(
   config: QueryStoreConfig<TQueryFnData, TParams, TData, CustomState>,
   stateCreator: StateCreator<QueryStoreState<TData, TParams, CustomState>, CustomState>,
-  persistConfig: PersistConfig<QueryStoreState<TData, TParams, CustomState>, PersistedState>
-): PersistedStore<QueryStoreState<TData, TParams, CustomState>, PersistedState>;
+  options: BaseStoreOptions<QueryStoreState<TData, TParams, CustomState>, PersistedState, PersistReturn>
+): PersistedStore<QueryStoreState<TData, TParams, CustomState>, PersistedState, false, PersistReturn>;
+
+/**
+ * Creates a persisted, query-enabled store with data fetching capabilities (async storage).
+ *
+ * @template TQueryFnData - The raw data type returned by the fetcher
+ * @template TParams - Parameters passed to the fetcher function
+ * @template CustomState - User-defined custom store state
+ * @template TData - The transformed data type, if applicable (defaults to `TQueryFnData`)
+ * @template PersistedState - The persisted state type, if a stricter type than `Partial<CustomState>` is desired
+ */
+export function createQueryStore<
+  TQueryFnData,
+  TParams extends Record<string, unknown> = Record<string, never>,
+  CustomState = unknown,
+  TData = TQueryFnData,
+  PersistedState extends Partial<QueryStoreState<TData, TParams, CustomState>> = Partial<QueryStoreState<TData, TParams, CustomState>>,
+  PersistReturn extends Promise<void> = Promise<void>,
+>(
+  config: QueryStoreConfig<TQueryFnData, TParams, TData, CustomState>,
+  stateCreator: StateCreator<QueryStoreState<TData, TParams, CustomState>, CustomState>,
+  options: BaseStoreOptions<QueryStoreState<TData, TParams, CustomState>, PersistedState, PersistReturn>
+): PersistedStore<QueryStoreState<TData, TParams, CustomState>, PersistedState, false, PersistReturn>;
 
 /**
  * Creates a query-enabled store with data fetching capabilities.
@@ -115,7 +159,7 @@ export function createQueryStore<
 >(
   config: QueryStoreConfig<TQueryFnData, TParams, TData, CustomState>,
   stateCreator: StateCreator<QueryStoreState<TData, TParams, CustomState>, CustomState>,
-  persistConfig?: undefined
+  options?: BaseStoreOptions<QueryStoreState<TData, TParams, CustomState>>
 ): Store<QueryStoreState<TData, TParams, CustomState>>;
 
 /**
@@ -127,14 +171,14 @@ export function createQueryStore<
  */
 export function createQueryStore<TQueryFnData, TParams extends Record<string, unknown> = Record<string, never>, TData = TQueryFnData>(
   config: QueryStoreConfig<TQueryFnData, TParams, TData>,
-  persistConfig?: undefined
+  options?: BaseStoreOptions<QueryStoreState<TData, TParams>>
 ): Store<QueryStoreState<TData, TParams>>;
 
 /**
  * Creates a conditionally persisted, query-enabled store with data-fetching capabilities
- * and custom state.
+ * and custom state (sync storage).
  *
- * `persistConfig` may be `undefined` – the returned store exposes `persist?`.
+ * `options.persist` may be `undefined` – the returned store exposes `persist?`.
  *
  * @template TQueryFnData - The raw data type returned by the fetcher
  * @template TParams - Parameters passed to the fetcher function
@@ -147,17 +191,43 @@ export function createQueryStore<
   TParams extends Record<string, unknown> = Record<string, never>,
   CustomState = unknown,
   TData = TQueryFnData,
-  PersistedState extends Partial<CustomState> = Partial<CustomState>,
+  PersistedState extends Partial<QueryStoreState<TData, TParams, CustomState>> = Partial<QueryStoreState<TData, TParams, CustomState>>,
+  PersistReturn extends void = void,
 >(
   config: QueryStoreConfig<TQueryFnData, TParams, TData, CustomState>,
   stateCreator: StateCreator<QueryStoreState<TData, TParams, CustomState>, CustomState>,
-  persistConfig: PersistConfig<QueryStoreState<TData, TParams, CustomState>, PersistedState> | undefined
-): OptionallyPersistedStore<QueryStoreState<TData, TParams, CustomState>, PersistedState>;
+  options?: BaseStoreOptions<QueryStoreState<TData, TParams, CustomState>, PersistedState, PersistReturn>
+): OptionallyPersistedStore<QueryStoreState<TData, TParams, CustomState>, PersistedState, PersistReturn>;
 
 /**
- * Creates a conditionally persisted, query-enabled store with data fetching capabilities.
+ * Creates a conditionally persisted, query-enabled store with data-fetching capabilities
+ * and custom state (async storage).
  *
- * `persistConfig` may be `undefined` – the returned store exposes `persist?`.
+ * `options.persist` may be `undefined` – the returned store exposes `persist?`.
+ *
+ * @template TQueryFnData - The raw data type returned by the fetcher
+ * @template TParams - Parameters passed to the fetcher function
+ * @template CustomState - User-defined custom store state
+ * @template TData - The transformed data type, if applicable (defaults to `TQueryFnData`)
+ * @template PersistedState - The persisted state type, if a stricter type than `Partial<CustomState>` is desired
+ */
+export function createQueryStore<
+  TQueryFnData,
+  TParams extends Record<string, unknown> = Record<string, never>,
+  CustomState = unknown,
+  TData = TQueryFnData,
+  PersistedState extends Partial<QueryStoreState<TData, TParams, CustomState>> = Partial<QueryStoreState<TData, TParams, CustomState>>,
+  PersistReturn extends Promise<void> = Promise<void>,
+>(
+  config: QueryStoreConfig<TQueryFnData, TParams, TData, CustomState>,
+  stateCreator: StateCreator<QueryStoreState<TData, TParams, CustomState>, CustomState>,
+  options?: BaseStoreOptions<QueryStoreState<TData, TParams, CustomState>, PersistedState, PersistReturn>
+): OptionallyPersistedStore<QueryStoreState<TData, TParams, CustomState>, PersistedState, PersistReturn>;
+
+/**
+ * Creates a conditionally persisted, query-enabled store with data fetching capabilities (sync storage).
+ *
+ * `options.persist` may be `undefined` – the returned store exposes `persist?`.
  *
  * @template TQueryFnData - The raw data type returned by the fetcher
  * @template TParams - Parameters passed to the fetcher function
@@ -169,10 +239,32 @@ export function createQueryStore<
   TParams extends Record<string, unknown> = Record<string, never>,
   TData = TQueryFnData,
   PersistedState extends Partial<QueryStoreState<TData, TParams>> = Partial<QueryStoreState<TData, TParams>>,
+  PersistReturn extends void = void,
 >(
   config: QueryStoreConfig<TQueryFnData, TParams, TData, QueryStoreState<TData, TParams>>,
-  persistConfig: PersistConfig<QueryStoreState<TData, TParams>, PersistedState> | undefined
-): OptionallyPersistedStore<QueryStoreState<TData, TParams>, PersistedState>;
+  options: BaseStoreOptions<QueryStoreState<TData, TParams>, PersistedState, PersistReturn> | undefined
+): OptionallyPersistedStore<QueryStoreState<TData, TParams>, PersistedState, PersistReturn>;
+
+/**
+ * Creates a conditionally persisted, query-enabled store with data fetching capabilities (async storage).
+ *
+ * `options.persist` may be `undefined` – the returned store exposes `persist?`.
+ *
+ * @template TQueryFnData - The raw data type returned by the fetcher
+ * @template TParams - Parameters passed to the fetcher function
+ * @template TData - The transformed data type, if applicable (defaults to `TQueryFnData`)
+ * @template PersistedState - The persisted state type, if a stricter type than `Partial<CustomState>` is desired
+ */
+export function createQueryStore<
+  TQueryFnData,
+  TParams extends Record<string, unknown> = Record<string, never>,
+  TData = TQueryFnData,
+  PersistedState extends Partial<QueryStoreState<TData, TParams>> = Partial<QueryStoreState<TData, TParams>>,
+  PersistReturn extends Promise<void> = Promise<void>,
+>(
+  config: QueryStoreConfig<TQueryFnData, TParams, TData, QueryStoreState<TData, TParams>>,
+  options: BaseStoreOptions<QueryStoreState<TData, TParams>, PersistedState, PersistReturn> | undefined
+): OptionallyPersistedStore<QueryStoreState<TData, TParams>, PersistedState, PersistReturn>;
 
 /**
  * Creates a query-enabled store with data fetching capabilities.
@@ -189,19 +281,25 @@ export function createQueryStore<
   CustomState,
   TData = TQueryFnData,
   PersistedState extends Partial<QueryStoreState<TData, TParams, CustomState>> = Partial<QueryStoreState<TData, TParams, CustomState>>,
+  PersistReturn = void,
 >(
   config: QueryStoreConfig<TQueryFnData, TParams, TData, QueryStoreState<TData, TParams, CustomState>>,
-  creatorOrPersistConfig?:
+  creatorOrOptions?:
     | StateCreator<QueryStoreState<TData, TParams, CustomState>, CustomState>
-    | PersistConfig<QueryStoreState<TData, TParams, CustomState>, PersistedState>,
-  maybePersistConfig?: PersistConfig<QueryStoreState<TData, TParams, CustomState>, PersistedState>
-): Store<QueryStoreState<TData, TParams, CustomState>> | Store<QueryStoreState<TData, TParams, CustomState>, PersistedState> {
+    | BaseStoreOptions<QueryStoreState<TData, TParams, CustomState>, PersistedState, PersistReturn>,
+  maybeOptions?: BaseStoreOptions<QueryStoreState<TData, TParams, CustomState>, PersistedState, PersistReturn>
+):
+  | Store<QueryStoreState<TData, TParams, CustomState>>
+  | Store<QueryStoreState<TData, TParams, CustomState>, PersistedState, false, PersistReturn> {
+  markStoreCreated();
   type S = QueryStoreState<TData, TParams, CustomState>;
 
-  /* If arg1 is a function, it's the custom state creator; otherwise, it's the persistConfig. */
-  const customStateCreator = typeof creatorOrPersistConfig === 'function' ? creatorOrPersistConfig : createEmptyState<CustomState>;
-  const persistConfig =
-    typeof creatorOrPersistConfig === 'object' && 'storageKey' in creatorOrPersistConfig ? creatorOrPersistConfig : maybePersistConfig;
+  /* If arg1 is a function, it's the custom state creator; otherwise, it's options */
+  const customStateCreator = typeof creatorOrOptions === 'function' ? creatorOrOptions : createEmptyState<CustomState>;
+  const options = typeof creatorOrOptions === 'object' ? creatorOrOptions : maybeOptions;
+
+  /* BaseStoreOptions is either SyncOptions or PersistWithOptionalSync - check for storageKey to discriminate */
+  const persistConfig = options && 'storageKey' in options ? options : undefined;
 
   const {
     fetcher,
@@ -217,7 +315,7 @@ export function createQueryStore<
     enabled = true,
     keepPreviousData = false,
     maxRetries = 5,
-    paramChangeThrottle = 'microtask',
+    paramChangeThrottle = false,
     params,
     retryDelay = defaultRetryDelay,
     suppressStaleTimeWarning = false,
@@ -244,7 +342,7 @@ export function createQueryStore<
   let attachVals: { enabled: AttachValue<boolean> | null; params: Partial<Record<keyof TParams, AttachValue<unknown>>> } | null = null;
   let directValues: { enabled: boolean | null; params: Partial<TParams> } | null = null;
   let staleTimeAttachVal: AttachValue<number> | null = null;
-  let paramUnsubscribes: Unsubscribe[] = [];
+  let paramUnsubscribes: UnsubscribeFn[] = [];
   let fetchAfterParamCreation = false;
   let isBuildingParams = false;
 
@@ -315,15 +413,16 @@ export function createQueryStore<
       const isPartialFunction = typeof partial === 'function';
       if (isPartialFunction || partial.enabled !== undefined) {
         let handleNewEnabled: (() => void) | undefined;
-        originalSet(state => {
+        const result = originalSet(state => {
           const newPartial = isPartialFunction ? partial(state) : partial;
           const newEnabled = newPartial.enabled !== undefined ? newPartial.enabled : state.enabled;
           if (newEnabled !== state.enabled) handleNewEnabled = () => handleEnabledChange(state.enabled, newEnabled);
           return newPartial;
         });
         handleNewEnabled?.();
+        return result;
       } else {
-        originalSet(partial);
+        return originalSet(partial);
       }
     };
 
@@ -339,13 +438,14 @@ export function createQueryStore<
         if (!enabled) return;
 
         if (isFirstSubscription) {
-          const { isStale, queryKey: storeQueryKey } = get();
           const currentParams = getCurrentResolvedParams(attachVals, directValues);
           const currentQueryKey = getQueryKeyFn(currentParams);
+          const state = get();
+          const storeQueryKey = state.queryKey;
 
           if (storeQueryKey !== currentQueryKey) set(state => ({ ...state, queryKey: currentQueryKey }));
 
-          if (isStale()) {
+          if (state.isStale()) {
             baseMethods.fetch(currentParams, undefined, true);
           } else {
             scheduleNextFetch(currentParams, undefined);
@@ -376,13 +476,15 @@ export function createQueryStore<
       }
 
       const currentQueryKey = getQueryKeyFn(params);
+      const state = get();
+
       const lastFetchedAt =
-        (disableCache ? lastFetchKey === currentQueryKey && get().lastFetchedAt : get().queryCache[currentQueryKey]?.lastFetchedAt) || null;
+        (disableCache ? lastFetchKey === currentQueryKey && state.lastFetchedAt : state.queryCache[currentQueryKey]?.lastFetchedAt) || null;
       const timeUntilRefetch = lastFetchedAt ? staleTime - (Date.now() - lastFetchedAt) : staleTime;
 
       activeRefetchTimeout = setTimeout(() => {
-        const { enabled, subscriptionCount } = subscriptionManager.get();
-        if (enabled && subscriptionCount > 0) {
+        const manager = subscriptionManager.get();
+        if (manager.enabled && manager.subscriptionCount > 0) {
           baseMethods.fetch(params, { force: true }, true);
         }
       }, timeUntilRefetch);
@@ -397,19 +499,22 @@ export function createQueryStore<
         case 'isLoading':
           return get().status === QueryStatuses.Loading;
         case 'isSuccess': {
-          const { queryCache, queryKey, status } = get();
-          if (typeof queryCache[queryKey]?.lastFetchedAt === 'number') return true;
-          return status === QueryStatuses.Success;
+          const state = get();
+          const lastFetchedAt = state.queryCache[state.queryKey]?.lastFetchedAt;
+          if (typeof lastFetchedAt === 'number') return true;
+          return state.status === QueryStatuses.Success;
         }
         case 'isError':
         case 'isInitialLoad':
         case undefined: {
-          const { lastFetchedAt: storeLastFetchedAt, queryCache, queryKey, status } = get();
-          const cacheEntry = queryCache[queryKey];
-          const lastFetchedAt = (disableCache ? lastFetchKey === queryKey && storeLastFetchedAt : cacheEntry?.lastFetchedAt) || null;
+          const state = get();
+          const cacheEntry = state.queryCache[state.queryKey];
+          const lastFetchedAt = (disableCache ? lastFetchKey === state.queryKey && state.lastFetchedAt : cacheEntry?.lastFetchedAt) || null;
+          const status = state.status;
 
           switch (statusKey) {
             case 'isError': {
+              const cacheEntry = state.queryCache[state.queryKey];
               const isError = disableCache ? status !== 'error' : typeof cacheEntry?.errorInfo?.lastFailedAt === 'number';
               return isError;
             }
@@ -435,9 +540,15 @@ export function createQueryStore<
       ...initialData,
 
       async fetch(params: TParams | Partial<TParams> | undefined, options: FetchOptions | undefined, isInternalFetch = false) {
-        if (!options?.force && !options?.skipStoreUpdates && !subscriptionManager.get().enabled) return null;
+        const managerState = subscriptionManager.get();
 
-        const { error, queryKey: storeQueryKey, status } = get();
+        if (!options?.force && !options?.skipStoreUpdates && !managerState.enabled) return null;
+
+        const state = get();
+        const error = state.error;
+        const storeQueryKey = state.queryKey;
+        const status = state.status;
+
         const effectiveParams = getCompleteParams(attachVals, directValues, paramKeys, params);
         const currentQueryKey = getQueryKeyFn(effectiveParams);
         const effectiveStaleTime = options?.staleTime ?? staleTime;
@@ -458,14 +569,17 @@ export function createQueryStore<
           return activeFetch.promise;
         }
 
+        if (abortInterruptedFetches && !skipStoreUpdates && options?.updateQueryKey !== false) {
+          abortActiveFetch();
+        }
+
         if (!options?.force) {
           /* Check for valid cached data */
-          const {
-            lastFetchedAt: storeLastFetchedAt,
-            queryCache: { [currentQueryKey]: cacheEntry },
-          } = get();
+          const storeLastFetchedAt = state.lastFetchedAt;
+          const cacheEntry = state.queryCache[currentQueryKey];
+          const cachedLastFetchedAt = cacheEntry?.lastFetchedAt;
+          const errorInfo = cacheEntry?.errorInfo;
 
-          const { errorInfo, lastFetchedAt: cachedLastFetchedAt } = cacheEntry ?? {};
           const errorRetriesExhausted = errorInfo && errorInfo.retryCount >= maxRetries;
           const lastFetchedAt = (disableCache ? lastFetchKey === currentQueryKey && storeLastFetchedAt : cachedLastFetchedAt) || null;
           const isStale = !lastFetchedAt || Date.now() - lastFetchedAt >= effectiveStaleTime;
@@ -475,7 +589,7 @@ export function createQueryStore<
               areParamsCurrent &&
               !skipStoreUpdates &&
               !activeRefetchTimeout &&
-              subscriptionManager.get().subscriptionCount > 0 &&
+              managerState.subscriptionCount > 0 &&
               staleTime !== 0 &&
               staleTime !== Infinity
             ) {
@@ -488,9 +602,6 @@ export function createQueryStore<
         }
 
         if (!skipStoreUpdates && areParamsCurrent) {
-          if (abortInterruptedFetches && options?.updateQueryKey !== false) {
-            abortActiveFetch();
-          }
           if (activeRefetchTimeout) {
             clearTimeout(activeRefetchTimeout);
             activeRefetchTimeout = null;
@@ -532,6 +643,7 @@ export function createQueryStore<
 
             let transformedData: TData;
             try {
+              // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
               transformedData = transform ? transform(rawResult, effectiveParams) : (rawResult as TData);
             } catch (transformError) {
               throw new StoresError(
@@ -566,8 +678,8 @@ export function createQueryStore<
                     data: transformedData,
                     params: effectiveParams,
                     queryKey: currentQueryKey,
-                    set: update => {
-                      newState = { ...newState, ...(typeof update === 'function' ? update(newState) : update) };
+                    set: (partial: S | Partial<S> | ((state: S) => S | Partial<S>)) => {
+                      newState = typeof partial === 'function' ? { ...newState, ...partial(newState) } : { ...newState, ...partial };
                     },
                   });
 
@@ -626,8 +738,8 @@ export function createQueryStore<
                   data: transformedData,
                   params: effectiveParams,
                   queryKey: currentQueryKey,
-                  set: update => {
-                    newState = { ...newState, ...(typeof update === 'function' ? update(newState) : update) };
+                  set: (partial: S | Partial<S> | ((state: S) => S | Partial<S>)) => {
+                    newState = typeof partial === 'function' ? { ...newState, ...partial(newState) } : { ...newState, ...partial };
                   },
                 });
 
@@ -765,20 +877,22 @@ export function createQueryStore<
 
       getCacheEntry(paramsOrQueryKey?: TParams | Partial<TParams> | string) {
         if (disableCache) return null;
-        const { queryCache, queryKey } = get();
+        const state = get();
         const currentQueryKey = !paramsOrQueryKey
-          ? queryKey
+          ? state.queryKey
           : typeof paramsOrQueryKey === 'string'
             ? paramsOrQueryKey
             : getQueryKeyFn(getCompleteParams(attachVals, directValues, paramKeys, paramsOrQueryKey));
 
-        return queryCache[currentQueryKey] ?? null;
+        return state.queryCache[currentQueryKey] ?? null;
       },
 
       getData(paramsOrQueryKey?: TParams | string) {
         if (disableCache) return null;
-        const cacheEntry = get().getCacheEntry(paramsOrQueryKey);
+        const state = get();
+        const cacheEntry = state.getCacheEntry(paramsOrQueryKey);
         if (!cacheEntry || cacheEntry.data === null) return null;
+
         if (keepPreviousData) return cacheEntry.data;
         const isExpired = !!cacheEntry.lastFetchedAt && Date.now() - cacheEntry.lastFetchedAt >= cacheEntry.cacheTime;
         return isExpired ? null : cacheEntry.data;
@@ -787,11 +901,10 @@ export function createQueryStore<
       getStatus,
 
       isDataExpired(cacheTimeOverride?: number) {
-        const currentQueryKey = get().queryKey;
-        const {
-          lastFetchedAt: storeLastFetchedAt,
-          queryCache: { [currentQueryKey]: cacheEntry },
-        } = get();
+        const state = get();
+        const cacheEntry = state.queryCache[state.queryKey];
+        const currentQueryKey = state.queryKey;
+        const storeLastFetchedAt = state.lastFetchedAt;
 
         const lastFetchedAt = (disableCache ? lastFetchKey === currentQueryKey && storeLastFetchedAt : cacheEntry?.lastFetchedAt) || null;
         if (!lastFetchedAt) return true;
@@ -801,9 +914,11 @@ export function createQueryStore<
       },
 
       isStale(staleTimeOverride?: number) {
-        const { queryKey } = get();
+        const state = get();
+        const currentQueryKey = state.queryKey;
         const lastFetchedAt =
-          (disableCache ? lastFetchKey === queryKey && get().lastFetchedAt : get().queryCache[queryKey]?.lastFetchedAt) || null;
+          (disableCache ? lastFetchKey === currentQueryKey && state.lastFetchedAt : state.queryCache[currentQueryKey]?.lastFetchedAt) ||
+          null;
 
         if (!lastFetchedAt) return true;
         const effectiveStaleTime = staleTimeOverride ?? staleTime;
@@ -846,18 +961,22 @@ export function createQueryStore<
     return baseMethods;
   };
 
-  const combinedPersistConfig = persistConfig?.storageKey
-    ? {
-        ...persistConfig,
-        partialize: createBlendedPartialize<TData, TParams, S, CustomState, PersistedState>(keepPreviousData, persistConfig.partialize),
-      }
-    : undefined;
+  const queryStore = persistConfig?.storageKey
+    ? createBaseStore<S, PersistedState, [PersistReturn] extends Promise<void> ? PersistReturn : void>(
+        createState,
+        Object.assign(Object.create(null), persistConfig, {
+          partialize: createBlendedPartialize<TData, TParams, S, CustomState, PersistedState>(keepPreviousData, persistConfig.partialize),
+        })
+      )
+    : options && !('storageKey' in options)
+      ? createBaseStore(createState, options)
+      : createBaseStore(createState);
 
-  const queryStore = combinedPersistConfig
-    ? createBaseStore<S, PersistedState>(createState, combinedPersistConfig)
-    : createWithEqualityFn<S>()(subscribeWithSelector(createState), Object.is);
+  const state = queryStore.getState();
+  const error = state.error;
+  const initialStoreEnabled = state.enabled;
+  const queryKey = state.queryKey;
 
-  const { enabled: initialStoreEnabled, error, queryKey } = queryStore.getState();
   if (queryKey && !error) lastFetchKey = queryKey;
 
   // ============ Build Params ================================================= //
@@ -880,13 +999,18 @@ export function createQueryStore<
     staleTime = staleTimeAttachVal.value;
   }
 
+  const scheduleFetch = createMicrotaskScheduler((params: TParams | undefined) => {
+    state.fetch(params ?? getCurrentResolvedParams(attachVals, directValues), { updateQueryKey: keepPreviousData });
+  });
+
   function onParamChangeBase() {
-    const newParams = getCurrentResolvedParams(attachVals, directValues);
+    let newParams: TParams | undefined;
     if (!keepPreviousData) {
+      newParams = getCurrentResolvedParams(attachVals, directValues);
       const newQueryKey = getQueryKeyFn(newParams);
       queryStore.setState(state => ({ ...state, queryKey: newQueryKey }));
     }
-    queryStore.getState().fetch(newParams, { updateQueryKey: keepPreviousData });
+    scheduleFetch(newParams);
   }
 
   const onParamChange =
@@ -989,10 +1113,12 @@ export function parseQueryKey<TParams extends Record<string, unknown>>(queryKey:
 
 function sortParamKeys<TParams extends Record<string, unknown>>(params: TParams): TParams {
   if (typeof params !== 'object' || params === null) return params;
+  // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
   return Object.keys(params)
     .sort()
     .reduce<Record<string, unknown>>((acc, key) => {
       const value = params[key];
+      // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
       acc[key] = value !== null && typeof value === 'object' ? sortParamKeys(value as Record<string, unknown>) : value;
       return acc;
     }, {}) as TParams;
@@ -1026,8 +1152,10 @@ function getCurrentResolvedParams<TParams extends Record<string, unknown>>(
   for (const k in attachVals?.params) {
     const attachVal = attachVals.params[k];
     if (!attachVal) continue;
+    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
     currentParams[k as keyof TParams] = attachVal.value as TParams[keyof TParams];
   }
+  // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
   return currentParams as TParams;
 }
 
@@ -1103,9 +1231,9 @@ function resolveParams<
   params: { [K in keyof TParams]: ReactiveParam<TParams[K], TParams, S, TData> } | undefined,
   store: Store<S>
 ): ResolvedParamsResult<TParams> & ResolvedEnabledResult {
-  const attachVals: Partial<Record<keyof TParams, AttachValue<unknown>>> = {};
-  const directValues: Partial<TParams> = {};
-  const resolvedParams: TParams = {} as TParams;
+  const attachVals: Partial<Record<keyof TParams, AttachValue<unknown>>> = Object.create(null);
+  const directValues: Partial<TParams> = Object.create(null);
+  const resolvedParams: TParams = Object.create(null);
 
   for (const key in params) {
     const param = params[key];

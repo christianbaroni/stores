@@ -4,7 +4,7 @@
     "module": "CommonJS",
     "moduleResolution": "node",
     "lib": ["ES2021", "DOM", "DOM.Iterable"],
-    "types": ["node"],
+    "types": ["node", "chrome"],
     "declaration": true,
     "emitDeclarationOnly": true,
     "declarationDir": "dist",
@@ -16,7 +16,7 @@
     "baseUrl": ".",
     "paths": {
       "@env": ["src/env.web.ts"],
-      "@storesStorage": ["src/storesStorage.web.ts"]
+      "storesStorage": ["src/storesStorage.web.ts"]
     }
   },
   "include": ["src/**/*"],

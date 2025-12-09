@@ -1,0 +1,35 @@
+{
+  "name": "chrome-extension-example",
+  "private": true,
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "build": "pnpm build:example && pnpm build:sync-test",
+    "build:example": "APP=example vite build",
+    "build:sync-test": "APP=sync-test vite build",
+    "dev": "pnpm run --parallel dev:example dev:sync-test",
+    "dev:example": "APP=example vite --host",
+    "dev:sync-test": "APP=sync-test vite --host",
+    "lint": "pnpm -w run lint",
+    "lint:eslint": "pnpm -w run lint:eslint",
+    "lint:prettier": "pnpm -w run lint:prettier",
+    "preview": "pnpm run --parallel preview:example preview:sync-test",
+    "preview:example": "APP=example vite preview --host",
+    "preview:sync-test": "APP=sync-test vite preview --host"
+  },
+  "dependencies": {
+    "react": "19.1.1",
+    "react-dom": "19.1.1",
+    "stores": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.276",
+    "@types/react": "19.0.0",
+    "@types/react-dom": "19.0.0",
+    "@vitejs/plugin-react": "^4.5.1",
+    "babel-plugin-react-compiler": "19.1.0-rc.2",
+    "typescript": "^5.4.2",
+    "vite": "^6.3.5"
+  }
+}

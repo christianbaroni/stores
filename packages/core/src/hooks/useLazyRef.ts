@@ -17,5 +17,6 @@ type UninitializedRef = typeof UNINITIALIZED;
 export function useLazyRef<T>(initializer: () => T): RefObject<T> {
   const ref = useRef<T | UninitializedRef>(UNINITIALIZED);
   if (ref.current === UNINITIALIZED) ref.current = initializer();
+  // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
   return ref as RefObject<T>;
 }

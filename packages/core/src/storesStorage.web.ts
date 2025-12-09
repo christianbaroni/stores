@@ -1,4 +1,4 @@
-import type { StorageInterface } from './types';
+import { SyncStorageInterface } from './types';
 
 const STORAGE_ID = 'stores-storage';
 
@@ -6,7 +6,7 @@ function getLocalStorage(): Storage | null {
   return typeof window !== 'undefined' ? window.localStorage : null;
 }
 
-export const storesStorage: StorageInterface = {
+export const storesStorage: SyncStorageInterface = {
   clearAll(): void {
     try {
       const localStorage = getLocalStorage();
@@ -51,7 +51,7 @@ export const storesStorage: StorageInterface = {
     }
   },
 
-  getString(key: string): string | undefined {
+  get(key: string): string | undefined {
     try {
       const localStorage = getLocalStorage();
       return localStorage ? (localStorage.getItem(`${STORAGE_ID}:${key}`) ?? undefined) : undefined;

@@ -11,3 +11,9 @@ coverage
 
 # Logs
 *.log
+
+# Claude
+.claude/
+
+# Cloudflare Workers
+.wrangler

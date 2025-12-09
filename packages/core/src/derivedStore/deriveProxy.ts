@@ -2,6 +2,15 @@ import { BaseStore, Selector } from '../types';
 import { getStoreName, hasGetSnapshot } from '../utils/storeUtils';
 import { pluralize } from '../utils/stringUtils';
 
+// ============ Settings ======================================================= //
+
+/**
+ * Minimum object depth at which subscription consolidation is allowed.
+ *   - `1`: Never consolidate at root — top-level fields get individual subscriptions.
+ *   - `2`: Never consolidate at root or depth 1, etc.
+ */
+const MIN_CONSOLIDATION_DEPTH = 1;
+
 // ============ Types ========================================================== //
 
 type PathEntry = {
@@ -29,6 +38,7 @@ type SubscriptionBuilder = (store: BaseStore<unknown>, selector: Selector<unknow
  */
 export function getOrCreateProxy<S>(store: BaseStore<S>, rootProxyCache: WeakMap<BaseStore<unknown>, unknown>, trackPath: TrackPathFn): S {
   // The WeakMap can't handle generics, so here we re-apply the correct type
+  // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
   const proxyByStore = rootProxyCache.get(store) as S | undefined;
 
   if (!proxyByStore) {
@@ -168,6 +178,7 @@ function buildInvocationSelector(path: string[], invocation: TrackedInvocation):
   const parentPath = path.slice(0, -1);
   return state => {
     const parentObject = getValueAtPath(state, parentPath);
+    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
     const fn = (parentObject as Record<string, unknown> | undefined)?.[method];
     return typeof fn === 'function' ? fn.apply(parentObject, args) : undefined;
   };
@@ -188,6 +199,7 @@ function getValueAtPath<T>(obj: T, path: string[]): T {
   let current = obj;
   for (const p of path) {
     if (!current || typeof current !== 'object') return current;
+    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
     current = (current as Record<string, T>)[p];
   }
   return current;
@@ -213,7 +225,7 @@ export function createPathFinder(): PathFinder {
     buildProxySubscriptions(createSubscription: SubscriptionBuilder, shouldLog: boolean) {
       const results = new Set<PathEntry>();
       for (const [store, rootNode] of storeMap) {
-        collectMinimalPaths(rootNode, store, [], true, results);
+        collectMinimalPaths(rootNode, store, [], 0, results);
       }
       buildProxySubscriptions(results, createSubscription, shouldLog);
     },
@@ -268,7 +280,14 @@ function insertPath(node: TrieNode, path: string[], index: number, isLeaf?: bool
 /**
  * Determines and collects the final paths to build selectors for.
  */
-function collectMinimalPaths(node: TrieNode, store: BaseStore<unknown>, path: string[], isRoot: boolean, results: Set<PathEntry>): void {
+function collectMinimalPaths(
+  node: TrieNode,
+  store: BaseStore<unknown>,
+  path: string[],
+  depth: number,
+  results: Set<PathEntry>,
+  minConsolidationDepth = MIN_CONSOLIDATION_DEPTH
+): void {
   const children = node.children;
   if (!children) {
     // Leaf node
@@ -284,21 +303,21 @@ function collectMinimalPaths(node: TrieNode, store: BaseStore<unknown>, path: st
     return;
   }
 
-  // 2) Is a leaf (or non-root & has multiple children) => subscribe here
-  if (node.isLeaf || (!isRoot && childCount > 1)) {
+  // 2) Is a leaf (or at/beyond min depth with multiple children) => subscribe here
+  if (node.isLeaf || (depth >= minConsolidationDepth && childCount > 1)) {
     results.add({ store, path, invocation: node.invocation, isLeaf: node.isLeaf ?? false });
     // Only recurse into children that have an invocation
     for (const key of childKeys) {
       const child = children[key];
-      if (child.invocation) collectMinimalPaths(child, store, [...path, key], false, results);
+      if (child.invocation) collectMinimalPaths(child, store, [...path, key], depth + 1, results, minConsolidationDepth);
     }
     return;
   }
 
-  // 3) Root with multiple children but not a leaf => skip root, recurse each child
-  if (isRoot && childCount > 1 && !node.isLeaf) {
+  // 3) Below min consolidation depth with multiple children => skip this node, recurse each child
+  if (depth < minConsolidationDepth && childCount > 1 && !node.isLeaf) {
     for (const key of childKeys) {
-      collectMinimalPaths(children[key], store, [...path, key], false, results);
+      collectMinimalPaths(children[key], store, [...path, key], depth + 1, results, minConsolidationDepth);
     }
     return;
   }
@@ -306,7 +325,7 @@ function collectMinimalPaths(node: TrieNode, store: BaseStore<unknown>, path: st
   // 4) Exactly one child, not a leaf => merge downward
   if (childCount === 1) {
     const onlyKey = childKeys[0];
-    collectMinimalPaths(children[onlyKey], store, [...path, onlyKey], false, results);
+    collectMinimalPaths(children[onlyKey], store, [...path, onlyKey], depth + 1, results, minConsolidationDepth);
     return;
   }
 

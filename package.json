@@ -1,5 +1,7 @@
 {
-  "name": "stores",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "workspaces": [
     "packages/*"
   ],
@@ -16,9 +18,12 @@
     "eslint-plugin-react-hooks": "^7.0.0",
     "jiti": "^2.6.1",
     "prettier": "^3.5.3",
+    "react": "19.1.1",
     "typescript": "^5.9.2"
   },
   "scripts": {
+    "ci:local": "./scripts/test-ci.sh",
+    "ci:docker": "./scripts/test-ci-docker.sh",
     "lint": "pnpm run lint:eslint && pnpm run lint:prettier",
     "lint:eslint": "eslint . --ext .ts,.tsx",
     "lint:prettier": "prettier --check ."

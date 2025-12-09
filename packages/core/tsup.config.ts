@@ -3,7 +3,10 @@ import { defineConfig } from 'tsup';
 const isProduction = process.env.NODE_ENV === 'production';
 
 export default defineConfig({
-  entry: ['src/index.ts'],
+  entry: {
+    'index': 'src/index.ts',
+    'plugins/chrome': 'src/plugins/chrome/index.ts',
+  },
   format: ['esm', 'cjs'],
   clean: true,
   dts: false,
@@ -30,9 +33,15 @@ export default defineConfig({
   terserOptions: isProduction
     ? {
         compress: {
+          dead_code: true,
           drop_console: true,
           drop_debugger: true,
-          passes: 2,
+          global_defs: {
+            IS_DEV: false,
+            IS_TEST: false,
+          },
+          passes: 3,
+          pure_funcs: ['console.debug', 'console.info', 'console.warn'],
         },
         format: {
           comments: false,

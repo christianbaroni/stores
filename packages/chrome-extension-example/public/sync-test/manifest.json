@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "Stores Sync Test",
+  "description": "Real-time synchronization test across extension contexts. Watch state changes propagate instantly between popup, options, and background.",
+  "version": "0.1.0",
+  "permissions": ["storage"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Sync Test",
+    "default_popup": "popup.html"
+  },
+  "options_page": "options.html"
+}
