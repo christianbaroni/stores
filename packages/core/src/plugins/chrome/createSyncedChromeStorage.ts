@@ -1,5 +1,5 @@
 import { ChromeExtensionSyncEngine } from './chromeExtensionSyncEngine';
-import { ChromeStorageAdapter } from './chromeStorageAdapter';
+import { AreaName, ChromeStorageAdapter } from './chromeStorageAdapter';
 
 /**
  * Creates a synced Chrome storage engine for extension environments.
@@ -8,11 +8,11 @@ import { ChromeStorageAdapter } from './chromeStorageAdapter';
  * { engine: ChromeExtensionSyncEngine; storage: ChromeStorageAdapter }
  * ```
  */
-export function createSyncedChromeStorage(): {
+export function createSyncedChromeStorage(options?: { area?: AreaName; namespace?: string }): {
   storage: ChromeStorageAdapter;
   syncEngine: ChromeExtensionSyncEngine;
 } {
-  const storage = new ChromeStorageAdapter();
+  const storage = new ChromeStorageAdapter(options);
   const syncEngine = new ChromeExtensionSyncEngine({ storage });
   return { storage, syncEngine };
 }

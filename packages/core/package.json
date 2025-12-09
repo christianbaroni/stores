@@ -26,7 +26,7 @@
       }
     },
     "./plugins/chrome": {
-      "types": "./dist/plugins/chrome.d.ts",
+      "types": "./dist/plugins/chrome/index.d.ts",
       "import": "./dist/web/plugins/chrome.mjs",
       "require": "./dist/web/plugins/chrome.js"
     }
