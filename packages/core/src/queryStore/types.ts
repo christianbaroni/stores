@@ -128,12 +128,12 @@ export type QueryStoreConfig<
 
   /**
    * Delay before triggering a fetch when parameters change.
-   * Accepts a number (ms), `'microtask'` (batched via `queueMicrotask`), or debounce options:
+   * Accepts a number (ms), false (no throttling), or debounce options:
    *
    * `{ delay: number, leading?: boolean, trailing?: boolean, maxWait?: number }`
-   * @default 'microtask'
+   * @default false
    */
-  paramChangeThrottle?: 'microtask' | false | number | DebounceOptions;
+  paramChangeThrottle?: false | number | DebounceOptions;
 
   /**
    * Parameters to be passed to the fetcher, defined as either direct values or `ReactiveParam` functions.

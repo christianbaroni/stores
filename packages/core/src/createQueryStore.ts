@@ -1016,13 +1016,11 @@ export function createQueryStore<
   const onParamChange =
     IS_TEST || !paramChangeThrottle
       ? onParamChangeBase
-      : paramChangeThrottle === 'microtask'
-        ? createMicrotaskScheduler(onParamChangeBase)
-        : debounce(
-            onParamChangeBase,
-            typeof paramChangeThrottle === 'number' ? paramChangeThrottle : paramChangeThrottle.delay,
-            typeof paramChangeThrottle === 'number' ? { leading: false, maxWait: paramChangeThrottle, trailing: true } : paramChangeThrottle
-          );
+      : debounce(
+          onParamChangeBase,
+          typeof paramChangeThrottle === 'number' ? paramChangeThrottle : paramChangeThrottle.delay,
+          typeof paramChangeThrottle === 'number' ? { leading: false, maxWait: paramChangeThrottle, trailing: true } : paramChangeThrottle
+        );
 
   if (attachVals?.enabled) {
     const attachVal = attachVals.enabled;
