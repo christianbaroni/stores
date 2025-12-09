@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node", "jest"],
+    "paths": {
+      "@env": ["src/env.web.ts"],
+      "storesStorage": ["src/storesStorage.web.ts"],
+      "stores": ["./src/index"]
+    }
+  },
+  "include": ["src/**/*"]
+}

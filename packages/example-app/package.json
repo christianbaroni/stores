@@ -7,26 +7,35 @@
   "scripts": {
     "build": "vite build",
     "dev": "vite --host",
+    "dev:server": "tsx server/sync-server.ts",
+    "dev:workers": "wrangler dev --config server/wrangler.toml --ip 0.0.0.0",
+    "deploy:workers": "wrangler deploy --config server/wrangler.toml",
+    "delete:workers": "wrangler delete --config server/wrangler.toml",
     "lint": "pnpm -w run lint",
     "lint:eslint": "pnpm -w run lint:eslint",
     "lint:prettier": "pnpm -w run lint:prettier",
     "preview": "vite preview --host"
   },
   "dependencies": {
-    "stores": "workspace:*",
     "@tanstack/react-virtual": "^3.13.9",
     "framer-motion": "^12.23.24",
-    "react": "19.0.0",
-    "react-dom": "19.0.0",
-    "react-router-dom": "^7.9.4"
+    "react": "19.1.1",
+    "react-dom": "19.1.1",
+    "react-router-dom": "^7.9.4",
+    "stores": "workspace:*"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241127.0",
     "@types/node": "^24.5.2",
     "@types/react": "19.0.0",
     "@types/react-dom": "19.0.0",
+    "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^4.5.1",
     "babel-plugin-react-compiler": "19.1.0-rc.2",
+    "tsx": "^4.20.6",
     "typescript": "^5.4.2",
-    "vite": "^6.3.5"
+    "vite": "^6.3.5",
+    "wrangler": "^4.45.3",
+    "ws": "^8.18.3"
   }
 }

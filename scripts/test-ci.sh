@@ -39,7 +39,7 @@ pnpm --filter stores test
 echo_success "Core tests passed"
 
 echo_step "JOB 4: Test Chrome Extension"
-pnpm --filter stores/chrome-extension-example test:ci
+pnpm --filter chrome-extension-example test:ci
 echo_success "Chrome extension tests passed"
 
 echo -e "\n${GREEN}===================================================${NC}"

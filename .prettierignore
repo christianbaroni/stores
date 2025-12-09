@@ -14,3 +14,6 @@ coverage
 
 # Claude
 .claude/
+
+# Cloudflare Workers
+.wrangler

@@ -7,7 +7,7 @@ import jsdocPlugin from 'eslint-plugin-jsdoc';
 
 export default [
   {
-    ignores: ['**/node_modules/', '**/build/', '**/dist/'],
+    ignores: ['**/node_modules/', '**/build/', '**/dist/', '**/.wrangler/'],
   },
   prettierRecommended,
   {

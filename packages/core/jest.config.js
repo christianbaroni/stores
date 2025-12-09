@@ -9,4 +9,13 @@ module.exports = {
     '^storesStorage$': '<rootDir>/storesStorage.web.ts',
     '^src/(.*)$': '<rootDir>/$1',
   },
+  transform: {
+    '^.+\\.tsx?$': [
+      'ts-jest',
+      {
+        tsconfig: '<rootDir>/../tsconfig.jest.json',
+      },
+    ],
+  },
+  watchman: false,
 };
