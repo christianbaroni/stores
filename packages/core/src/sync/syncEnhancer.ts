@@ -203,16 +203,30 @@ export function createSyncedStateCreator<T extends Record<string, unknown>>(
       if (syncContext) syncContext.setIsApplyingRemote(true);
       try {
         if (update.replace) {
-          if (!keysToClear?.length) return;
           const nextState = { ...currentState };
-          for (const key of keysToClear) {
-            delete nextState[key];
-            lastWrites.delete(key);
+          let mutated = false;
+
+          if (keysToClear?.length) {
+            mutated = true;
+            for (const key of keysToClear) {
+              delete nextState[key];
+              lastWrites.delete(key);
+            }
           }
-          Object.assign(nextState, updates);
-          await (syncContext?.setWithoutPersist ?? originalSet)?.(nextState, true);
+
+          for (const key in updates) {
+            if (!Object.prototype.hasOwnProperty.call(updates, key)) continue;
+            const value = updates[key];
+            if (value === undefined) continue;
+            if (!Object.is(nextState[key], value)) mutated = true;
+            const typedObject: Record<string, unknown> = nextState;
+            typedObject[key] = value;
+          }
+
+          if (!mutated) return;
+          await (syncContext.setWithoutPersist ?? originalSet)(nextState, true);
         } else {
-          await (syncContext?.setWithoutPersist ?? originalSet)?.(updates);
+          await (syncContext.setWithoutPersist ?? originalSet)(updates);
         }
       } finally {
         isApplyingRemote = false;
@@ -240,6 +254,7 @@ export function createSyncedStateCreator<T extends Record<string, unknown>>(
         }
         scheduleProcessUpdate(update);
       },
+      delta: config.delta,
       fields: syncKeys,
       getState: get,
       key: config.key,

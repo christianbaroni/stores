@@ -22,13 +22,18 @@ async function getGzipSize(filePath: string): Promise<number> {
 async function analyzeBundle(): Promise<void> {
   console.log('🔍 Analyzing bundle composition...\n');
 
+  // Ensure tmp directory exists
+  if (!fs.existsSync('tmp')) {
+    fs.mkdirSync('tmp', { recursive: true });
+  }
+
   const result = await esbuild.build({
     entryPoints: ['src/index.ts'],
     bundle: true,
     format: 'esm',
     platform: 'browser',
     metafile: true,
-    outfile: 'dist/analyze.js',
+    outfile: 'tmp/analyze.js',
     external: ['react', 'react-native', 'react-native-mmkv'],
     write: false,
     minify: false,
@@ -103,8 +108,8 @@ async function analyzeBundle(): Promise<void> {
     }
   }
 
-  fs.writeFileSync('dist/bundle-analysis.json', JSON.stringify(meta, null, 2));
-  console.log('\n✅ Analysis saved to dist/bundle-analysis.json');
+  fs.writeFileSync('tmp/bundle-analysis.json', JSON.stringify(meta, null, 2));
+  console.log('\n✅ Analysis saved to tmp/bundle-analysis.json');
 }
 
 analyzeBundle().catch(console.error);

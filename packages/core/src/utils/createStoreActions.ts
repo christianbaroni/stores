@@ -1,18 +1,11 @@
 import { StoreApi } from 'zustand';
 import { IS_DEV } from '@env';
 import { InferStoreState } from '../types';
+import { NoOverlap, ObjectMethods } from '../types/objects';
+import { FunctionKeys, UnknownFunction } from '../types/functions';
 import { isVirtualStore } from './storeUtils';
 
 export type StoreActions<Store extends StoreApi<unknown>> = Pick<InferStoreState<Store>, FunctionKeys<InferStoreState<Store>>>;
-
-/** Extract the keys of T whose values are functions. */
-type FunctionKeys<T> = {
-  [K in keyof T]-?: T[K] extends UnknownFunction ? K : never;
-}[keyof T];
-
-type Methods = Record<string, UnknownFunction>;
-type NoOverlap<State, Bundled extends Methods> = Extract<keyof Bundled, FunctionKeys<State>> extends never ? Bundled : never;
-type UnknownFunction = (...args: never[]) => unknown;
 
 /**
  * Given a store instance, produces a new object containing only its actions.
@@ -33,12 +26,12 @@ type UnknownFunction = (...args: never[]) => unknown;
  */
 export function createStoreActions<Store extends StoreApi<unknown>>(store: Store): StoreActions<Store>;
 
-export function createStoreActions<Store extends StoreApi<unknown>, Bundled extends Methods>(
+export function createStoreActions<Store extends StoreApi<unknown>, Bundled extends ObjectMethods>(
   store: Store,
   bundledMethods: NoOverlap<InferStoreState<Store>, Bundled>
 ): StoreActions<Store> & Bundled;
 
-export function createStoreActions<Store extends StoreApi<unknown>, Bundled extends Methods>(
+export function createStoreActions<Store extends StoreApi<unknown>, Bundled extends ObjectMethods>(
   store: Store,
   bundledMethods?: NoOverlap<InferStoreState<Store>, Bundled>
 ): StoreActions<Store> | (StoreActions<Store> & Bundled) {

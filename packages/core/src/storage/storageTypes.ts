@@ -1,4 +1,4 @@
-export type StorageValue<S, WithSyncMetadata extends boolean = false> = WithSyncMetadata extends true
+export type StorageValue<S, HideSyncMetadata extends boolean = false> = HideSyncMetadata extends true
   ? {
       state: S;
       version?: number;

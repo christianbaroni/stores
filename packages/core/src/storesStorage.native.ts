@@ -1,12 +1,17 @@
 import { SyncStorageInterface } from './types';
+import { FunctionKeys } from './types/functions';
 
-declare var require: (id: string) => { MMKV: new (options: { id: string }) => SyncStorageInterface };
+type MMKVInterface = Omit<FunctionKeys<SyncStorageInterface<string>>, 'get'> & { getString: SyncStorageInterface<string>['get'] };
 
-let storageInstance: SyncStorageInterface;
+declare const require: (id: string) => { MMKV: new (options: { id: string }) => MMKVInterface };
+
+let storageInstance: SyncStorageInterface<string>;
 
 try {
   const { MMKV } = require('react-native-mmkv');
-  storageInstance = new MMKV({ id: 'stores-storage' });
+  const mmkv = new MMKV({ id: 'stores-storage' });
+  const { getString, ...rest } = mmkv;
+  storageInstance = Object.assign(Object.create(null), rest, { get: getString });
 } catch (e) {
   throw new Error(
     `[stores]: You must install react-native-mmkv for persistence to work in React Native.\n
@@ -15,10 +20,10 @@ try {
   );
 }
 
-function assertMMKV(instance: SyncStorageInterface): asserts instance is SyncStorageInterface {
+function assertMMKV(instance: SyncStorageInterface<unknown> | SyncStorageInterface<string>): asserts instance is SyncStorageInterface {
   if (
     !instance ||
-    typeof instance.getString !== 'function' ||
+    typeof instance.get !== 'function' ||
     typeof instance.set !== 'function' ||
     typeof instance.delete !== 'function' ||
     typeof instance.clearAll !== 'function'
@@ -29,7 +34,7 @@ function assertMMKV(instance: SyncStorageInterface): asserts instance is SyncSto
 
 assertMMKV(storageInstance);
 
-export const storesStorage: SyncStorageInterface = {
+export const storesStorage: SyncStorageInterface<string> = {
   clearAll(): void {
     storageInstance.clearAll();
   },
@@ -42,8 +47,8 @@ export const storesStorage: SyncStorageInterface = {
   getAllKeys(): string[] {
     return storageInstance.getAllKeys();
   },
-  getString(key: string): string | undefined {
-    return storageInstance.getString(key);
+  get(key: string): string | undefined {
+    return storageInstance.get(key);
   },
   set(key: string, value: string): void {
     storageInstance.set(key, value);

@@ -67,6 +67,7 @@ export type OptionallyPersistedStore<S, PersistedState, PersistReturn = void> = 
 
 // ============ Common Utility Types =========================================== //
 
+export type NoInfer<T> = [T][T extends unknown ? 0 : never];
 export type Timeout = ReturnType<typeof setTimeout>;
 
 export type Listener<S> = (state: S, prevState: S) => void;
@@ -83,6 +84,23 @@ export type InferStoreState<Store extends StoreApi<unknown>> = Store extends {
 }
   ? T
   : never;
+
+/**
+ * Extracts the return type of setState from a store.
+ * Returns `void` for non-persisted or sync-persisted stores.
+ * Returns `Promise<void>` for async-persisted stores.
+ */
+export type InferSetStateReturn<Store> = Store extends { setState(...args: SetStateArgs<infer S>): infer R } ? R : void;
+
+/**
+ * Extracts the PersistedState type from a store's persist property.
+ * Returns `Partial<State>` if the store doesn't have persistence.
+ */
+export type InferPersistedState<Store, State> = Store extends { persist: { getOptions: () => infer Options } }
+  ? Options extends { name?: string }
+    ? Partial<State>
+    : Partial<State>
+  : Partial<State>;
 
 // ============ Set State Types ================================================ //
 
@@ -235,49 +253,66 @@ export type DeriveOptions<DerivedState = unknown> =
 
 // ============ Persistence Types ============================================== //
 
-/**
- * Generic storage interface that can be either synchronous or asynchronous.
- * This is the base type used in the config.
- */
-export type StorageInterface = SyncStorageInterface | AsyncStorageInterface;
+export type Deserializer<SerializedState, PersistedState> = (serializedState: SerializedState) => StorageValue<PersistedState>;
+export type Serializer<SerializedState> = <PersistedState>(storageValue: StorageValue<PersistedState>) => SerializedState;
 
 /**
  * Synchronous storage interface.
  * Used for localStorage and MMKV implementations.
  */
-export interface SyncStorageInterface {
+export interface SyncStorageInterface<SerializedState = unknown> {
   readonly async?: false;
+  /**
+   * Adapter-level deserializer used when a store does not supply its own.
+   * Acts as the default before falling back to the framework implementation.
+   */
+  readonly deserializer?: <PersistedState>(serializedState: SerializedState) => StorageValue<PersistedState>;
+  /**
+   * Adapter-level serializer used when a store does not supply its own.
+   * Acts as the default before falling back to the framework implementation.
+   */
+  readonly serializer?: <PersistedState>(storageValue: StorageValue<PersistedState>) => SerializedState;
   clearAll(): void;
   contains(key: string): boolean;
   delete(key: string): void;
+  get(key: string): SerializedState | undefined;
   getAllKeys(): string[];
-  getString(key: string): string | undefined;
-  set(key: string, value: string): void;
+  set(key: string, value: SerializedState): void;
 }
 
 /**
  * Asynchronous storage interface.
  * Used for Chrome storage and other async storage implementations.
  */
-export interface AsyncStorageInterface {
+export type AsyncStorageInterface<SerializedState = unknown> = {
   readonly async: true;
+  /**
+   * Adapter-level deserializer used when a store does not supply its own.
+   * Acts as the default before falling back to the framework implementation.
+   */
+  readonly deserializer?: <PersistedState>(serializedState: SerializedState) => StorageValue<PersistedState>;
+  /**
+   * Adapter-level serializer used when a store does not supply its own.
+   * Acts as the default before falling back to the framework implementation.
+   */
+  readonly serializer?: <PersistedState>(storageValue: StorageValue<PersistedState>) => SerializedState;
   clearAll(): Promise<void>;
   contains(key: string): Promise<boolean>;
   delete(key: string): Promise<void>;
+  get(key: string): Promise<SerializedState | undefined>;
   getAllKeys(): Promise<string[]>;
-  getString(key: string): Promise<string | undefined>;
-  set(key: string, value: string): Promise<void>;
-}
+  set(key: string, value: SerializedState): Promise<void>;
+};
 
 /**
  * Configuration options for creating a persistable store.
  */
 export type PersistConfig<S, PersistedState = Partial<S>, PersistReturn = void> = {
   /**
-   * A function to convert the serialized string back into the state object.
-   * If not provided, the default deserializer is used.
+   * A function to convert the serialized value back into the state object.
+   * If not provided, the storage adapter's `deserializer` is used before falling back to the default implementation.
    */
-  deserializer?: (serializedState: string) => StorageValue<PersistedState>;
+  deserializer?: <SerializedState>(serializedState: SerializedState) => StorageValue<PersistedState>;
 
   /**
    * A function to merge persisted state with current state during hydration.
@@ -308,13 +343,13 @@ export type PersistConfig<S, PersistedState = Partial<S>, PersistReturn = void> 
    * The throttle rate for the persist operation in milliseconds.
    * @default iOS: time.seconds(3) | Android: time.seconds(5)
    */
-  persistThrottleMs?: PersistReturn extends Promise<unknown> ? never : number;
+  persistThrottleMs?: PersistReturn extends Promise<unknown> ? undefined : number;
 
   /**
-   * A function to serialize the state and version into a string for storage.
-   * If not provided, the default serializer is used.
+   * A function to serialize the state and version for storage.
+   * If not provided, the storage adapter's `serializer` is used before falling back to the default implementation.
    */
-  serializer?: (storageValue: StorageValue<PersistedState>) => string;
+  serializer?: <SerializedState>(storageValue: StorageValue<PersistedState>) => SerializedState;
 
   /**
    * Custom storage implementation. If async, `setState` will return a Promise that resolves
@@ -335,14 +370,14 @@ export type PersistConfig<S, PersistedState = Partial<S>, PersistReturn = void> 
   version?: number;
 };
 
-export type EnforceStorageKey<Options> = Options extends { storageKey: string } ? Options : never;
+export type EnforceStorageKey<Options> = { storageKey: string } extends Options ? Options : never;
 
 // ============ Store Options ================================================== //
 
 export type BaseStoreOptions<S, PersistedState = Partial<S>, PersistReturn = void> =
   | (PersistConfig<S, PersistedState, PersistReturn> & { sync?: S extends Record<string, unknown> ? SyncOption<S> : undefined })
   | ({
-      sync: S extends Record<string, unknown> ? SyncWithoutStorage<SyncOption<S>> : undefined;
+      sync: S extends Record<string, unknown> ? SyncWithoutStorageOption<NoInfer<S>> : undefined;
     } & UndefinedPersistKeys<S, PersistedState, PersistReturn>);
 
 /**
@@ -353,9 +388,19 @@ export type BaseStoreOptions<S, PersistedState = Partial<S>, PersistReturn = voi
  */
 export type SyncOption<S extends Record<string, unknown>> = SyncConfig<S> | string | true;
 
-type SyncWithoutStorage<Options> = [Options] extends [true]
-  ? never
-  : (Omit<Options, 'injectStorageMetadata' | 'key'> & { injectStorageMetadata?: never; key: string }) | string;
+type SyncWithoutStorageOption<S extends Record<string, unknown>> =
+  | string
+  | (Omit<SyncConfig<S>, 'injectStorageMetadata' | 'key'> & {
+      injectStorageMetadata?: never;
+      key: SyncWithoutStorageKey<SyncConfig<S>>;
+      readonly __syncStateBrand?: (state: S) => S;
+    });
+
+type SyncWithoutStorageKey<Config> = Config extends { key?: infer Key }
+  ? Extract<Key, string> extends never
+    ? string
+    : Extract<Key, string>
+  : string;
 
 type UndefinedPersistKeys<S, PersistedState, PersistReturn> = {
   [K in keyof PersistConfig<S, PersistedState, PersistReturn>]?: undefined;

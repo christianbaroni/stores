@@ -224,6 +224,26 @@ describe('createSyncedStateCreator', () => {
       expect(store.state.current.items).toEqual([1, 2, 3]);
     });
 
+    it('applies replace updates when no keys are cleared', async () => {
+      type State = { title: string; count: number };
+      const baseCreator: StateCreator<State> = () => ({ title: 'Draft', count: 1 });
+      const config: NormalizedSyncConfig<State> = { key: 'replace-no-clear' };
+
+      const { registration, store, handle } = registerStore(config, baseCreator, { title: 'Draft', count: 1 });
+      triggerOnHydrated(handle);
+
+      const apply = registration.apply;
+      apply({
+        replace: true,
+        sessionId: 'remote',
+        timestamp: 10,
+        values: { title: 'Published', count: 5 },
+      });
+
+      await flushMicrotasks();
+      expect(store.state.current).toEqual({ title: 'Published', count: 5 });
+    });
+
     it('removes stale keys on replace updates when not provided', async () => {
       type State = { present?: string; other?: string };
       const baseCreator: StateCreator<State> = () => ({ present: 'yes', other: 'keep' });

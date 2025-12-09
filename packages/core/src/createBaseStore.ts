@@ -1,4 +1,4 @@
-import { persist, subscribeWithSelector } from 'zustand/middleware';
+import { persist, PersistOptions, subscribeWithSelector } from 'zustand/middleware';
 import { createWithEqualityFn } from 'zustand/traditional';
 import { getStoresConfig, markStoreCreated } from './config';
 import { StoresError } from './logger';
@@ -101,32 +101,39 @@ export function createBaseStore<S, PersistedState extends Partial<S>, PersistRet
     : stateCreator;
 
   const store = createWithEqualityFn<S>()(
-    subscribeWithSelector(
-      persist(finalStateCreator, {
-        ...(options.merge && { merge: options.merge }),
-        ...(options.migrate && { migrate: options.migrate }),
-        name: options.storageKey,
-        onRehydrateStorage: wrappedOnRehydrateStorage,
-        storage: storageConfig.persistStorage,
-        version: storageConfig.version,
-      })
-    ),
+    subscribeWithSelector(persist(finalStateCreator, buildPersistOptions(options, storageConfig, wrappedOnRehydrateStorage))),
     Object.is
   );
 
-  if (hydrationGate) {
-    return Object.assign(store, {
-      persist: Object.assign(store.persist, { hydrationPromise: hydrationGate.hydrationPromise }),
-    });
-  }
+  if (!hydrationGate) return store;
 
-  return store;
+  return Object.assign(store, {
+    persist: Object.assign(store.persist, { hydrationPromise: hydrationGate.hydrationPromise }),
+  });
+}
+
+function buildPersistOptions<S, PersistedState extends Partial<S>, PersistReturn>(
+  options: BaseStoreOptions<S, PersistedState, PersistReturn> & { storageKey: string },
+  storageConfig: ReturnType<typeof createPersistStorage<S, PersistedState, PersistReturn>>,
+  wrappedOnRehydrateStorage: BaseStoreOptions<S, PersistedState, PersistReturn>['onRehydrateStorage']
+): PersistOptions<S, PersistedState, unknown> {
+  const persistConfig: PersistOptions<S, PersistedState> = {
+    name: options.storageKey,
+    onRehydrateStorage: wrappedOnRehydrateStorage,
+    storage: storageConfig.persistStorage,
+    version: storageConfig.version,
+  };
+
+  if (options.merge !== undefined) persistConfig.merge = options.merge;
+  if (options.migrate !== undefined) persistConfig.migrate = options.migrate;
+
+  return persistConfig;
 }
 
 /**
  * Normalizes `SyncOption` into `NormalizedSyncConfig` with a required key.
  */
-export function normalizeSyncOption<S extends Record<string, unknown>>(
+function normalizeSyncOption<S extends Record<string, unknown>>(
   syncOption: SyncOption<S> | undefined,
   storageKey: string | undefined
 ): NormalizedSyncConfig<S> | null {

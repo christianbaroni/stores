@@ -7,7 +7,7 @@ import { SyncContext } from '../../sync/syncEnhancer';
 import { createMockSyncContext } from '../../sync/tests/testUtils';
 
 type SyncStorageMock = {
-  getString: jest.Mock<string | undefined, [string]>;
+  get: jest.Mock<string | undefined, [string]>;
   set: jest.Mock<void, [string, string]>;
   delete: jest.Mock<void, [string]>;
   clearAll: jest.Mock<void, []>;
@@ -17,7 +17,7 @@ type SyncStorageMock = {
 };
 
 type AsyncStorageMock = {
-  getString: jest.Mock<Promise<string | undefined>, [string]>;
+  get: jest.Mock<Promise<string | undefined>, [string]>;
   set: jest.Mock<Promise<void>, [string, string]>;
   delete: jest.Mock<Promise<void>, [string]>;
   clearAll: jest.Mock<Promise<void>, []>;
@@ -26,9 +26,9 @@ type AsyncStorageMock = {
   async: true;
 };
 
-function createSyncStorageMock(): SyncStorageMock {
+export function createSyncStorageMock(): SyncStorageMock {
   return {
-    getString: jest.fn<string | undefined, [string]>(),
+    get: jest.fn<string | undefined, [string]>(),
     set: jest.fn<void, [string, string]>(),
     delete: jest.fn<void, [string]>(),
     clearAll: jest.fn<void, []>(),
@@ -38,9 +38,9 @@ function createSyncStorageMock(): SyncStorageMock {
   };
 }
 
-function createAsyncStorageMock(): AsyncStorageMock {
+export function createAsyncStorageMock(): AsyncStorageMock {
   return {
-    getString: jest.fn<Promise<string | undefined>, [string]>(async () => undefined),
+    get: jest.fn<Promise<string | undefined>, [string]>(async () => undefined),
     set: jest.fn<Promise<void>, [string, string]>(async () => {}),
     delete: jest.fn<Promise<void>, [string]>(async () => {}),
     clearAll: jest.fn<Promise<void>, []>(async () => {}),

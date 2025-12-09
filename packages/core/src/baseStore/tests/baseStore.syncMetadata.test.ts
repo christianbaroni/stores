@@ -31,7 +31,7 @@ describe('createBaseStore sync metadata', () => {
       contains: jest.fn(async () => false),
       delete: jest.fn(async () => {}),
       getAllKeys: jest.fn(async () => []),
-      getString: jest.fn(async () => JSON.stringify({ state: { a: 0, b: 0 }, version: 0 })),
+      get: jest.fn(async () => JSON.stringify({ state: { a: 0, b: 0 }, version: 0 })),
       set: jest.fn(async (key: string, value: string) => {
         storageWrites.push({ key, value });
       }),

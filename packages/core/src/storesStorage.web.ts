@@ -51,7 +51,7 @@ export const storesStorage: SyncStorageInterface = {
     }
   },
 
-  getString(key: string): string | undefined {
+  get(key: string): string | undefined {
     try {
       const localStorage = getLocalStorage();
       return localStorage ? (localStorage.getItem(`${STORAGE_ID}:${key}`) ?? undefined) : undefined;

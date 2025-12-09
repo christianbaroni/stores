@@ -112,6 +112,10 @@ export function capturePublishedUpdates<T extends Record<string, unknown>>(handl
   return updates;
 }
 
+export async function flushMacrotask(): Promise<void> {
+  await new Promise(resolve => setTimeout(resolve, 0));
+}
+
 export async function flushMicrotasks(times = 1): Promise<void> {
   if (times === 1) return Promise.resolve();
   let promise = Promise.resolve();

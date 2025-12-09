@@ -10,15 +10,15 @@ import { debounce } from '../utils/debounce';
 import { defaultDeserializeState, defaultSerializeState, omitStoreMethods } from '../utils/persistUtils';
 import { time } from '../utils/time';
 
-type SyncPersistStorage<S> = {
-  getItem: (name: string) => StorageValue<S> | null;
-  setItem: (name: string, value: StorageValue<S>) => void;
-  removeItem: (name: string) => void;
-};
-
 type MetadataCapture = {
   fieldSnapshot?: Record<string, number>;
   shouldClear: boolean;
+};
+
+type SyncPersistStorage<S> = {
+  getItem: (name: string) => StorageValue<S> | null;
+  removeItem: (name: string) => void;
+  setItem: (name: string, value: StorageValue<S>) => void;
 };
 
 const DEFAULT_PERSIST_THROTTLE_MS = IS_TEST ? 0 : IS_BROWSER ? time.ms(200) : IS_IOS ? time.seconds(3) : time.seconds(5);
@@ -35,7 +35,7 @@ export function createPersistStorage<S, PersistedState extends Partial<S>, Persi
   version: number;
 } {
   const parsedStorage = storage ?? options.storage ?? getStoresConfig().storage;
-  const persistThrottleMs = options.sync ? undefined : DEFAULT_PERSIST_THROTTLE_MS;
+  const persistThrottleMs = (options.sync ? undefined : (options.persistThrottleMs ?? DEFAULT_PERSIST_THROTTLE_MS)) || undefined;
   const version = options.version ?? 0;
 
   const persistStorage = parsedStorage.async
@@ -50,31 +50,32 @@ export function createPersistStorage<S, PersistedState extends Partial<S>, Persi
  * Behavior unchanged, but shown here in full for completeness.
  */
 function createSyncPersistStorage<S, PersistedState extends Partial<S>, PersistReturn>(
-  storage: SyncStorageInterface,
+  storage: SyncStorageInterface<unknown>,
   options: EnforceStorageKey<BaseStoreOptions<S, PersistedState, PersistReturn>>,
   persistThrottleMs: number | undefined,
   syncContext?: SyncContext
 ): SyncPersistStorage<PersistedState> {
-  const enableMapSetHandling = !options.deserializer && !options.serializer;
+  const enableMapSetHandling = !options.deserializer && !options.serializer && !storage.deserializer && !storage.serializer;
   const injectMetadata =
     typeof options.sync === 'object' && (options.sync.injectStorageMetadata ?? options.sync.engine?.injectStorageMetadata) === true;
 
-  const {
-    deserializer = (serializedState: string) => defaultDeserializeState<PersistedState>(serializedState, enableMapSetHandling),
-    partialize = omitStoreMethods<S, PersistedState>,
-    serializer = (storageValue: StorageValue<PersistedState>) => defaultSerializeState<PersistedState>(storageValue, enableMapSetHandling),
-  } = options;
+  const partialize = options.partialize ?? omitStoreMethods<S, PersistedState>;
+  const deserializer = options.deserializer ?? storage.deserializer ?? createDefaultDeserializer<PersistedState>(enableMapSetHandling);
+  const serializer = options.serializer ?? storage.serializer ?? createDefaultSerializer<PersistedState>(enableMapSetHandling);
 
   function persist(name: string, storageValue: StorageValue<PersistedState>): void {
     try {
       if (shouldSkipPersistence(syncContext)) return;
-
       storageValue.state = partialize(assertState<S, PersistedState>(storageValue.state));
       const metadataCapture = attachMetadata(syncContext, injectMetadata, storageValue);
       const serializedValue = serializer(storageValue);
-      storage.set(name, serializedValue);
 
-      clearMetadataSnapshot(syncContext, metadataCapture);
+      try {
+        storage.set(name, serializedValue);
+        clearMetadataSnapshot(syncContext, metadataCapture);
+      } catch (error) {
+        logger.error(new StoresError(`[createBaseStore]: Failed to persist store data`), { error });
+      }
     } catch (error) {
       logger.error(new StoresError(`[createBaseStore]: Failed to persist store data`), { error });
     }
@@ -87,8 +88,8 @@ function createSyncPersistStorage<S, PersistedState extends Partial<S>, PersistR
 
   return {
     getItem: name => {
-      const serializedValue = storage.getString(name);
-      if (!serializedValue) return null;
+      const serializedValue = storage.get(name);
+      if (serializedValue === undefined) return null;
       return deserializer(serializedValue);
     },
     setItem: (name, value) => {
@@ -114,23 +115,21 @@ export function createAsyncPersistStorage<S, PersistedState extends Partial<S>, 
   persistThrottleMs: number | undefined,
   syncContext?: SyncContext
 ): PersistStorage<PersistedState, Promise<void>> {
-  const enableMapSetHandling = !options.deserializer && !options.serializer;
+  const enableMapSetHandling = !options.deserializer && !options.serializer && !storage.deserializer && !storage.serializer;
   const injectMetadata =
     typeof options.sync === 'object' && (options.sync.injectStorageMetadata ?? options.sync.engine?.injectStorageMetadata) === true;
 
-  const {
-    deserializer = (serializedState: string) => defaultDeserializeState<PersistedState>(serializedState, enableMapSetHandling),
-    partialize = omitStoreMethods<S, PersistedState>,
-    serializer = (storageValue: StorageValue<PersistedState>) => defaultSerializeState<PersistedState>(storageValue, enableMapSetHandling),
-  } = options;
+  const partialize = options.partialize ?? omitStoreMethods<S, PersistedState>;
+  const deserializer = options.deserializer ?? storage.deserializer ?? createDefaultDeserializer<PersistedState>(enableMapSetHandling);
+  const serializer = options.serializer ?? storage.serializer ?? createDefaultSerializer<PersistedState>(enableMapSetHandling);
 
   async function persist(name: string, storageValue: StorageValue<PersistedState>): Promise<void> {
     try {
       if (shouldSkipPersistence(syncContext)) return;
-
       storageValue.state = partialize(assertState<S, PersistedState>(storageValue.state));
       const metadataCapture = attachMetadata(syncContext, injectMetadata, storageValue);
       const serializedValue = serializer(storageValue);
+
       try {
         await storage.set(name, serializedValue);
         clearMetadataSnapshot(syncContext, metadataCapture);
@@ -153,8 +152,8 @@ export function createAsyncPersistStorage<S, PersistedState extends Partial<S>, 
 
   return {
     getItem: async name => {
-      const serializedValue = await storage.getString(name);
-      if (!serializedValue) return null;
+      const serializedValue = await storage.get(name);
+      if (serializedValue === undefined) return null;
       return deserializer(serializedValue);
     },
     setItem: async (name, value) => {
@@ -169,6 +168,26 @@ export function createAsyncPersistStorage<S, PersistedState extends Partial<S>, 
       }
     },
   };
+}
+
+function createDefaultDeserializer<PersistedState extends Partial<unknown>>(
+  shouldUseReviver: boolean
+): (serializedState: unknown) => StorageValue<PersistedState> {
+  return serializedState => {
+    if (typeof serializedState !== 'string') {
+      throw new StoresError(
+        '[createBaseStore]: Received non-string serialized state without a custom deserializer. ' +
+          'Provide a deserializer on the store or storage adapter.'
+      );
+    }
+    return defaultDeserializeState<PersistedState>(serializedState, shouldUseReviver);
+  };
+}
+
+function createDefaultSerializer<PersistedState extends Partial<unknown>>(
+  shouldUseReplacer: boolean
+): (storageValue: StorageValue<PersistedState>) => string {
+  return storageValue => defaultSerializeState<PersistedState>(storageValue, shouldUseReplacer);
 }
 
 const SHOULD_CLEAR_FALSE = Object.freeze({ shouldClear: false });
