@@ -3,7 +3,10 @@ import { defineConfig } from 'tsup';
 const isProduction = process.env.NODE_ENV === 'production';
 
 export default defineConfig({
-  entry: ['src/index.ts'],
+  entry: {
+    'index': 'src/index.ts',
+    'plugins/chrome': 'src/plugins/chrome/index.ts',
+  },
   format: ['esm', 'cjs'],
   clean: true,
   dts: false,

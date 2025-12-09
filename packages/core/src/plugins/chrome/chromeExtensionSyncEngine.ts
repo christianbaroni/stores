@@ -1,4 +1,5 @@
-import { StorageValue, SyncEngine, SyncHandle, SyncRegistration, SyncValues } from 'stores';
+import { StorageValue } from '../../storage/storageTypes';
+import { SyncEngine, SyncHandle, SyncRegistration, SyncValues } from '../../sync/types';
 import {
   AreaName,
   CHROME_STORAGE_NAMESPACE,

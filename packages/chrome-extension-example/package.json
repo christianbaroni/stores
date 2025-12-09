@@ -16,9 +16,7 @@
     "lint:prettier": "pnpm -w run lint:prettier",
     "preview": "pnpm run --parallel preview:example preview:sync-test",
     "preview:example": "APP=example vite preview --host",
-    "preview:sync-test": "APP=sync-test vite preview --host",
-    "test": "vitest",
-    "test:ci": "vitest run"
+    "preview:sync-test": "APP=sync-test vite preview --host"
   },
   "dependencies": {
     "react": "19.1.1",
@@ -32,7 +30,6 @@
     "@vitejs/plugin-react": "^4.5.1",
     "babel-plugin-react-compiler": "19.1.0-rc.2",
     "typescript": "^5.4.2",
-    "vite": "^6.3.5",
-    "vitest": "^2.0.0"
+    "vite": "^6.3.5"
   }
 }

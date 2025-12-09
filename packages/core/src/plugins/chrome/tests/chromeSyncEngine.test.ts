@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { createBaseStore } from 'stores';
+import { createBaseStore } from '../../../createBaseStore';
 import { ChromeExtensionSyncEngine } from '../chromeExtensionSyncEngine';
 import { ChromeStorageAdapter } from '../chromeStorageAdapter';
 import { MockChromeStorage, setupMockChrome, cleanupMockChrome } from './mockChromeStorage';
@@ -86,7 +86,7 @@ describe('ChromeExtensionSyncEngine', () => {
     // Wait for sync to propagate
     await waitForMicrotasks();
 
-    // Store2 should receive the update
+    // store2 should receive the update
     expect(store2.getState().count).toBe(1);
 
     // Update store2
@@ -97,7 +97,7 @@ describe('ChromeExtensionSyncEngine', () => {
     // Wait for sync to propagate
     await waitForMicrotasks();
 
-    // Store1 should receive the updates
+    // store1 should receive the updates
     expect(store1.getState().count).toBe(3);
   });
 
@@ -132,54 +132,54 @@ describe('ChromeExtensionSyncEngine', () => {
         }
       );
 
-    const todoStore1 = createTodoStore(storageAdapter1, syncEngine1);
-    const todoStore2 = createTodoStore(storageAdapter2, syncEngine2);
+    const todostore1 = createTodoStore(storageAdapter1, syncEngine1);
+    const todostore2 = createTodoStore(storageAdapter2, syncEngine2);
 
-    await Promise.all([todoStore1.persist.hydrationPromise(), todoStore2.persist.hydrationPromise()]);
+    await Promise.all([todostore1.persist.hydrationPromise(), todostore2.persist.hydrationPromise()]);
 
     // Add a todo from store1
-    todoStore1.getState().addTodo('Buy groceries');
-    expect(todoStore1.getState().todos).toHaveLength(1);
-    expect(todoStore1.getState().todos[0].text).toBe('Buy groceries');
+    todostore1.getState().addTodo('Buy groceries');
+    expect(todostore1.getState().todos).toHaveLength(1);
+    expect(todostore1.getState().todos[0].text).toBe('Buy groceries');
 
     await waitForMicrotasks();
 
-    // Store2 should receive the new todo
-    expect(todoStore2.getState().todos).toHaveLength(1);
-    expect(todoStore2.getState().todos[0].text).toBe('Buy groceries');
-    expect(todoStore2.getState().todos[0].id).toBe(todoStore1.getState().todos[0].id);
+    // store2 should receive the new todo
+    expect(todostore2.getState().todos).toHaveLength(1);
+    expect(todostore2.getState().todos[0].text).toBe('Buy groceries');
+    expect(todostore2.getState().todos[0].id).toBe(todostore1.getState().todos[0].id);
 
     // Add another todo from store2
-    todoStore2.getState().addTodo('Walk the dog');
-    expect(todoStore2.getState().todos).toHaveLength(2);
+    todostore2.getState().addTodo('Walk the dog');
+    expect(todostore2.getState().todos).toHaveLength(2);
 
     await waitForMicrotasks();
 
-    // Store1 should receive the update
-    expect(todoStore1.getState().todos).toHaveLength(2);
-    const todo2 = todoStore1.getState().todos.find(t => t.text === 'Walk the dog');
+    // store1 should receive the update
+    expect(todostore1.getState().todos).toHaveLength(2);
+    const todo2 = todostore1.getState().todos.find(t => t.text === 'Walk the dog');
     expect(todo2).toBeDefined();
     expect(todo2?.completed).toBe(false);
 
     // Toggle todo from store1
     if (todo2) {
-      todoStore1.getState().toggleTodo(todo2.id);
-      expect(todoStore1.getState().todos.find(t => t.id === todo2.id)?.completed).toBe(true);
+      todostore1.getState().toggleTodo(todo2.id);
+      expect(todostore1.getState().todos.find(t => t.id === todo2.id)?.completed).toBe(true);
 
       await waitForMicrotasks();
 
-      // Store2 should receive the toggle
-      expect(todoStore2.getState().todos.find(t => t.id === todo2.id)?.completed).toBe(true);
+      // store2 should receive the toggle
+      expect(todostore2.getState().todos.find(t => t.id === todo2.id)?.completed).toBe(true);
     }
 
     // Change filter from store2
-    todoStore2.getState().setFilter('completed');
-    expect(todoStore2.getState().filter).toBe('completed');
+    todostore2.getState().setFilter('completed');
+    expect(todostore2.getState().filter).toBe('completed');
 
     await waitForMicrotasks();
 
-    // Store1 should receive the filter change
-    expect(todoStore1.getState().filter).toBe('completed');
+    // store1 should receive the filter change
+    expect(todostore1.getState().filter).toBe('completed');
   });
 
   it('should handle rapid consecutive updates', async () => {
@@ -224,7 +224,7 @@ describe('ChromeExtensionSyncEngine', () => {
     // Wait for all updates to propagate
     await waitForMicrotasks();
 
-    // Store2 should eventually have the final count
+    // store2 should eventually have the final count
     expect(store2.getState().count).toBe(5);
   });
 
@@ -272,7 +272,7 @@ describe('ChromeExtensionSyncEngine', () => {
 
     await waitForMicrotasks();
 
-    // Store2 should receive the synced field update
+    // store2 should receive the synced field update
     expect(store2.getState().syncedField).toBe('synced-value');
 
     // Update local field in store1
@@ -281,7 +281,7 @@ describe('ChromeExtensionSyncEngine', () => {
 
     await waitForMicrotasks();
 
-    // Store2's local field should NOT change
+    // store2's local field should NOT change
     expect(store2.getState().localField).toBe('local2');
 
     // Update local field in store2
@@ -290,7 +290,7 @@ describe('ChromeExtensionSyncEngine', () => {
 
     await waitForMicrotasks();
 
-    // Store1's local field should NOT change
+    // store1's local field should NOT change
     expect(store1.getState().localField).toBe('local1-updated');
   });
 
@@ -436,7 +436,7 @@ describe('ChromeExtensionSyncEngine', () => {
     // Wait for sync
     await waitForMicrotasks();
 
-    // Store2 should receive the updates
+    // store2 should receive the updates
     expect(store2.getState().counter).toBe(2);
     expect(store2.getState().message).toBe('from store1');
 
@@ -450,7 +450,7 @@ describe('ChromeExtensionSyncEngine', () => {
     // Wait for sync
     await waitForMicrotasks();
 
-    // Store1 should receive the updates
+    // store1 should receive the updates
     expect(store1.getState().counter).toBe(3);
     expect(store1.getState().message).toBe('from store2');
   });
@@ -508,7 +508,7 @@ describe('ChromeExtensionSyncEngine', () => {
 
     await waitForMicrotasks();
 
-    // Store2 should still be synced (sync is independent of subscriptions)
+    // store2 should still be synced (sync is independent of subscriptions)
     expect(store2.getState().value).toBe(200);
   });
 });

@@ -38,9 +38,9 @@ echo_step "JOB 3: Test Core"
 pnpm --filter stores test
 echo_success "Core tests passed"
 
-echo_step "JOB 4: Test Chrome Extension"
-pnpm --filter chrome-extension-example test:ci
-echo_success "Chrome extension tests passed"
+echo_step "JOB 4: Test Chrome Plugin"
+pnpm --filter stores test:chrome
+echo_success "Chrome plugin tests passed"
 
 echo -e "\n${GREEN}===================================================${NC}"
 echo -e "${GREEN}✓ All jobs passed${NC}"

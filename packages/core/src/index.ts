@@ -6,7 +6,7 @@ export * from './createQueryStore';
 export * from './createVirtualStore';
 
 /* -- Helpers ------ */
-export { replacer, reviver } from './utils/persistUtils';
+export { replacer, reviver } from './utils/serialization';
 export { applyStateUpdate } from './utils/storeUtils';
 
 /* -- Hooks -------- */

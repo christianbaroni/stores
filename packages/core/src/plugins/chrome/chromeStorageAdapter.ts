@@ -1,4 +1,6 @@
-import { AsyncStorageInterface, StorageValue, replacer, reviver } from 'stores';
+import { AsyncStorageInterface } from '../../types';
+import { StorageValue } from '../../storage/storageTypes';
+import { replacer, reviver } from '../../utils/serialization';
 
 export const CHROME_STORAGE_NAMESPACE = 'stores/chrome-storage';
 const ENABLE_LOGS = false;

@@ -1,6 +1,6 @@
 /// <reference types="chrome" />
 
-import { deepEqual } from 'stores';
+import { deepEqual } from '../../../utils/equality';
 
 /**
  * Mock implementation of Chrome Storage API

@@ -106,6 +106,9 @@ importers:
         specifier: 5.0.8
         version: 5.0.8(@types/react@19.2.2)(react@19.1.1)(use-sync-external-store@1.6.0(react@19.1.1))
     devDependencies:
+      '@types/chrome':
+        specifier: ^0.0.276
+        version: 0.0.276
       '@types/jest':
         specifier: ^29.5.14
         version: 29.5.14
@@ -133,6 +136,9 @@ importers:
       tsup:
         specifier: ^8.5.0
         version: 8.5.0(jiti@2.6.1)(postcss@8.5.6)(tsx@4.20.6)(typescript@5.9.3)(yaml@2.8.1)
+      vitest:
+        specifier: ^2.0.0
+        version: 2.1.9(@types/node@24.9.1)(terser@5.44.0)
 
   packages/example-app:
     dependencies:

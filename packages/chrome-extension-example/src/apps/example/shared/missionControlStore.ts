@@ -1,5 +1,5 @@
 import { createBaseStore, time } from 'stores';
-import { createSyncedChromeStorage } from '../../../shared/createSyncedStorage';
+import { createSyncedChromeStorage } from 'stores/plugins/chrome';
 
 export type MissionTheme = 'solstice' | 'midnight' | 'aurora';
 export type PulseStatus = 'nominal' | 'elevated' | 'critical';
