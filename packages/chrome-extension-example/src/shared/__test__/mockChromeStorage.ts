@@ -1,6 +1,6 @@
 /// <reference types="chrome" />
 
-import { deepEqual, isPlainObject } from 'stores';
+import { deepEqual } from 'stores';
 
 /**
  * Mock implementation of Chrome Storage API
@@ -297,4 +297,12 @@ function cloneStorageValue(value: unknown): unknown {
     return cloned;
   }
   return value;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === null || prototype === Object.prototype;
 }
