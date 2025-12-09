@@ -1,11 +1,12 @@
 import { defineConfig } from 'tsup';
 
+const isNative = process.env.BUILD_TARGET === 'native';
 const isProduction = process.env.NODE_ENV === 'production';
 
 export default defineConfig({
   entry: {
-    'index': 'src/index.ts',
-    'plugins/chrome': 'src/plugins/chrome/index.ts',
+    index: 'src/index.ts',
+    ...(isNative ? {} : { 'plugins/chrome': 'src/plugins/chrome/index.ts' }),
   },
   format: ['esm', 'cjs'],
   clean: true,

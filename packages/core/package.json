@@ -57,7 +57,7 @@
     "analyze": "pnpm run prebuild:web && npx -y tsx analyze-bundle.ts && pnpm run postbuild:web",
     "build": "pnpm run build:types && NODE_ENV=production pnpm run build:web && NODE_ENV=production pnpm run build:native",
     "build:dev": "pnpm run build:types && NODE_ENV=development pnpm run build:web && NODE_ENV=development pnpm run build:native",
-    "build:native": "pnpm run prebuild:native && tsup --config tsup.config.ts --out-dir dist/native --platform node && pnpm run postbuild:native",
+    "build:native": "pnpm run prebuild:native && BUILD_TARGET=native tsup --config tsup.config.ts --out-dir dist/native && pnpm run postbuild:native",
     "build:types": "tsc -p tsconfig.build.json --emitDeclarationOnly",
     "build:web": "pnpm run prebuild:web && tsup --config tsup.config.ts --out-dir dist/web && pnpm run postbuild:web",
     "lint": "pnpm -w run lint",
