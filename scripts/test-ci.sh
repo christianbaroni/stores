@@ -1,12 +1,26 @@
 #!/bin/bash
 
 # Run CI jobs locally
+# Usage: ./test-ci.sh [--export]
+#   --export: Pack the core package into a tarball after successful build
 
 set -e
 
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 NC='\033[0m'
+
+EXPORT_PACKAGE=false
+
+# Parse arguments
+for arg in "$@"; do
+    case $arg in
+        --export)
+            EXPORT_PACKAGE=true
+            shift
+            ;;
+    esac
+done
 
 echo_step() {
     echo -e "\n${BLUE}===================================================${NC}"
@@ -19,7 +33,7 @@ echo_success() {
 }
 
 # Navigate to repo root
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 
 echo_step "Installing dependencies"
 pnpm install --frozen-lockfile
@@ -41,6 +55,15 @@ echo_success "Core tests passed"
 echo_step "JOB 4: Test Chrome Plugin"
 pnpm --filter stores test:chrome
 echo_success "Chrome plugin tests passed"
+
+# Export package if requested
+if [ "$EXPORT_PACKAGE" = true ]; then
+    echo_step "Exporting package tarball"
+    mkdir -p dist
+    (cd packages/core && pnpm pack --pack-destination ../../dist)
+    TARBALL=$(ls -1 dist/stores-*.tgz 2>/dev/null | head -1)
+    echo_success "Package exported: $TARBALL"
+fi
 
 echo -e "\n${GREEN}===================================================${NC}"
 echo -e "${GREEN}✓ All jobs passed${NC}"
