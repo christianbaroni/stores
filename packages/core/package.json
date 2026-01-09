@@ -58,11 +58,11 @@
   "scripts": {
     "analyze": "pnpm run prebuild:web && npx -y tsx analyze-bundle.ts && pnpm run postbuild:web",
     "build": "tsx build/build.ts",
-    "generate:exports": "tsx scripts/generate-exports.ts",
     "build:dev": "pnpm run build:types && NODE_ENV=development pnpm run build:web && NODE_ENV=development pnpm run build:native",
     "build:native": "pnpm run -s prebuild:native && BUILD_TARGET=native tsup --config tsup.config.ts --out-dir dist/native && pnpm run -s postbuild:native",
     "build:types": "tsc -p tsconfig.build.json --emitDeclarationOnly",
     "build:web": "pnpm run -s prebuild:web && tsup --config tsup.config.ts --out-dir dist/web && pnpm run -s postbuild:web",
+    "generate:exports": "tsx scripts/generate-exports.ts",
     "lint": "pnpm -w run lint",
     "lint:eslint": "pnpm -w run lint:eslint",
     "lint:prettier": "pnpm -w run lint:prettier",
@@ -70,8 +70,9 @@
     "postbuild:web": "rm -f src/storesStorage.ts src/env.ts",
     "prebuild:native": "cp src/storesStorage.native.ts src/storesStorage.ts && cp src/env.native.ts src/env.ts",
     "prebuild:web": "cp src/storesStorage.web.ts src/storesStorage.ts && cp src/env.web.ts src/env.ts",
+    "prepublishOnly": "pnpm build",
     "test": "jest --detectOpenHandles --forceExit --testPathIgnorePatterns='src/plugins'",
-    "test:chrome": "vitest run src/plugins/chrome",
-    "test:all": "pnpm run test && pnpm run test:chrome"
+    "test:all": "pnpm run test && pnpm run test:chrome",
+    "test:chrome": "vitest run src/plugins/chrome"
   }
 }
