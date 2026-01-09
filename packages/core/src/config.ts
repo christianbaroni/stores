@@ -18,17 +18,11 @@ type ConfigWithoutLogger = Omit<StoresConfig, 'logger'>;
 
 // ============ Stores Configuration =========================================== //
 
-let activeConfig: ConfigWithoutLogger = createDefaultConfig();
+let activeConfig: ConfigWithoutLogger | undefined;
 let configLocked = false;
 
-function createDefaultConfig(): ConfigWithoutLogger {
-  return {
-    storage: storesStorage,
-    syncEngine: IS_BROWSER ? createBrowserSyncEngine() : createNoopSyncEngine(),
-  };
-}
-
 export function configureStores(update: Partial<StoresConfig>): void {
+  activeConfig ??= createDefaultConfig();
   if (IS_DEV && configLocked) {
     throw new Error(
       '[configureStores]: Configuration cannot be changed after the first store has been created. ' +
@@ -41,9 +35,16 @@ export function configureStores(update: Partial<StoresConfig>): void {
 }
 
 export function getStoresConfig(): ConfigWithoutLogger {
-  return activeConfig;
+  return (activeConfig ??= createDefaultConfig());
 }
 
 export function markStoreCreated(): void {
   configLocked = true;
+}
+
+function createDefaultConfig(): ConfigWithoutLogger {
+  return {
+    storage: storesStorage,
+    syncEngine: IS_BROWSER ? createBrowserSyncEngine() : createNoopSyncEngine(),
+  };
 }

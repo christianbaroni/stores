@@ -5,22 +5,38 @@ type MMKVInterface = Omit<FunctionKeys<SyncStorageInterface<string>>, 'get'> & {
 
 declare const require: (id: string) => { MMKV: new (options: { id: string }) => MMKVInterface };
 
-let storageInstance: SyncStorageInterface<string>;
+let storageInstance: SyncStorageInterface<string> | undefined;
 
-try {
-  const { MMKV } = require('react-native-mmkv');
-  const mmkv = new MMKV({ id: 'stores-storage' });
-  const { getString, ...rest } = mmkv;
-  storageInstance = Object.assign(Object.create(null), rest, { get: getString });
-} catch (e) {
-  throw new Error(
-    `[stores]: You must install react-native-mmkv for persistence to work in React Native.\n
-    See: https://github.com/mrousavy/react-native-mmkv
-    ${e instanceof Error ? `\n\nError: ${e.message}` : ''}`
-  );
+function getStorageInstance(): SyncStorageInterface<string> {
+  if (storageInstance) return storageInstance;
+  try {
+    const { MMKV } = require('react-native-mmkv');
+    const mmkv = new MMKV({ id: 'stores-storage' });
+    const { getString, ...rest } = mmkv;
+    storageInstance = Object.assign(Object.create(null), rest, { get: getString });
+  } catch (e) {
+    throw new Error(
+      `[stores]: You must install react-native-mmkv for persistence to work in React Native.\n
+        See: https://github.com/mrousavy/react-native-mmkv
+        ${e instanceof Error ? `\n\nError: ${e.message}` : ''}`
+    );
+  }
+  assertMMKV(storageInstance);
+  return storageInstance;
 }
 
-function assertMMKV(instance: SyncStorageInterface<unknown> | SyncStorageInterface<string>): asserts instance is SyncStorageInterface {
+export const storesStorage: SyncStorageInterface<string> = {
+  clearAll: () => getStorageInstance().clearAll(),
+  contains: key => getStorageInstance().contains(key),
+  delete: key => getStorageInstance().delete(key),
+  getAllKeys: () => getStorageInstance().getAllKeys(),
+  get: key => getStorageInstance().get(key),
+  set: (key, value) => getStorageInstance().set(key, value),
+};
+
+function assertMMKV(
+  instance: SyncStorageInterface<unknown> | SyncStorageInterface<string> | undefined
+): asserts instance is SyncStorageInterface<unknown> | SyncStorageInterface<string> {
   if (
     !instance ||
     typeof instance.get !== 'function' ||
@@ -31,26 +47,3 @@ function assertMMKV(instance: SyncStorageInterface<unknown> | SyncStorageInterfa
     throw new Error('[stores]: Storage instance does not conform to expected interface');
   }
 }
-
-assertMMKV(storageInstance);
-
-export const storesStorage: SyncStorageInterface<string> = {
-  clearAll(): void {
-    storageInstance.clearAll();
-  },
-  contains(key: string): boolean {
-    return storageInstance.contains(key);
-  },
-  delete(key: string): void {
-    storageInstance.delete(key);
-  },
-  getAllKeys(): string[] {
-    return storageInstance.getAllKeys();
-  },
-  get(key: string): string | undefined {
-    return storageInstance.get(key);
-  },
-  set(key: string, value: string): void {
-    storageInstance.set(key, value);
-  },
-};

@@ -1,12 +1,4 @@
-import { unstable_batchedUpdates } from 'react-native';
-
-let Platform;
-try {
-  const req = Function('return typeof require !== "undefined" ? require : undefined')();
-  Platform = req ? req('react-native').Platform : { OS: undefined };
-} catch {
-  Platform = { OS: undefined };
-}
+import { Platform, unstable_batchedUpdates } from 'react-native';
 
 export const IS_REACT_NATIVE = true;
 export const IS_BROWSER = false;
