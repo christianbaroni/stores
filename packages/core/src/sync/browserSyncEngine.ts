@@ -49,8 +49,8 @@ class BrowserSyncHandle<T extends Record<string, unknown>> implements SyncHandle
 
   publish(update: SyncUpdate<T>): void {
     const values: Record<string, unknown> = Object.create(null);
-    for (const [key, value] of Object.entries(update.values)) {
-      values[key] = value;
+    for (const entry of Object.entries(update.values)) {
+      values[entry[0]] = entry[1];
     }
     const payload: SyncEnvelope = {
       origin: this.origin,
@@ -168,8 +168,9 @@ class BrowserSyncEngine implements SyncEngine {
   }
 }
 
-const sharedEngine = IS_BROWSER ? new BrowserSyncEngine() : null;
+let sharedEngine: BrowserSyncEngine | undefined;
 
 export function createBrowserSyncEngine(): SyncEngine {
-  return sharedEngine ?? new BrowserSyncEngine();
+  if (!sharedEngine) sharedEngine = new BrowserSyncEngine();
+  return sharedEngine;
 }

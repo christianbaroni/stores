@@ -6,7 +6,6 @@ class NoopSyncHandle<T extends Record<string, unknown>> implements SyncHandle<T>
   destroy(): void {
     return;
   }
-
   publish(): void {
     return;
   }
@@ -20,8 +19,9 @@ class NoopSyncEngine implements SyncEngine {
   }
 }
 
-const singleton = new NoopSyncEngine();
+let sharedNoopEngine: NoopSyncEngine | undefined;
 
 export function createNoopSyncEngine(): SyncEngine {
-  return singleton;
+  if (!sharedNoopEngine) sharedNoopEngine = new NoopSyncEngine();
+  return sharedNoopEngine;
 }

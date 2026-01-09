@@ -13,7 +13,7 @@ import {
   SubscribeArgs,
   UnsubscribeFn,
 } from './types';
-import { destroyStore } from './utils/storeUtils';
+import { StoreTags, destroyStore } from './utils/storeUtils';
 
 type MethodOverrides<Store extends BaseStore<State>, State = InferStoreState<Store>> = Partial<Pick<Store, 'getState' | 'setState'>>;
 
@@ -168,7 +168,7 @@ export function createVirtualStore<
   const base = Object.assign(
     useVirtualStore,
     {
-      _isVirtualStore: true,
+      [StoreTags.VirtualStore]: true,
       destroy: () => useCachedStore.destroy(),
       getInitialState: () => useCachedStore.getState().getInitialState(),
       getState: () => useCachedStore.getState().getState(),

@@ -7,7 +7,16 @@ export * from './createVirtualStore';
 
 /* -- Helpers ------ */
 export { replacer, reviver } from './utils/serialization';
-export { applyStateUpdate } from './utils/storeUtils';
+export {
+  applyStateUpdate,
+  destroyStore,
+  destroyStores,
+  getStoreName,
+  isDerivedStore,
+  isPersistedStore,
+  isQueryStore,
+  isVirtualStore,
+} from './utils/storeUtils';
 
 /* -- Hooks -------- */
 export * from './hooks/useListen';

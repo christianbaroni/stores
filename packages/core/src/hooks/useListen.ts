@@ -202,8 +202,8 @@ function createListenerRef<S, Selected>(
   return {
     selector,
     react,
-    options: buildOptionsObject(optionsOrEqualityFn),
     isActive: false,
+    options: buildOptionsObject(optionsOrEqualityFn),
     resubscribe: () => {
       return;
     },

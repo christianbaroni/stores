@@ -1,5 +1,6 @@
 import { IS_BROWSER, IS_DEV } from '@env';
 import { storesStorage } from 'storesStorage';
+import { StoresLogger, setLogger } from './logger';
 import { createBrowserSyncEngine } from './sync/browserSyncEngine';
 import { createNoopSyncEngine } from './sync/noopSyncEngine';
 import { SyncEngine } from './sync/types';
@@ -8,16 +9,19 @@ import { AsyncStorageInterface, SyncStorageInterface } from './types';
 // ============ Types ========================================================== //
 
 export type StoresConfig = {
+  logger: StoresLogger;
   storage: AsyncStorageInterface | SyncStorageInterface;
   syncEngine: SyncEngine;
 };
 
+type ConfigWithoutLogger = Omit<StoresConfig, 'logger'>;
+
 // ============ Stores Configuration =========================================== //
 
-let activeConfig: StoresConfig = createDefaultConfig();
+let activeConfig: ConfigWithoutLogger = createDefaultConfig();
 let configLocked = false;
 
-function createDefaultConfig(): StoresConfig {
+function createDefaultConfig(): ConfigWithoutLogger {
   return {
     storage: storesStorage,
     syncEngine: IS_BROWSER ? createBrowserSyncEngine() : createNoopSyncEngine(),
@@ -31,11 +35,12 @@ export function configureStores(update: Partial<StoresConfig>): void {
         'Call configureStores before creating any stores.'
     );
   }
+  if (update.logger) setLogger(update.logger);
   if (update.storage) activeConfig.storage = update.storage;
   if (update.syncEngine) activeConfig.syncEngine = update.syncEngine;
 }
 
-export function getStoresConfig(): StoresConfig {
+export function getStoresConfig(): ConfigWithoutLogger {
   return activeConfig;
 }
 

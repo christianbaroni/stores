@@ -4,9 +4,6 @@ export type Platform = 'web' | 'native';
 
 export const plugins = {
   chrome: ['web'],
-  // delta: ['web', 'native'],
-  // network: ['web', 'native'],
-  // router: ['web'],
 } satisfies Record<string, Platform[]>;
 
 // ============ Path Utilities ================================================== //

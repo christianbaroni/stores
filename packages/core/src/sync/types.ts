@@ -5,11 +5,6 @@ type UnknownFunction = (...args: unknown[]) => unknown;
 // ============ Field Metadata ================================================= //
 
 /**
- * Readable indices for `FieldMetadata` tuples.
- */
-export const [TIMESTAMP, SESSION_ID]: [0, 1] = [0, 1];
-
-/**
  * Metadata for a field's last write.
  */
 export type FieldMetadata = readonly [timestamp: number, sessionId: string];
@@ -175,26 +170,6 @@ export interface SyncPresenceChannel<Presence> {
    * Safe to call multiple times.
    */
   destroy(): void;
-}
-
-/**
- * Defines how offline edits are resolved when reconnecting after being offline.
- *
- * ### `Chronological`
- * Offline edits are applied using last-write-wins based on their original creation
- * timestamp. If a field was modified online while the client was offline with a later
- * timestamp, the online edit wins. This mode preserves chronological ordering of edits
- * regardless of connectivity.
- *
- * ### `DiscardOnConflict`
- * Offline edits are discarded entirely for any field that was modified while offline,
- * regardless of timestamps. This ensures online edits always take priority over offline
- * edits for the same field. Useful for shared resources where online state should be
- * authoritative (e.g., collaborative canvases).
- */
-export enum OfflineResolutionMode {
-  Chronological = 'chronological',
-  DiscardOnConflict = 'discard-on-conflict',
 }
 
 export type SyncConfig<T extends Record<string, unknown>> = {

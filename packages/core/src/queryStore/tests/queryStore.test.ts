@@ -270,7 +270,7 @@ describe('createQueryStore', () => {
       expect(store.getState().queryKey).toBe('{"id":7}');
 
       // Call reset and verify that state is cleared.
-      store.getState().reset();
+      store.getState().reset(true);
       expect(store.getState().getData({ id: 7 })).toBeNull();
       expect(store.getState().status).toBe(QueryStatuses.Idle);
 
@@ -297,7 +297,7 @@ describe('createQueryStore', () => {
       expect(store2.getState().queryKey).toBe(JSON.stringify({ id: 7 }));
 
       // Call reset and verify that state is cleared.
-      store2.getState().reset();
+      store2.getState().reset(true);
       expect(store2.getState().getData({ id: 7 })).toBeNull();
       expect(store2.getState().status).toBe(QueryStatuses.Idle);
     });
@@ -534,7 +534,7 @@ describe('createQueryStore', () => {
       const store = createQueryStore<TestData, TestParams>({ fetcher, params: { id: 14 } });
       const fetchPromise = store.getState().fetch({ id: 14 });
       // Manually call reset to abort any active fetch.
-      store.getState().reset();
+      store.getState().reset(true);
       const result = await fetchPromise;
       expect(result).toBeNull();
     });

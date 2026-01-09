@@ -4,6 +4,7 @@
 
 import { createHydrationGate } from '../createHydrationGate';
 import { SetStateOverloads, StateCreator } from '../../types';
+import { createMockSyncContext } from 'src/sync/tests/testUtils';
 
 type TestState = { value: number; label?: string };
 
@@ -39,7 +40,7 @@ describe('createHydrationGate', () => {
       expect(pending).toBeInstanceOf(Promise);
       expect(calls).toHaveLength(0);
 
-      const rehydrate = wrapOnRehydrateStorage()(initialState);
+      const rehydrate = wrapOnRehydrateStorage(undefined, undefined)(initialState);
       rehydrate();
       if (pending) await pending;
 
@@ -81,14 +82,14 @@ describe('createHydrationGate', () => {
       const postFlush = jest.fn();
       const userCallback = jest.fn();
 
-      const rehydrate = wrapOnRehydrateStorage(
-        state => {
-          userCallback(state);
-          return () => userCallback('final');
-        },
-        preFlush,
-        postFlush
-      )(initialState);
+      const syncContext = createMockSyncContext();
+      syncContext.context.onHydrationComplete = preFlush;
+      syncContext.context.onHydrationFlushEnd = postFlush;
+
+      const rehydrate = wrapOnRehydrateStorage(state => {
+        userCallback(state);
+        return () => userCallback('final');
+      }, syncContext.context)(initialState);
 
       rehydrate();
 
@@ -128,7 +129,7 @@ describe('createHydrationGate', () => {
       gatedSet?.({ a: 10 }, true);
       gatedSet?.({ b: 'patched' });
 
-      wrapOnRehydrateStorage()(initialState)();
+      wrapOnRehydrateStorage(undefined, undefined)(initialState)();
 
       expect(callOrder).toEqual([
         { update: { a: 10 }, replace: true },

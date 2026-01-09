@@ -86,16 +86,12 @@ export function createBaseStore<S, PersistedState extends Partial<S>, PersistRet
   const storageConfig = createPersistStorage<S, PersistedState, PersistReturn>(options, parsedStorage, syncMiddleware?.syncContext);
 
   const wrappedOnRehydrateStorage = hydrationGate
-    ? hydrationGate.wrapOnRehydrateStorage(
-        options.onRehydrateStorage,
-        () => syncMiddleware?.syncContext?.onHydrationComplete?.(),
-        () => syncMiddleware?.syncContext?.onHydrationFlushEnd?.()
-      )
+    ? hydrationGate.wrapOnRehydrateStorage(options.onRehydrateStorage, syncMiddleware?.syncContext)
     : options.onRehydrateStorage;
 
   const finalStateCreator: StateCreator<S> = hydrationGate
     ? (set, get, api) => {
-        if (syncMiddleware?.syncContext) syncMiddleware.syncContext.setWithoutPersist = api.setState;
+        if (syncMiddleware) syncMiddleware.syncContext.setWithoutPersist = api.setState;
         return hydrationGate.stateCreator(set, get, api);
       }
     : stateCreator;

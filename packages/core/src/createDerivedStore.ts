@@ -153,7 +153,6 @@ function derive<DerivedState>(
   optionsOrEqualityFn: DeriveOptions<DerivedState> = Object.is
 ): WithGetSnapshot<WithFlushUpdates<StoreApi<DerivedState>>> {
   const { debounceOptions, debugMode, equalityFn, keepAlive, lockDependencies } = parseOptions(optionsOrEqualityFn);
-
   const storeId = getStoreId();
 
   // Active subscriptions *to* the derived store
@@ -170,6 +169,7 @@ function derive<DerivedState>(
   // Core state
   let derivedState: DerivedState | UninitializedState = UNINITIALIZED;
   let deriveScheduled = false;
+  let didProduceNewState = true;
   let invalidated = true;
   let shouldRebuildSubscriptions = true;
 
@@ -211,19 +211,16 @@ function derive<DerivedState>(
 
   // ========== Derivation ==========
 
-  function deriveNow(): DerivedState {
+  function derive(): DerivedState {
     if (!invalidated && isInitialized(derivedState)) return derivedState;
-
     invalidated = false;
 
     if (shouldRebuildSubscriptions) unsubscribeAll(true);
 
     const prevState = derivedState;
-    derivedState = deriveFunction($);
-
-    if (!watchers.size) return derivedState;
-
     const hasPreviousState = isInitialized(prevState);
+    derivedState = produceNextState($);
+
     const shouldLogSubscriptions = debugMode && (!hasPreviousState || (debugMode === 'verbose' && shouldRebuildSubscriptions));
 
     if (shouldLogSubscriptions) {
@@ -244,34 +241,37 @@ function derive<DerivedState>(
       pathFinder = undefined;
     }
 
+    if (didProduceNewState && hasPreviousState) notifyWatchers(derivedState, prevState);
     if (lockDependencies) shouldRebuildSubscriptions = false;
-
-    // Notify watchers if needed
-    notifyWatchers(derivedState, prevState);
 
     return derivedState;
   }
 
-  // ========== Notifications ==========
-
-  function notifyWatchers(newState: DerivedState, prevState: DerivedState | UninitializedState): void {
-    if (!isInitialized(prevState)) return;
+  function produceNextState($: DeriveGetter): DerivedState {
+    didProduceNewState = true;
+    const prevState = derivedState;
+    const newState = deriveFunction($);
+    if (!isInitialized(prevState)) return newState;
 
     if (equalityFn(prevState, newState)) {
       if (debugMode) console.log('[🥷 Derive Complete 🥷]: No change detected');
-      return;
+      didProduceNewState = false;
+      return prevState;
     }
+    return newState;
+  }
 
+  // ========== Notifications ==========
+
+  function notifyWatchers(newState: DerivedState, prevState: DerivedState): void {
     const mixedWatchers = hasMixedWatchers();
-    const inDeriveBatch = getCurrentDeriveRank() !== null;
-    const cascadeActive = isCascadeActive();
     const hasComponentWatchers = !derivedWatchers || mixedWatchers;
 
     // Defer if any of the following are true:
     // - This store has mixed watchers
     // - We're currently inside a derive batch (part of active derivation chain)
     // - A cascade is active and we have component watchers (component-only stores need batching)
-    const shouldDefer = mixedWatchers || inDeriveBatch || (cascadeActive && hasComponentWatchers);
+    const shouldDefer = mixedWatchers || getCurrentDeriveRank() !== null || (isCascadeActive() && hasComponentWatchers);
 
     // Arm early so downstream invalidations see the cascade
     if (mixedWatchers) activateCascade();
@@ -280,13 +280,12 @@ function derive<DerivedState>(
 
     // -- Phase 1: propagate derivations synchronously to downstream derived stores
     for (const w of watchers) {
-      if (typeof w !== 'function' && w.isDerivedWatcher) {
-        const nextSlice = w.selector(newState);
-        if (!w.equalityFn(w.currentSlice, nextSlice)) {
-          const prevSlice = w.currentSlice;
-          w.currentSlice = nextSlice;
-          w.listener(nextSlice, prevSlice);
-        }
+      if (typeof w === 'function' || !w.isDerivedWatcher) continue;
+      const nextSlice = w.selector(newState);
+      if (!w.equalityFn(w.currentSlice, nextSlice)) {
+        const prevSlice = w.currentSlice;
+        w.currentSlice = nextSlice;
+        w.listener(nextSlice, prevSlice);
       }
     }
 
@@ -330,21 +329,17 @@ function derive<DerivedState>(
   function flush(): void {
     // Stores without derived watchers may be invalidated but not yet derived
     // Derive now before flushing to components
-    if (invalidated && !derivedWatchers) deriveNow();
+    if (invalidated && !derivedWatchers) derive();
     if (!isInitialized(derivedState)) return;
 
     const prevState = isInitialized(prevStateForFlush) ? prevStateForFlush : derivedState;
     notifyNonDerivedWatchers(derivedState, prevState);
   }
 
-  function flushIfNecessary(): void {
+  function flushAndReset(): void {
     if (!watchers.size) return;
     // Only flush if notifications were deferred (enlisted in cascade)
     if (enlistedInCascade) flush();
-  }
-
-  function flushAndReset(): void {
-    flushIfNecessary();
     enlistedInCascade = false;
     prevStateForFlush = UNINITIALIZED;
   }
@@ -353,7 +348,7 @@ function derive<DerivedState>(
 
   const debouncedDerive: ReturnType<typeof debounce> | undefined = debounceOptions
     ? debounce(
-        runDerive,
+        runScheduledDerive,
         typeof debounceOptions === 'number' ? debounceOptions : debounceOptions.delay,
         typeof debounceOptions === 'number' ? { leading: false, maxWait: debounceOptions, trailing: true } : debounceOptions
       )
@@ -364,14 +359,14 @@ function derive<DerivedState>(
     (() => {
       if (deriveScheduled) return;
       deriveScheduled = true;
-      queueMicrotask(runDerive);
+      queueMicrotask(runScheduledDerive);
     });
 
-  function runDerive(): void {
+  function runScheduledDerive(): void {
     if (!watchers.size) return;
     deriveScheduled = false;
     if (!invalidated) return;
-    deriveNow();
+    derive();
   }
 
   // ========== Lifecycle Helpers ==========
@@ -387,7 +382,7 @@ function derive<DerivedState>(
   }
 
   function deriveTask(): void {
-    runDerive();
+    runScheduledDerive();
     // Clear rank after derive completes
     enqueuedAtRank = null;
   }
@@ -397,7 +392,7 @@ function derive<DerivedState>(
     invalidated = true;
 
     if (!debouncedDerive) {
-      if (derivedWatchers > 0) {
+      if (derivedWatchers) {
         activateCascade();
         const upstream = getCurrentDeriveRank();
         const rank = upstream === null ? 0 : upstream + 1;
@@ -411,10 +406,8 @@ function derive<DerivedState>(
         return;
       }
 
-      const cascadeActive = isCascadeActive();
-
       // Stores without derived watchers during active cascade: enlist for lazy derive and flush
-      if (cascadeActive && !derivedWatchers) {
+      if (isCascadeActive()) {
         // Mark as needing derive and enlist for flush
         // The flush will check invalidated flag and derive if needed
         if (!enlistedInCascade) {
@@ -430,7 +423,7 @@ function derive<DerivedState>(
 
     // Outside cascades (debounced or component-only stores, no active cascade)
     enqueuedAtRank = null;
-    if (derivedWatchers && !debounceOptions) deriveNow();
+    if (derivedWatchers && !debounceOptions) derive();
     else scheduleDerive();
   }
 
@@ -438,10 +431,11 @@ function derive<DerivedState>(
     if (!isInitialized(derivedState)) {
       // Ensures useSyncExternalStore doesn't trigger redundant derivations
       watchers.add(dummyWatcher);
-      const state = deriveNow();
+      const state = derive();
       watchers.delete(dummyWatcher);
       return state;
     }
+    if (deriveScheduled) runScheduledDerive();
     return derivedState;
   }
 
@@ -450,7 +444,7 @@ function derive<DerivedState>(
   function getState(): DerivedState {
     if (invalidated || !isInitialized(derivedState)) {
       // If there are watchers, we should build subscriptions, otherwise compute directly
-      return watchers.size > 0 ? deriveNow() : deriveFunction($);
+      return watchers.size > 0 ? derive() : deriveFunction($);
     }
     return derivedState;
   }
@@ -501,7 +495,7 @@ function derive<DerivedState>(
   function flushUpdates(): void {
     if (!watchers.size) return;
     if (debouncedDerive) debouncedDerive.flush();
-    else if (invalidated) deriveNow();
+    else if (invalidated) derive();
   }
 
   function destroy(isInternalCall = true): void {

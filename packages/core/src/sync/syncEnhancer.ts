@@ -4,20 +4,20 @@ import { StoresError, logger } from '../logger';
 import { StateCreator } from '../types';
 import { isPromiseLike } from '../utils/promiseUtils';
 import { applyStateUpdate } from '../utils/storeUtils';
-import { FieldMetadata, NormalizedSyncConfig, SESSION_ID, SyncHandle, SyncStateKey, SyncUpdate, SyncValues, TIMESTAMP } from './types';
+import { FieldMetadata, NormalizedSyncConfig, SyncHandle, SyncStateKey, SyncUpdate, SyncValues } from './types';
 
 // ============ Sync Enhancer =================================================== //
 
 export type SyncContext = {
   isAsync: boolean;
+  clearFieldTimestamps: (snapshot: Record<string, number> | undefined) => void;
   getFieldTimestampSnapshot: () => Record<string, number> | undefined;
   getIsApplyingRemote: () => boolean;
   getSessionId: () => string | undefined;
   getTimestamp: () => number | undefined;
+  mergeFieldTimestamps: (fields: Record<string, number>) => void;
   onHydrationComplete: (() => void) | undefined;
   onHydrationFlushEnd: (() => void) | undefined;
-  mergeFieldTimestamps: (fields: Record<string, number>) => void;
-  clearFieldTimestamps: (snapshot: Record<string, number> | undefined) => void;
   setIsApplyingRemote: (value: boolean) => void;
   setSessionId: (sessionId: string) => void;
   setTimestamp: (timestamp: number) => void;
@@ -357,6 +357,11 @@ function buildSyncContext(isAsync: boolean): SyncContext {
 }
 
 // ============ Utilities ====================================================== //
+
+/**
+ * Readable indices for `FieldMetadata` tuples.
+ */
+const [TIMESTAMP, SESSION_ID]: [0, 1] = [0, 1];
 
 /**
  * Determines whether an incoming update supersedes the last known write.

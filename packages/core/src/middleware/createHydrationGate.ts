@@ -1,11 +1,11 @@
 import { createHydrationCoordinator, HydrationCoordinator } from 'src/utils/hydrationCoordinator';
 import { StateCreator, SetStateArgs, SetState } from '../types';
 import { ensureError } from 'src/logger';
+import { SyncContext } from 'src/sync/syncEnhancer';
 
 type WrappedOnRehydrateStorage<S> = (
-  userCallback?: (state: S) => ((finalState?: S, error?: unknown) => void) | void,
-  preFlushCallback?: () => void,
-  postFlushCallback?: () => void
+  userCallback: ((state: S) => ((finalState?: S, error?: unknown) => void) | void) | undefined,
+  syncContext: SyncContext | undefined
 ) => (state: S) => (finalState?: S, error?: unknown) => void;
 
 /**
@@ -64,19 +64,20 @@ export function createHydrationGate<S>(stateCreator: StateCreator<S>): {
   /**
    * Wraps `onRehydrateStorage` to coordinate the hydration lifecycle.
    */
-  const wrapOnRehydrateStorage: WrappedOnRehydrateStorage<S> = (userCallback, preFlushCallback, postFlushCallback) => {
+  const wrapOnRehydrateStorage: WrappedOnRehydrateStorage<S> = (userCallback, syncContext) => {
     return state => {
       const userRehydrateCallback = userCallback?.(state);
       return (finalState, error) => {
         isHydrated = true;
 
         // This allows the sync enhancer to flush before processing queued set() calls.
-        if (preFlushCallback) preFlushCallback();
+        syncContext?.onHydrationComplete?.();
         if (flushPendingSetCalls) flushPendingSetCalls();
-        if (postFlushCallback) postFlushCallback();
+        syncContext?.onHydrationFlushEnd?.();
 
         if (error) coordinator?.fail(ensureError(error));
         else coordinator?.complete();
+
         userRehydrateCallback?.(finalState, error);
       };
     };

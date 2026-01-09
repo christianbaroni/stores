@@ -174,13 +174,12 @@ function buildPathSelector(path: string[]): Selector<unknown, unknown> {
  * specified method on the parent object.
  */
 function buildInvocationSelector(path: string[], invocation: TrackedInvocation): Selector<unknown, unknown> {
-  const { method, args } = invocation;
   const parentPath = path.slice(0, -1);
   return state => {
     const parentObject = getValueAtPath(state, parentPath);
     // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-    const fn = (parentObject as Record<string, unknown> | undefined)?.[method];
-    return typeof fn === 'function' ? fn.apply(parentObject, args) : undefined;
+    const fn = (parentObject as Record<string, unknown> | undefined)?.[invocation.method];
+    return typeof fn === 'function' ? fn.apply(parentObject, invocation.args) : undefined;
   };
 }
 

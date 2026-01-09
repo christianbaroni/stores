@@ -34,6 +34,8 @@ import { dequal } from './utils/equality';
 import { omitStoreMethods } from './utils/persistUtils';
 import { time } from './utils/time';
 import { markStoreCreated } from './config';
+import { assignStoreTag, StoreTags } from './utils/storeUtils';
+import { hasOwn } from './types/utils';
 
 const [persist, discard] = [true, false];
 
@@ -337,7 +339,7 @@ export function createQueryStore<
   const abortError = new Error('[createQueryStore: AbortError] Fetch interrupted');
   const cacheTimeIsFunction = typeof cacheTime === 'function';
   const enableLogs = IS_DEV && debugMode;
-  const paramKeys: (keyof TParams)[] = Object.keys(config.params ?? {});
+  const paramKeys: (keyof TParams)[] = Object.keys(config.params ?? Object.create(null));
 
   let attachVals: { enabled: AttachValue<boolean> | null; params: Partial<Record<keyof TParams, AttachValue<unknown>>> } | null = null;
   let directValues: { enabled: boolean | null; params: Partial<TParams> } | null = null;
@@ -925,7 +927,7 @@ export function createQueryStore<
         return Date.now() - lastFetchedAt >= effectiveStaleTime;
       },
 
-      reset() {
+      reset(resetStoreState = false) {
         for (const unsub of paramUnsubscribes) unsub();
         paramUnsubscribes = [];
         attachVals = null;
@@ -940,7 +942,7 @@ export function createQueryStore<
 
         activeFetch = null;
         lastFetchKey = null;
-        set(state => ({ ...state, ...initialData, enabled: false }));
+        if (resetStoreState) set(state => ({ ...state, ...initialData }));
       },
     };
 
@@ -999,7 +1001,7 @@ export function createQueryStore<
     staleTime = staleTimeAttachVal.value;
   }
 
-  const scheduleFetch = createMicrotaskScheduler((params: TParams | undefined) => {
+  const queueFetch = createMicrotaskScheduler((params: TParams | undefined) => {
     state.fetch(params ?? getCurrentResolvedParams(attachVals, directValues), { updateQueryKey: keepPreviousData });
   });
 
@@ -1010,7 +1012,7 @@ export function createQueryStore<
       const newQueryKey = getQueryKeyFn(newParams);
       queryStore.setState(state => ({ ...state, queryKey: newQueryKey }));
     }
-    scheduleFetch(newParams);
+    queueFetch(newParams);
   }
 
   const onParamChange =
@@ -1090,9 +1092,28 @@ export function createQueryStore<
   isBuildingParams = false;
   if (fetchAfterParamCreation) queueMicrotask(onParamChange);
 
-  return queryStore;
+  return assignStoreTag(queryStore, StoreTags.QueryStore);
 }
 
+/**
+ * The default query store `retryDelay` function.
+ *
+ * Exponential backoff starting at `baseDelay` (5s default), doubling each retry, capped at `maxDelay` (5m default).
+ *
+ * ```ts
+ * retryCount => Math.min(baseDelay * Math.pow(2, retryCount), maxDelay)
+ * ```
+ */
+export function defaultRetryDelay(retryCount: number, options?: { baseDelay?: number; maxDelay?: number }): number {
+  const baseDelay = options?.baseDelay ?? time.seconds(5);
+  const maxDelay = options?.maxDelay ?? time.minutes(5);
+  const multiplier = Math.pow(2, retryCount);
+  return Math.min(baseDelay * multiplier, maxDelay);
+}
+
+/**
+ * @deprecated Use `getQueryKey` instead, unless using for non-parsable query keys.
+ */
 export function getLegacyQueryKey<TParams extends Record<string, unknown>>(params: TParams): string {
   return JSON.stringify(
     Object.keys(params)
@@ -1101,10 +1122,17 @@ export function getLegacyQueryKey<TParams extends Record<string, unknown>>(param
   );
 }
 
+/**
+ * Generates a deterministic query store `queryKey` from the given parameters,
+ * consistent with internally generated keys.
+ */
 export function getQueryKey<TParams extends Record<string, unknown>>(params: TParams): string {
   return JSON.stringify(sortParamKeys(params));
 }
 
+/**
+ * Parses a query store `queryKey` into the corresponding parameters.
+ */
 export function parseQueryKey<TParams extends Record<string, unknown>>(queryKey: string): TParams {
   return JSON.parse(queryKey);
 }
@@ -1120,12 +1148,6 @@ function sortParamKeys<TParams extends Record<string, unknown>>(params: TParams)
       acc[key] = value !== null && typeof value === 'object' ? sortParamKeys(value as Record<string, unknown>) : value;
       return acc;
     }, {}) as TParams;
-}
-
-export function defaultRetryDelay(retryCount: number): number {
-  const baseDelay = time.seconds(5);
-  const multiplier = Math.pow(2, retryCount);
-  return Math.min(baseDelay * multiplier, time.minutes(5));
 }
 
 function getCompleteParams<TParams extends Record<string, unknown>>(
@@ -1146,7 +1168,7 @@ function getCurrentResolvedParams<TParams extends Record<string, unknown>>(
   attachVals: { enabled: AttachValue<boolean> | null; params: Partial<Record<keyof TParams, AttachValue<unknown>>> } | null,
   directValues: { enabled: boolean | null; params: Partial<TParams> } | null
 ): TParams {
-  const currentParams: Partial<TParams> = directValues?.params ?? {};
+  const currentParams: Partial<TParams> = directValues?.params ?? Object.create(null);
   for (const k in attachVals?.params) {
     const attachVal = attachVals.params[k];
     if (!attachVal) continue;
@@ -1185,6 +1207,7 @@ function pruneCache<S extends QueryStoreState<TData, TParams>, TData, TParams ex
   const newCache: Record<string, CacheEntry<TData>> = Object.create(null);
 
   for (const key in state.queryCache) {
+    if (!hasOwn(state.queryCache, key)) continue;
     const entry = state.queryCache[key];
     const isValid = !!entry && (pruneTime - (entry.lastFetchedAt ?? entry.errorInfo.lastFailedAt) < entry.cacheTime || key === preserve);
     if (!isValid) {
@@ -1234,6 +1257,7 @@ function resolveParams<
   const resolvedParams: TParams = Object.create(null);
 
   for (const key in params) {
+    if (!hasOwn(params, key)) continue;
     const param = params[key];
     if (isReactiveParam<TParams[typeof key], TParams, S, TData>(param)) {
       const attachVal = param($, store);
@@ -1273,6 +1297,7 @@ function createBlendedPartialize<
     const internalStateToPersist: Partial<S> = {};
 
     for (const key in clonedState) {
+      if (!hasOwn(clonedState, key)) continue;
       if (key in SHOULD_PERSIST_INTERNAL_STATE_MAP) {
         if (SHOULD_PERSIST_INTERNAL_STATE_MAP[key]) internalStateToPersist[key] = clonedState[key];
         delete clonedState[key];

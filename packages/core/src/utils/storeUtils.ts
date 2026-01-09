@@ -1,8 +1,19 @@
 import { StoreApi } from 'zustand';
 import { BaseStore, DerivedStore, PersistedStore, SetFull, SetPartial, SetStateArgs, WithGetSnapshot } from '../types';
+import { QueryStore, QueryStoreState } from 'src/queryStore/types';
+
+export enum StoreTags {
+  QueryStore = '_queryStore',
+  VirtualStore = '_virtualStore',
+}
+
+export function assignStoreTag<S>(store: BaseStore<S>, tag: StoreTags): BaseStore<S> {
+  return Object.assign(store, { [tag]: true });
+}
 
 /**
- * Helper that applies a `setState` update to the current state.
+ * Helper that applies a `setState` update to the provided state.
+ * Handles the `setState` discriminated union types internally.
  */
 export function applyStateUpdate<S>(state: S, ...setArgs: SetStateArgs<S>): S {
   if (setArgs[1] === true) {
@@ -16,9 +27,25 @@ export function applyStateUpdate<S>(state: S, ...setArgs: SetStateArgs<S>): S {
  * Calls the appropriate reset or destroy method on the store, if available.
  * Handles both `DerivedStore` and `QueryStore`.
  */
-export function destroyStore(store: BaseStore<unknown> | StoreApi<unknown>): void {
-  if (hasReset(store)) store.reset();
+export function destroyStore(
+  store: BaseStore<unknown> | StoreApi<unknown> | QueryStore<unknown, Record<string, unknown>, unknown>,
+  options?: { clearQueryCache?: boolean }
+): void {
+  if (isQueryStore(store)) store.getState().reset(options?.clearQueryCache);
   else if (hasDestroy(store)) store.destroy();
+}
+
+export function destroyStores(
+  stores: Partial<Record<string, BaseStore<unknown> | StoreApi<unknown>>> | (BaseStore<unknown> | StoreApi<unknown> | undefined)[],
+  options?: {
+    clearQueryCache?: boolean;
+    skipDestroy?: (store: BaseStore<unknown> | StoreApi<unknown>) => boolean;
+  }
+): void {
+  for (const store of Array.isArray(stores) ? stores : Object.values(stores)) {
+    if (!store || options?.skipDestroy?.(store)) continue;
+    destroyStore(store, options);
+  }
 }
 
 /**
@@ -43,10 +70,12 @@ export function hasGetSnapshot<S>(store: BaseStore<S> | StoreApi<S>): store is W
 }
 
 /**
- * Checks if a store has a `reset` method.
+ * Checks if a store is a `QueryStore`.
  */
-export function hasReset<S>(store: BaseStore<S> | StoreApi<S>): store is BaseStore<S> & { reset: () => void } {
-  return 'reset' in store;
+export function isQueryStore<S>(
+  store: StoreApi<S> | BaseStore<S> | QueryStore<S, Record<string, unknown>, S>
+): store is BaseStore<QueryStoreState<S, Record<string, unknown>, S>> {
+  return StoreTags.QueryStore in store;
 }
 
 /**
@@ -54,15 +83,6 @@ export function hasReset<S>(store: BaseStore<S> | StoreApi<S>): store is BaseSto
  */
 export function isDerivedStore<S>(store: BaseStore<S> | StoreApi<S>): store is DerivedStore<S> {
   return 'flushUpdates' in store;
-}
-
-/**
- * Checks if a `setState` payload is a function setter.
- */
-export function isFunctionSetter<S>(update: SetPartial<S>): update is (state: S) => Partial<S>;
-export function isFunctionSetter<S>(update: SetFull<S>): update is (state: S) => S;
-export function isFunctionSetter<S>(update: SetPartial<S> | SetFull<S>): update is (state: S) => S | Partial<S> {
-  return typeof update === 'function';
 }
 
 /**
@@ -75,6 +95,15 @@ export function isPersistedStore<S>(store: BaseStore<S>): store is PersistedStor
 /**
  * Checks if a store is a virtual store.
  */
-export function isVirtualStore<S>(store: StoreApi<S>): store is StoreApi<S> & { _isVirtualStore: true } {
-  return '_isVirtualStore' in store;
+export function isVirtualStore<S>(store: BaseStore<S> | StoreApi<S>): store is BaseStore<S> & { [StoreTags.VirtualStore]: true } {
+  return StoreTags.VirtualStore in store;
+}
+
+/**
+ * Checks if a `setState` payload is a function setter.
+ */
+function isFunctionSetter<S>(update: SetPartial<S>): update is (state: S) => Partial<S>;
+function isFunctionSetter<S>(update: SetFull<S>): update is (state: S) => S;
+function isFunctionSetter<S>(update: SetPartial<S> | SetFull<S>): update is (state: S) => S | Partial<S> {
+  return typeof update === 'function';
 }
