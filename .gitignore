@@ -21,6 +21,7 @@ Thumbs.db
 # Build output
 dist/
 coverage/
+*.tgz
 
 # TypeScript
 *.tsbuildinfo
