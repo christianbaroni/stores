@@ -1,26 +1,28 @@
-import { createDerivedStore, shallowEqual } from 'stores';
+import { createDerivedStore, shallowEqual, time } from 'stores';
 import { useSyncTestStore } from './syncTestStore';
 
-const CONTEXT_TTL_MS = 3000;
+const CONTEXT_TTL_MS = time.seconds(3);
 
 export const useSortedContexts = createDerivedStore(
   $ => {
     const contexts = $(useSyncTestStore).activeContexts;
     const now = Date.now();
 
-    // Filter active contexts within TTL
-    const active = Object.values(contexts).filter(context => {
+    const recentlyActive = Object.values(contexts).filter(context => {
+      if (!context) return false;
       const age = now - context.lastSeenAt;
       return age <= CONTEXT_TTL_MS;
     });
 
-    // Sort by type (background, popup, options) then by label
-    return active.sort((a, b) => {
-      const typeOrder: Record<string, number> = { background: 0, popup: 1, options: 2 };
-      const typeComparison = (typeOrder[a.type] ?? 999) - (typeOrder[b.type] ?? 999);
-      if (typeComparison !== 0) return typeComparison;
-      return a.label.localeCompare(b.label);
-    });
+    return recentlyActive
+      .sort((a, b) => {
+        if (!a || !b) return 0;
+        const typeOrder: Record<string, number> = { background: 0, popup: 1, options: 2 };
+        const typeComparison = (typeOrder[a.type] ?? 999) - (typeOrder[b.type] ?? 999);
+        if (typeComparison !== 0) return typeComparison;
+        return a.label.localeCompare(b.label);
+      })
+      .filter(context => context !== undefined);
   },
   { equalityFn: shallowEqual, lockDependencies: true }
 );
@@ -52,5 +54,5 @@ export const useOperationStats = createDerivedStore(
       totalOps,
     };
   },
-  { lockDependencies: true }
+  { debugMode: 'verbose', lockDependencies: true }
 );

@@ -21,7 +21,7 @@ function formatTimestamp(timestamp: number): string {
 
 const OptionsHeader = memo(function OptionsHeader() {
   const counter = useSyncTestStore(state => state.counter);
-  const stats = useOperationStats();
+  const formattedTotalOps = useOperationStats(state => state.formattedTotalOps);
 
   return (
     <header className="options-header">
@@ -35,7 +35,7 @@ const OptionsHeader = memo(function OptionsHeader() {
           <div className="stat-label">Counter</div>
         </div>
         <div className="stat">
-          <div className="stat-value">{stats.formattedTotalOps}</div>
+          <div className="stat-value">{formattedTotalOps}</div>
           <div className="stat-label">Operations</div>
         </div>
       </div>
@@ -112,15 +112,18 @@ const ActiveContextsCard = memo(function ActiveContextsCard() {
         <div className="empty-state">No active contexts detected</div>
       ) : (
         <div className="context-grid">
-          {contexts.map(ctx => (
-            <div key={ctx.sessionId} className="context-card">
-              <span className="context-dot-large" style={{ backgroundColor: ctx.color }} />
-              <div className="context-info">
-                <div className="context-label-large">{ctx.label}</div>
-                <div className="context-type-badge">{ctx.type}</div>
+          {contexts.map(ctx => {
+            if (!ctx) return null;
+            return (
+              <div key={ctx.sessionId} className="context-card">
+                <span className="context-dot-large" style={{ backgroundColor: ctx.color }} />
+                <div className="context-info">
+                  <div className="context-label-large">{ctx.label}</div>
+                  <div className="context-type-badge">{ctx.type}</div>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </section>

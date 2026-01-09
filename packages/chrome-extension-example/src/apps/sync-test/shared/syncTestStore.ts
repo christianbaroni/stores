@@ -33,7 +33,7 @@ export type ActiveContext = {
 };
 
 export type SyncTestState = {
-  activeContexts: Record<string, ActiveContext>;
+  activeContexts: Partial<Record<string, ActiveContext>>;
   autoIncrementOnOpen: boolean;
   burstMode: boolean;
   counter: number;
@@ -52,6 +52,7 @@ export type SyncTestState = {
 
 const MAX_OPERATIONS = 51;
 const CONTEXT_TTL_MS = time.seconds(3);
+const LAST_SEEN_THRESHOLD_MS = time.seconds(1);
 
 // ============ Store Setup ================================================== //
 
@@ -94,54 +95,57 @@ export const useSyncTestStore = createBaseStore<SyncTestState>(
     },
 
     heartbeat: context =>
-      set(state => {
-        const timestamp = now();
-        const existing = state.activeContexts[context.sessionId];
+      useSyncTestStore.persist.hydrationPromise().then(() => {
+        set(state => {
+          const timestamp = now();
+          const existing = state.activeContexts[context.sessionId];
 
-        // No change if context exists with same data and recent timestamp
-        if (
-          existing &&
-          existing.color === context.color &&
-          existing.label === context.label &&
-          existing.type === context.type &&
-          timestamp - existing.lastSeenAt < 500
-        ) {
-          return state;
-        }
+          if (
+            existing &&
+            existing.color === context.color &&
+            existing.label === context.label &&
+            existing.type === context.type &&
+            timestamp - existing.lastSeenAt < LAST_SEEN_THRESHOLD_MS
+          ) {
+            return state;
+          }
 
-        return {
-          activeContexts: {
-            ...pruneContexts(state.activeContexts, timestamp),
-            [context.sessionId]: {
-              color: context.color,
-              label: context.label,
-              lastSeenAt: timestamp,
-              sessionId: context.sessionId,
-              type: context.type,
+          return {
+            activeContexts: {
+              ...pruneContexts(state.activeContexts, timestamp),
+              [context.sessionId]: {
+                color: context.color,
+                label: context.label,
+                lastSeenAt: timestamp,
+                sessionId: context.sessionId,
+                type: context.type,
+              },
             },
-          },
-        };
+          };
+        });
       }),
 
     increment: (context, isInitialMount = false) => {
-      let times = 1;
-      for (let i = 0; i < times; i++) {
-        set(state => {
-          if (isInitialMount && !state.autoIncrementOnOpen) return state;
-          if (state.burstMode) times = 10;
-          const newValue = state.counter + 1;
-          return {
-            counter: newValue,
-            operations: addOperation(state.operations, {
-              contextColor: context.color,
-              contextLabel: context.label,
-              newValue,
-              oldValue: state.counter,
-              type: 'increment',
-            }),
-          };
-        });
-      }
+      useSyncTestStore.persist.hydrationPromise().then(() => {
+        let times = 1;
+        for (let i = 0; i < times; i++) {
+          set(state => {
+            if (isInitialMount && !state.autoIncrementOnOpen) return state;
+            if (state.burstMode) times = 10;
+            const newValue = state.counter + 1;
+            return {
+              counter: newValue,
+              operations: addOperation(state.operations, {
+                contextColor: context.color,
+                contextLabel: context.label,
+                newValue,
+                oldValue: state.counter,
+                type: 'increment',
+              }),
+            };
+          });
+        }
+      });
     },
 
     pruneInactiveContexts: () =>
@@ -243,11 +247,12 @@ function now(): number {
   return Date.now();
 }
 
-function pruneContexts(contexts: Record<string, ActiveContext>, currentTime: number): Record<string, ActiveContext> {
+function pruneContexts(contexts: Partial<Record<string, ActiveContext>>, currentTime: number): Partial<Record<string, ActiveContext>> {
   let didPrune = false;
-  const next: Record<string, ActiveContext> = {};
+  const next: Partial<Record<string, ActiveContext>> = {};
 
   for (const [sessionId, context] of Object.entries(contexts)) {
+    if (!context) continue;
     if (currentTime - context.lastSeenAt <= CONTEXT_TTL_MS) {
       next[sessionId] = context;
     } else {

@@ -1,5 +1,7 @@
-import { AsyncStorageInterface } from '../../types';
 import { StorageValue } from '../../storage/storageTypes';
+import { AsyncStorageInterface } from '../../types';
+import { isPlainObject } from '../../types/utils';
+import { isPromiseLike } from '../../utils/promiseUtils';
 import { replacer, reviver } from '../../utils/serialization';
 
 export const CHROME_STORAGE_NAMESPACE = 'stores/chrome-storage';
@@ -31,6 +33,9 @@ export class ChromeStorageAdapter implements AsyncStorageInterface {
     const storage = this.ensureStorage();
     if (!storage) return;
     const prefix = this.namespacePrefix();
+    if (!prefix) {
+      throw new Error('Cannot clear all storage with empty namespace. This would delete all storage entries. Please provide a namespace.');
+    }
     const keys = await this.listPrefixedKeys(storage, prefix);
     if (!keys.length) return;
     await this.execute(storage, done => storage.remove(keys, done));
@@ -98,33 +103,35 @@ export class ChromeStorageAdapter implements AsyncStorageInterface {
   }
 
   private async getFromStorage(storage: chrome.storage.StorageArea, keys: string | string[] | null): Promise<Record<string, unknown>> {
-    return new Promise<Record<string, unknown>>((resolve, reject) => {
-      try {
-        storage.get(keys, items => {
-          const runtimeError = getRuntimeError();
-          if (runtimeError) {
-            reject(runtimeError);
-            return;
-          }
-          resolve(items);
-        });
-      } catch (error) {
-        reject(error);
-      }
-    });
+    return this.invokeWithCallbackSupport<Record<string, unknown>>(callback => storage.get(keys, callback));
   }
 
-  private async execute(storage: chrome.storage.StorageArea, operation: (done: () => void) => void): Promise<void> {
-    await new Promise<void>((resolve, reject) => {
+  private async execute(storage: chrome.storage.StorageArea, operation: (done: () => void) => void | Promise<void>): Promise<void> {
+    await this.invokeWithCallbackSupport<void>(operation);
+  }
+
+  private async invokeWithCallbackSupport<TResult>(
+    operation: (callback: (result: TResult) => void) => void | Promise<TResult>
+  ): Promise<TResult> {
+    return new Promise<TResult>((resolve, reject) => {
+      let settled = false;
+
+      const finish = (result: TResult): void => {
+        if (settled) return;
+        settled = true;
+        const runtimeError = getRuntimeError();
+        if (runtimeError) {
+          reject(runtimeError);
+          return;
+        }
+        resolve(result);
+      };
+
       try {
-        operation(() => {
-          const runtimeError = getRuntimeError();
-          if (runtimeError) {
-            reject(runtimeError);
-            return;
-          }
-          resolve();
-        });
+        const maybePromise = operation(finish);
+        if (isPromiseLike(maybePromise)) {
+          maybePromise.then(finish).catch(reject);
+        }
       } catch (error) {
         reject(error);
       }
@@ -187,10 +194,4 @@ function applyReviverToState(value: unknown, reviverFn = reviver): unknown {
     result[key] = reviverFn.call(revivedRoot, key, child);
   }
   return result;
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  if (typeof value !== 'object' || value === null) return false;
-  const prototype = Object.getPrototypeOf(value);
-  return prototype === Object.prototype || prototype === null;
 }

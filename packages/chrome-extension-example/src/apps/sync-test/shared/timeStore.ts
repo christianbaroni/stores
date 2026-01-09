@@ -10,6 +10,7 @@ export const useTimeStore = createQueryStore<number, never, TimeState>(
     fetcher: () => Date.now(),
     setData: ({ data, set }) => set({ currentTime: data }),
     staleTime: time.seconds(1),
+    suppressStaleTimeWarning: true,
   },
 
   (_, get) => ({

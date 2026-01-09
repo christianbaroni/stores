@@ -87,13 +87,16 @@ const ActiveContexts = memo(function ActiveContexts() {
     <div className="active-contexts">
       <div className="section-title">Active Contexts</div>
       <div className="context-list">
-        {contexts.map(ctx => (
-          <div key={ctx.sessionId} className="context-chip">
-            <span className="context-dot" style={{ backgroundColor: ctx.color }} />
-            <span className="context-label">{ctx.label}</span>
-            <span className="context-type">{ctx.type}</span>
-          </div>
-        ))}
+        {contexts.map(ctx => {
+          if (!ctx) return null;
+          return (
+            <div key={ctx.sessionId} className="context-chip">
+              <span className="context-dot" style={{ backgroundColor: ctx.color }} />
+              <span className="context-label">{ctx.label}</span>
+              <span className="context-type">{ctx.type}</span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
