@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 import { exec } from 'child_process';
-import { readdirSync, statSync } from 'fs';
+import { copyFileSync, readdirSync, rmSync, statSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { promisify } from 'util';
@@ -16,6 +16,9 @@ build().catch(handleError);
 
 async function build(): Promise<void> {
   const start = performance.now();
+
+  rmSync(join(root, 'dist'), { recursive: true, force: true });
+  copyFileSync(join(root, '../../README.md'), join(root, 'README.md'));
 
   process.stdout.write(`${Text.Bold}stores${Text.Reset}\n`);
   const spinner = createSpinner(' exports · types · web · native');
