@@ -10,7 +10,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@env': resolve(__dirname, 'src/env.web.ts'),
-      'storesStorage': resolve(__dirname, 'src/storesStorage.web.ts'),
+      storesStorage: resolve(__dirname, 'src/storesStorage.web.ts'),
     },
   },
 });

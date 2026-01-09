@@ -8,19 +8,11 @@ try {
   Platform = { OS: undefined };
 }
 
-function getNodeEnv(): string | undefined {
-  try {
-    return (typeof process !== 'undefined' && process.env && process.env.NODE_ENV) || undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 export const IS_REACT_NATIVE = true;
 export const IS_BROWSER = false;
 export const IS_IOS = Platform.OS === 'ios';
 export const IS_ANDROID = Platform.OS === 'android';
-export const IS_DEV = getNodeEnv() === 'development';
-export const IS_TEST = getNodeEnv() === 'test';
+export const IS_DEV = process.env.NODE_ENV === 'development';
+export const IS_TEST = process.env.NODE_ENV === 'test';
 
 export { unstable_batchedUpdates };

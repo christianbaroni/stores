@@ -1,5 +1,5 @@
 {
-  "name": "stores",
+  "name": "@storesjs/stores",
   "version": "0.8.0",
   "engines": {
     "node": ">=20.0.0"
@@ -25,10 +25,10 @@
         "default": "./dist/web/index.js"
       }
     },
-    "./plugins/chrome": {
+    "./chrome": {
       "types": "./dist/plugins/chrome/index.d.ts",
-      "import": "./dist/web/plugins/chrome.mjs",
-      "require": "./dist/web/plugins/chrome.js"
+      "import": "./dist/web/chrome.mjs",
+      "require": "./dist/web/chrome.js"
     }
   },
   "dependencies": {
@@ -55,11 +55,12 @@
   },
   "scripts": {
     "analyze": "pnpm run prebuild:web && npx -y tsx analyze-bundle.ts && pnpm run postbuild:web",
-    "build": "pnpm run build:types && NODE_ENV=production pnpm run build:web && NODE_ENV=production pnpm run build:native",
+    "build": "tsx build/build.ts",
+    "generate:exports": "tsx scripts/generate-exports.ts",
     "build:dev": "pnpm run build:types && NODE_ENV=development pnpm run build:web && NODE_ENV=development pnpm run build:native",
-    "build:native": "pnpm run prebuild:native && BUILD_TARGET=native tsup --config tsup.config.ts --out-dir dist/native && pnpm run postbuild:native",
+    "build:native": "pnpm run -s prebuild:native && BUILD_TARGET=native tsup --config tsup.config.ts --out-dir dist/native && pnpm run -s postbuild:native",
     "build:types": "tsc -p tsconfig.build.json --emitDeclarationOnly",
-    "build:web": "pnpm run prebuild:web && tsup --config tsup.config.ts --out-dir dist/web && pnpm run postbuild:web",
+    "build:web": "pnpm run -s prebuild:web && tsup --config tsup.config.ts --out-dir dist/web && pnpm run -s postbuild:web",
     "lint": "pnpm -w run lint",
     "lint:eslint": "pnpm -w run lint:eslint",
     "lint:prettier": "pnpm -w run lint:prettier",

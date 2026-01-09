@@ -7,7 +7,7 @@ import jsdocPlugin from 'eslint-plugin-jsdoc';
 
 export default [
   {
-    ignores: ['**/node_modules/', '**/build/', '**/dist/', '**/.wrangler/'],
+    ignores: ['**/node_modules/', '**/dist/', '**/.wrangler/'],
   },
   prettierRecommended,
   {
@@ -30,7 +30,7 @@ export default [
     plugins: {
       '@typescript-eslint': typescriptPlugin,
       'react-hooks': reactHooksPlugin,
-      'jsdoc': jsdocPlugin,
+      jsdoc: jsdocPlugin,
     },
     rules: {
       ...typescriptPlugin.configs.recommended.rules,
