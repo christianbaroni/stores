@@ -4,19 +4,19 @@ import { createDerivedStore, time, useListen, useStableValue } from 'stores';
 import { SyncTheme, useSyncPlaygroundStore, syncPlaygroundActions } from '../stores/syncPlaygroundStore';
 
 const THEME_STYLES: Record<SyncTheme, { accent: string; background: string; bodyBg: string; panel: string }> = {
-  'deep-ocean': {
+  deepOcean: {
     accent: '#1AA3FF',
     background: 'linear-gradient(135deg, #0B1D3C 0%, #01203A 50%, #023959 100%)',
     bodyBg: '#0B1D3C',
     panel: 'rgba(3, 22, 45, 0.78)',
   },
-  'midnight': {
+  midnight: {
     accent: '#9B6BFF',
     background: 'linear-gradient(135deg, #16102C 0%, #1E1038 50%, #38125D 100%)',
     bodyBg: '#16102C',
     panel: 'rgba(22, 16, 44, 0.78)',
   },
-  'sunrise': {
+  sunrise: {
     accent: '#FF7A45',
     background: 'linear-gradient(135deg, #FFEFBA 0%, #FFFFFF 50%, #FFD9A0 100%)',
     bodyBg: '#FFEFBA',
@@ -26,7 +26,7 @@ const THEME_STYLES: Record<SyncTheme, { accent: string; background: string; body
 
 const THEME_OPTIONS: Array<{ description: string; theme: SyncTheme; title: string }> = [
   { description: 'Bright and optimistic for quick planning.', theme: 'sunrise', title: 'Sunrise' },
-  { description: 'Cool blues suited for focus sprints.', theme: 'deep-ocean', title: 'Deep Ocean' },
+  { description: 'Cool blues suited for focus sprints.', theme: 'deepOcean', title: 'Deep Ocean' },
   { description: 'Moody purples for night owl sessions.', theme: 'midnight', title: 'Midnight' },
 ];
 

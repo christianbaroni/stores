@@ -1,5 +1,3 @@
-> **Note:** This library is currently unpublished and the repository is under development.
-
 # Stores
 
 Stores provides a minimal, reactive state layer built on top of Zustand.

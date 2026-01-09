@@ -1,6 +1,6 @@
 import { createBaseStore, createStoreActions } from 'stores';
 
-export type SyncTheme = 'sunrise' | 'deep-ocean' | 'midnight';
+export type SyncTheme = 'deepOcean' | 'sunrise' | 'midnight';
 
 export type SessionIdentity = {
   label: string;
@@ -79,7 +79,7 @@ export const useSyncPlaygroundStore = createBaseStore<SyncPlaygroundState>(
     sharedNotes:
       'Capture lightweight notes, ideas, or checklists together. Open this page in another tab to see every change appear instantly.',
     sharedTitle: 'Shared workspace',
-    theme: 'sunrise',
+    theme: 'deepOcean',
 
     initializeSession: (sessionId, displayName) =>
       set(state => {
@@ -189,7 +189,7 @@ export const useSyncPlaygroundStore = createBaseStore<SyncPlaygroundState>(
       sharedTitle: state.sharedTitle,
       theme: state.theme,
     }),
-    storageKey: 'example-app:sync-playground',
+    storageKey: 'syncPlaygroundStore',
     sync: {
       fields: ['lastEditedBy', 'participants', 'sharedNotes', 'sharedTitle', 'theme'],
     },

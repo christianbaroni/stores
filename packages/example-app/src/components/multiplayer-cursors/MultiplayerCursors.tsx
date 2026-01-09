@@ -120,7 +120,7 @@ export function MultiplayerCursors(): JSX.Element {
             transition: 'color 0.2s ease',
           }}
         >
-          ← Ghibli Explorer
+          ← Back
         </Link>
         <div
           style={{

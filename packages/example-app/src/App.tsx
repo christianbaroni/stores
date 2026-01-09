@@ -12,9 +12,9 @@ import { SyncTheme, useSyncPlaygroundStore } from './stores/syncPlaygroundStore'
 // ============ Constants ====================================================== //
 
 const SYNC_THEME_COLORS: Record<SyncTheme, { text: string }> = {
-  'deep-ocean': { text: 'rgba(255, 255, 255, 0.7)' },
-  'midnight': { text: 'rgba(255, 255, 255, 0.7)' },
-  'sunrise': { text: 'rgba(0, 0, 0, 0.7)' },
+  deepOcean: { text: 'rgba(255, 255, 255, 0.7)' },
+  midnight: { text: 'rgba(255, 255, 255, 0.7)' },
+  sunrise: { text: 'rgba(0, 0, 0, 0.7)' },
 };
 
 // ============ Component ====================================================== //
@@ -117,7 +117,7 @@ export function App() {
               whiteSpace: 'nowrap',
             }}
           >
-            Ghibli Explorer
+            Films
           </Link>
           <Link
             to="/rainbow"

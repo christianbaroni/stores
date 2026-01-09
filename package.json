@@ -4,6 +4,7 @@
   },
   "pnpm": {
     "overrides": {
+      "stores": "workspace:@storesjs/stores@*",
       "@types/react": "19.2.2",
       "@types/react-dom": "19.0.5"
     }
