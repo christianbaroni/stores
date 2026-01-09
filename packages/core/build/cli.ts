@@ -72,6 +72,8 @@ export function handleError(err: unknown): never {
  * Creates a CLI spinner. Must be stopped via `spinner.stop()`.
  */
 export function createSpinner(message: string): { stop: () => void } {
+  if (!process.stdout.isTTY) return { stop: () => {} };
+
   const frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
   let i = 0;
   const interval = setInterval(() => {
