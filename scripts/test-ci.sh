@@ -42,6 +42,10 @@ echo_step "JOB 4: Test Chrome Plugin"
 pnpm --filter stores test:chrome
 echo_success "Chrome plugin tests passed"
 
+echo_step "JOB 5: Test Treeshaking"
+pnpm --filter stores test:treeshake
+echo_success "Treeshake tests passed"
+
 echo -e "\n${GREEN}===================================================${NC}"
 echo -e "${GREEN}✓ All jobs passed${NC}"
 echo -e "${GREEN}===================================================${NC}\n"

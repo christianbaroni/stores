@@ -73,6 +73,7 @@
     "prepublishOnly": "pnpm build",
     "test": "jest --detectOpenHandles --forceExit --testPathIgnorePatterns='src/plugins'",
     "test:all": "pnpm run test && pnpm run test:chrome",
-    "test:chrome": "vitest run src/plugins/chrome"
+    "test:chrome": "vitest run src/plugins/chrome",
+    "test:treeshake": "tsx build/treeshake.ts"
   }
 }
