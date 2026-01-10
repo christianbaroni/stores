@@ -1,7 +1,14 @@
 {
   "name": "@storesjs/stores",
-  "version": "0.8.3",
+  "version": "0.8.4",
+  "license": "MIT",
   "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/christianbaroni/stores.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/christianbaroni/stores",
   "engines": {
     "node": ">=20.0.0"
   },
@@ -40,6 +47,14 @@
     "react": ">=17.0.0",
     "react-native": ">=0.64.0",
     "react-native-mmkv": ">=2.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react-native": {
+      "optional": true
+    },
+    "react-native-mmkv": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@types/chrome": "^0.0.276",

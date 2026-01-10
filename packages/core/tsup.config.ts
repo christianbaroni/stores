@@ -1,3 +1,4 @@
+import path from 'path';
 import { defineConfig } from 'tsup';
 import { Platform, plugins, sourcePath } from './build/plugins';
 
@@ -12,7 +13,6 @@ const pluginEntries = Object.fromEntries(
 
 export default defineConfig({
   clean: true,
-  define: { 'process.env.NODE_ENV': JSON.stringify(isProduction ? 'production' : 'development') },
   dts: false,
   entry: { index: 'src/index.ts', ...pluginEntries },
   external: ['react', 'react-native', 'react-native-mmkv'],
@@ -25,11 +25,11 @@ export default defineConfig({
 
   esbuildOptions(options) {
     options.alias = {
-      env: `./src/env.${platform}.ts`,
-      storage: `./src/storesStorage.${platform}.ts`,
+      '@/env': path.resolve(__dirname, `src/env.${platform}.ts`),
+      '@/storage': path.resolve(__dirname, `src/storesStorage.${platform}.ts`),
     };
     if (isProduction) {
-      options.drop = ['console', 'debugger'];
+      options.drop = ['debugger'];
       options.legalComments = 'none';
     }
   },
@@ -38,10 +38,8 @@ export default defineConfig({
     ? {
         compress: {
           dead_code: true,
-          drop_console: true,
           drop_debugger: true,
           passes: 3,
-          pure_funcs: ['console.debug', 'console.info', 'console.warn'],
         },
         format: { comments: false },
       }

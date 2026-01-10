@@ -16,9 +16,11 @@ function getStorageInstance(): SyncStorageInterface<string> {
     storageInstance = Object.assign(Object.create(null), rest, { get: getString });
   } catch (e) {
     throw new Error(
-      `[stores]: You must install react-native-mmkv for persistence to work in React Native.\n
-        See: https://github.com/mrousavy/react-native-mmkv
-        ${e instanceof Error ? `\n\nError: ${e.message}` : ''}`
+      '[stores] react-native-mmkv could not be loaded.\n\n' +
+        'Persisted stores require a storage backend. Either:\n' +
+        '  - Install MMKV (the default): yarn add react-native-mmkv\n' +
+        '  - Or provide a custom adapter via configureStores()\n' +
+        (e instanceof Error ? `\n${e.message}` : '')
     );
   }
   assertMMKV(storageInstance);
