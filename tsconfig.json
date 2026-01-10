@@ -14,15 +14,16 @@
     "outDir": "dist",
     "baseUrl": ".",
     "paths": {
+      "stores": ["packages/core/src"],
+      "@/cli": ["cli"],
+      "@/derivedStore/*": ["packages/core/src/derivedStore/*"],
       "@/env": ["packages/core/src/env"],
+      "@/hooks/*": ["packages/core/src/hooks/*"],
       "@/logger": ["packages/core/src/logger"],
       "@/queryStore/*": ["packages/core/src/queryStore/*"],
-      "@/utils/*": ["packages/core/src/utils/*"],
-      "@/hooks/*": ["packages/core/src/hooks/*"],
-      "@/derivedStore/*": ["packages/core/src/derivedStore/*"],
-      "@/tests/*": ["packages/core/src/tests/*"],
       "@/storesStorage": ["packages/core/src/storesStorage"],
-      "stores": ["packages/core/src"]
+      "@/tests/*": ["packages/core/src/tests/*"],
+      "@/utils/*": ["packages/core/src/utils/*"]
     }
   },
   "include": ["packages/*/src/**/*"],

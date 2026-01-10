@@ -3,7 +3,7 @@ import { execSync } from 'child_process';
 import { readdirSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
-import { Text } from './cli';
+import { bold, detail, failureSummary, row, summary, write } from '@/cli';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -16,7 +16,7 @@ const externals = ['react', 'react-native', 'zustand', 'use-sync-external-store'
 let passed = 0;
 let failed = 0;
 
-console.log(`${Text.Bold}treeshake:test${Text.Reset}\n`);
+write(`${bold('treeshake:test')}\n\n`);
 
 for (const entry of mjsEntries) {
   const file = join(root, `dist/web/${entry}.mjs`);
@@ -27,22 +27,22 @@ for (const entry of mjsEntries) {
     const isEmpty = output === '' || output === '(()=>{})();' || output === '"use strict";(()=>{})();';
 
     if (isEmpty) {
-      console.log(`  ${Text.Green}✓${Text.Reset} ${entry}`);
+      write(`${row(entry)}\n`);
       passed++;
     } else {
-      console.log(`  ${Text.Red}✗${Text.Reset} ${entry}`);
-      console.log(`    ${Text.Dim}${output.slice(0, 100)}${output.length > 100 ? '...' : ''}${Text.Reset}`);
+      write(`${row(entry, { success: false })}\n`);
+      write(`${detail(output.slice(0, 100) + (output.length > 100 ? '...' : ''))}\n`);
       failed++;
     }
   } catch {
-    console.log(`  ${Text.Red}✗${Text.Reset} ${entry} (error)`);
+    write(`${row(entry, { success: false })} (error)\n`);
     failed++;
   }
 }
 
 if (failed > 0) {
-  console.log(`\n  ${Text.Red}✗${Text.Reset} ${passed} passed, ${failed} failed\n`);
+  write(`${failureSummary(passed, failed)}\n`);
   process.exit(1);
 } else {
-  console.log(`\n  ${Text.Green}✓ ${'treeshake:test'.padEnd(8)}${Text.Reset} ${Text.Dim}· esbuild${Text.Reset}\n`);
+  write(`${summary('treeshake:test', { detail: 'esbuild' })}\n`);
 }

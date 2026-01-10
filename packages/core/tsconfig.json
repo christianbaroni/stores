@@ -18,8 +18,9 @@
     "baseUrl": ".",
     "paths": {
       "@env": ["src/env.web.ts"],
-      "storesStorage": ["src/storesStorage.web.ts"]
+      "@/cli": ["../../cli"]
     }
   },
-  "include": ["src/**/*", "build/**/*", "scripts/**/*", "tsup.config.ts"]
+  "include": ["src/**/*", "build/**/*", "scripts/**/*", "tsup.config.ts"],
+  "references": [{ "path": "../../cli" }]
 }

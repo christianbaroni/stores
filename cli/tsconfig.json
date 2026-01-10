@@ -1,0 +1,8 @@
+{
+  "extends": "../packages/core/tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "outDir": "dist"
+  },
+  "include": ["*.ts"]
+}

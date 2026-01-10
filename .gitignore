@@ -63,3 +63,6 @@ storybook-static/
 # Temporary build files
 packages/core/src/env.ts
 packages/core/src/storesStorage.ts
+
+# Cloudflare
+.wrangler/
