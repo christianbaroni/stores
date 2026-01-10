@@ -1,4 +1,4 @@
-import { IS_DEV } from '@env';
+import { IS_DEV } from '@/env';
 import { getStoresConfig } from '../config';
 import { StoresError, logger } from '../logger';
 import { StateCreator } from '../types';

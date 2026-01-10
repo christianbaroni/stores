@@ -1,4 +1,4 @@
-import { IS_BROWSER } from '@env';
+import { IS_BROWSER } from '@/env';
 import { StoresError, logger } from '../logger';
 import { SyncEngine, SyncHandle, SyncRegistration, SyncUpdate, SyncValues } from './types';
 

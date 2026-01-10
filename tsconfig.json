@@ -21,7 +21,7 @@
       "@/hooks/*": ["packages/core/src/hooks/*"],
       "@/logger": ["packages/core/src/logger"],
       "@/queryStore/*": ["packages/core/src/queryStore/*"],
-      "@/storesStorage": ["packages/core/src/storesStorage"],
+      "@/storage": ["packages/core/src/storesStorage"],
       "@/tests/*": ["packages/core/src/tests/*"],
       "@/utils/*": ["packages/core/src/utils/*"]
     }

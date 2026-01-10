@@ -26,7 +26,7 @@ export default defineConfig({
   esbuildOptions(options) {
     options.alias = {
       env: `./src/env.${platform}.ts`,
-      storesStorage: `./src/storesStorage.${platform}.ts`,
+      storage: `./src/storesStorage.${platform}.ts`,
     };
     if (isProduction) {
       options.drop = ['console', 'debugger'];

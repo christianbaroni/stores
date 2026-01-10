@@ -1,5 +1,5 @@
 import { StoreApi } from 'zustand';
-import { IS_DEV } from '@env';
+import { IS_DEV } from '@/env';
 import { InferStoreState } from '../types';
 import { NoOverlap, ObjectMethods } from '../types/objects';
 import { FunctionKeys, UnknownFunction } from '../types/functions';

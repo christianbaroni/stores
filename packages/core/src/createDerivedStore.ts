@@ -1,6 +1,6 @@
 import { useSyncExternalStoreWithSelector } from 'use-sync-external-store/shim/with-selector';
 import { StoreApi } from 'zustand/vanilla';
-import { IS_DEV } from '@env';
+import { IS_DEV } from '@/env';
 import { PathFinder, createPathFinder, getOrCreateProxy } from './derivedStore/deriveProxy';
 import { activateCascade, enqueueDerive, getCurrentDeriveRank, isCascadeActive, joinCascade } from './derivedStore/globalDeriveScheduler';
 import {

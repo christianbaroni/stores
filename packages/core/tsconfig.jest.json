@@ -3,9 +3,9 @@
   "compilerOptions": {
     "types": ["node", "jest"],
     "paths": {
-      "@env": ["src/env.web.ts"],
-      "storesStorage": ["src/storesStorage.web.ts"],
-      "stores": ["./src/index"]
+      "stores": ["./src/index"],
+      "@/env": ["src/env.web.ts"],
+      "@/storage": ["src/storesStorage.web.ts"]
     }
   },
   "include": ["src/**/*"]

@@ -1,6 +1,6 @@
 import { AsyncStorageInterface, BaseStoreOptions, EnforceStorageKey, SyncStorageInterface } from 'src/types';
 import { PersistStorage } from 'zustand/middleware';
-import { IS_BROWSER, IS_IOS, IS_TEST } from '@env';
+import { IS_BROWSER, IS_IOS, IS_TEST } from '@/env';
 import { getStoresConfig } from '../config';
 import { logger, StoresError } from '../logger';
 import { StorageValue } from './storageTypes';

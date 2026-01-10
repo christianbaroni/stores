@@ -1,4 +1,4 @@
-import { unstable_batchedUpdates } from '@env';
+import { unstable_batchedUpdates } from '@/env';
 
 type Rank = number;
 type StoreId = string;

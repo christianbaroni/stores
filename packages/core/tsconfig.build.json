@@ -17,8 +17,8 @@
     "forceConsistentCasingInFileNames": true,
     "baseUrl": ".",
     "paths": {
-      "@env": ["src/env.web.ts"],
-      "storesStorage": ["src/storesStorage.web.ts"]
+      "@/env": ["src/env.web.ts"],
+      "@/storage": ["src/storesStorage.web.ts"]
     }
   },
   "include": ["src/**/*"],

@@ -5,8 +5,8 @@ module.exports = {
   testMatch: ['**/?(*.)+(spec|test).[jt]s?(x)'],
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
   moduleNameMapper: {
-    '^@env$': '<rootDir>/env.web.ts',
-    '^storesStorage$': '<rootDir>/storesStorage.web.ts',
+    '^@/env$': '<rootDir>/env.web.ts',
+    '^@/storage$': '<rootDir>/storesStorage.web.ts',
     '^src/(.*)$': '<rootDir>/$1',
   },
   transform: {

@@ -1,5 +1,5 @@
 import { createBaseStore } from './createBaseStore';
-import { IS_DEV, IS_TEST } from '@env';
+import { IS_DEV, IS_TEST } from '@/env';
 import { StoresError, ensureError, logger } from './logger';
 import { SubscriptionManager } from './queryStore/classes/SubscriptionManager';
 import {

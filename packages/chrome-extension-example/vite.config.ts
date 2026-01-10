@@ -18,7 +18,7 @@ export default defineConfig(() => {
         resolveId(source, importer) {
           if (!importer) return null;
           if (!importer.includes(`${path.sep}core${path.sep}src${path.sep}`)) return null;
-          if (source === '@env' || source === './env' || source === '../env') {
+          if (source === '@/env' || source === './env' || source === '../env') {
             return path.resolve(__dirname, '../core/src/env.web.ts');
           }
           if (source === './storesStorage' || source === '../storesStorage') {
