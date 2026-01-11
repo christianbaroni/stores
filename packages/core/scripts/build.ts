@@ -27,7 +27,7 @@ async function build(): Promise<void> {
 
   const [exports, types, web, native] = await Promise.all([
     timed(() => execAsync('tsx scripts/generate-exports.ts', { cwd: root })),
-    timed(() => execAsync('tsc -p tsconfig.build.json --emitDeclarationOnly', { cwd: root })),
+    buildTypes(),
     buildPlatform('web'),
     buildPlatform('native'),
   ]).finally(spin.stop);
@@ -39,6 +39,13 @@ async function build(): Promise<void> {
     timedRow('native', native.time, bundleSummary('dist/native')),
     summary('build', { time: performance.now() - start })
   );
+}
+
+async function buildTypes(): Promise<{ time: number }> {
+  const start = performance.now();
+  await execAsync('tsc -p tsconfig.build.json --emitDeclarationOnly', { cwd: root });
+  removeDisabledPluginTypes();
+  return { time: performance.now() - start };
 }
 
 async function buildPlatform(platform: 'web' | 'native'): Promise<{ time: number }> {
@@ -57,14 +64,30 @@ async function timed<T>(fn: () => Promise<T>): Promise<{ time: number; result: T
 function bundleSummary(dir: string): string {
   const fullPath = join(root, dir);
   const files = readdirSync(fullPath);
-  const getSize = (name: string) => (files.includes(`${name}.mjs`) ? statSync(join(fullPath, `${name}.mjs`)).size : 0);
-  const coreSize = getSize('index');
-  const pluginsSize = Object.keys(plugins).reduce((sum, name) => sum + getSize(name), 0);
-  return `${formatSize(coreSize + pluginsSize)} · core ${formatSize(coreSize)} · plugins ${formatSize(pluginsSize)}`;
+  const fileSize = (name: string) => (files.includes(`${name}.mjs`) ? statSync(join(fullPath, `${name}.mjs`)).size : 0);
+
+  const totalSize = files.filter(f => f.endsWith('.mjs')).reduce((sum, f) => sum + statSync(join(fullPath, f)).size, 0);
+  const pluginsSize = Object.keys(plugins).reduce((sum, name) => sum + fileSize(name), 0);
+  const coreSize = totalSize - pluginsSize;
+
+  return `${formatSize(totalSize)} · core ${formatSize(coreSize)} · plugins ${formatSize(pluginsSize)}`;
 }
 
 function copyFilesFromRoot(files: string[]): void {
   for (const file of files) {
     copyFileSync(join(root, '../..', file), join(root, file));
+  }
+}
+
+function removeDisabledPluginTypes(): void {
+  const srcPlugins = join(root, 'src/plugins');
+  const distPlugins = join(root, 'dist/plugins');
+
+  const allPluginDirs = readdirSync(srcPlugins).filter(name => statSync(join(srcPlugins, name)).isDirectory());
+
+  for (const name of allPluginDirs) {
+    if (!(name in plugins)) {
+      rmSync(join(distPlugins, name), { recursive: true, force: true });
+    }
   }
 }

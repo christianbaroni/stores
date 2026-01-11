@@ -9,6 +9,7 @@
     "declaration": true,
     "emitDeclarationOnly": true,
     "declarationDir": "dist",
+    "declarationMap": true,
     "tsBuildInfoFile": ".tsbuildinfo",
     "rootDir": "src",
     "strict": true,
