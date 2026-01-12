@@ -17,7 +17,7 @@ describe('ChromeStorageAdapter', () => {
 
   describe('namespacing', () => {
     it('stores keys with namespace prefix', async () => {
-      const adapter = new ChromeStorageAdapter({ namespace: '@app', area: 'local' });
+      const adapter = new ChromeStorageAdapter({ namespace: '@app:', area: 'local' });
       await adapter.set('myKey', { state: { value: 1 }, version: 1 });
 
       const rawData = await mockStorage.local.get(null);
@@ -33,8 +33,8 @@ describe('ChromeStorageAdapter', () => {
     });
 
     it('isolates keys between namespaces', async () => {
-      const adapter1 = new ChromeStorageAdapter({ namespace: '@ns1', area: 'local' });
-      const adapter2 = new ChromeStorageAdapter({ namespace: '@ns2', area: 'local' });
+      const adapter1 = new ChromeStorageAdapter({ namespace: '@ns1:', area: 'local' });
+      const adapter2 = new ChromeStorageAdapter({ namespace: '@ns2:', area: 'local' });
 
       await adapter1.set('key', { state: { source: 'ns1' }, version: 1 });
       await adapter2.set('key', { state: { source: 'ns2' }, version: 1 });
@@ -44,7 +44,7 @@ describe('ChromeStorageAdapter', () => {
     });
 
     it('getAllKeys returns unprefixed keys', async () => {
-      const adapter = new ChromeStorageAdapter({ namespace: '@app', area: 'local' });
+      const adapter = new ChromeStorageAdapter({ namespace: '@app:', area: 'local' });
       await adapter.set('first', { state: {}, version: 1 });
       await adapter.set('second', { state: {}, version: 1 });
 
@@ -53,8 +53,8 @@ describe('ChromeStorageAdapter', () => {
     });
 
     it('getAllKeys excludes keys from other namespaces', async () => {
-      const adapter1 = new ChromeStorageAdapter({ namespace: '@ns1', area: 'local' });
-      const adapter2 = new ChromeStorageAdapter({ namespace: '@ns2', area: 'local' });
+      const adapter1 = new ChromeStorageAdapter({ namespace: '@ns1:', area: 'local' });
+      const adapter2 = new ChromeStorageAdapter({ namespace: '@ns2:', area: 'local' });
 
       await adapter1.set('a', { state: {}, version: 1 });
       await adapter2.set('b', { state: {}, version: 1 });
@@ -84,7 +84,7 @@ describe('ChromeStorageAdapter', () => {
     let adapter: ChromeStorageAdapter;
 
     beforeEach(() => {
-      adapter = new ChromeStorageAdapter({ namespace: '@test', area: 'local' });
+      adapter = new ChromeStorageAdapter({ namespace: '@test:', area: 'local' });
     });
 
     it('set and get round-trip', async () => {
@@ -117,8 +117,8 @@ describe('ChromeStorageAdapter', () => {
     });
 
     it('clearAll removes only keys in namespace', async () => {
-      const adapter1 = new ChromeStorageAdapter({ namespace: '@ns1', area: 'local' });
-      const adapter2 = new ChromeStorageAdapter({ namespace: '@ns2', area: 'local' });
+      const adapter1 = new ChromeStorageAdapter({ namespace: '@ns1:', area: 'local' });
+      const adapter2 = new ChromeStorageAdapter({ namespace: '@ns2:', area: 'local' });
 
       await adapter1.set('a', { state: {}, version: 1 });
       await adapter1.set('b', { state: {}, version: 1 });
@@ -262,7 +262,7 @@ describe('ChromeStorageAdapter', () => {
     let adapter: ChromeStorageAdapter;
 
     beforeEach(() => {
-      adapter = new ChromeStorageAdapter({ namespace: '@test', area: 'local' });
+      adapter = new ChromeStorageAdapter({ namespace: '@test:', area: 'local' });
     });
 
     it('returns undefined for value without state property', async () => {
@@ -289,7 +289,7 @@ describe('ChromeStorageAdapter', () => {
 
   describe('error handling', () => {
     it('rejects when chrome.runtime.lastError is set', async () => {
-      const adapter = new ChromeStorageAdapter({ namespace: '@test', area: 'local' });
+      const adapter = new ChromeStorageAdapter({ namespace: '@test:', area: 'local' });
 
       Object.defineProperty(chrome.runtime, 'lastError', {
         value: { message: 'Storage quota exceeded' },
@@ -311,7 +311,7 @@ describe('ChromeStorageAdapter', () => {
       Reflect.deleteProperty(globalThis, 'chrome');
 
       try {
-        const adapter = new ChromeStorageAdapter({ namespace: '@test', area: 'local' });
+        const adapter = new ChromeStorageAdapter({ namespace: '@test:', area: 'local' });
 
         expect(await adapter.get('key')).toBeUndefined();
         expect(await adapter.contains('key')).toBe(false);
@@ -329,8 +329,8 @@ describe('ChromeStorageAdapter', () => {
 
   describe('storage areas', () => {
     it('uses specified storage area', async () => {
-      const localAdapter = new ChromeStorageAdapter({ namespace: '@test', area: 'local' });
-      const sessionAdapter = new ChromeStorageAdapter({ namespace: '@test', area: 'session' });
+      const localAdapter = new ChromeStorageAdapter({ namespace: '@test:', area: 'local' });
+      const sessionAdapter = new ChromeStorageAdapter({ namespace: '@test:', area: 'session' });
 
       await localAdapter.set('key', { state: { area: 'local' }, version: 1 });
       await sessionAdapter.set('key', { state: { area: 'session' }, version: 1 });
@@ -348,7 +348,7 @@ describe('ChromeStorageAdapter', () => {
     });
 
     it('defaults to local area', async () => {
-      const adapter = new ChromeStorageAdapter({ namespace: '@test' });
+      const adapter = new ChromeStorageAdapter({ namespace: '@test:' });
       expect(adapter.area).toBe('local');
 
       await adapter.set('key', { state: {}, version: 1 });

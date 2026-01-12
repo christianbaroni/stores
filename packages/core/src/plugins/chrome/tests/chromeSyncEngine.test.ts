@@ -22,7 +22,7 @@ describe('ChromeExtensionSyncEngine', () => {
     setupMockChrome(mockStorage);
 
     // Create two separate storage adapters pointing to the same underlying storage
-    const namespace = '@stores/test-sync';
+    const namespace = '@stores/test-sync:';
     storageAdapter1 = new ChromeStorageAdapter({ namespace, area: 'local' });
     storageAdapter2 = new ChromeStorageAdapter({ namespace, area: 'local' });
 

@@ -4,7 +4,7 @@ import { isPlainObject } from '../../types/utils';
 import { isPromiseLike } from '../../utils/promiseUtils';
 import { replacer, reviver } from '../../utils/serialization';
 
-export const CHROME_STORAGE_NAMESPACE = 'stores/chrome-storage';
+export const CHROME_STORAGE_NAMESPACE = 'stores/chrome-storage:';
 const ENABLE_LOGS = false;
 
 export type AreaName = keyof Pick<typeof chrome.storage, 'local' | 'managed' | 'session' | 'sync'>;
@@ -90,7 +90,7 @@ export class ChromeStorageAdapter implements AsyncStorageInterface {
   }
 
   private namespacePrefix(): string {
-    return this.namespace ? `${this.namespace}:` : '';
+    return this.namespace ?? '';
   }
 
   private toStorageKey(key: string): string {
