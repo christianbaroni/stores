@@ -9,7 +9,7 @@ export class StoresError extends Error {
   }
 }
 
-export interface StoresLogger {
+export interface Logger {
   debug: (message: string, context?: Record<string, unknown>) => void;
   error: {
     <T extends Error>(error: T, context?: Record<string, unknown>): void;
@@ -19,12 +19,12 @@ export interface StoresLogger {
   warn: (message: string, context?: Record<string, unknown>) => void;
 }
 
-export let logger: StoresLogger = {
+export let logger: Logger = {
   debug: (message: string, context?: Record<string, unknown>) => {
     if (IS_DEV) console.debug(message, context);
   },
   error: (error: Error, context?: Record<string, unknown>) => {
-    if (!IS_TEST) console.error(error, context);
+    if (IS_DEV && !IS_TEST) console.error(error, context);
   },
   info: (message: string, context?: Record<string, unknown>) => {
     if (IS_DEV) console.info(message, context);
@@ -39,6 +39,6 @@ export function ensureError(error: unknown): Error {
   return new Error(String(error));
 }
 
-export function setLogger(customLogger: StoresLogger): void {
+export function setLogger(customLogger: Logger): void {
   logger = customLogger;
 }

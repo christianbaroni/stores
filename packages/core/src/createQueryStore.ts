@@ -949,12 +949,8 @@ export function createQueryStore<
     // Override the store's subscribe method
     const originalSubscribe: SubscribeOverloads<S, true> = api.subscribe;
     api.subscribe = (...args: SubscribeArgs<S>) => {
-      const internalUnsubscribe = isBuildingParams
-        ? () => {
-            return;
-          }
-        : subscriptionManager.subscribe();
-      const unsubscribe = args.length === 1 ? originalSubscribe(args[0]) : originalSubscribe(...args);
+      const internalUnsubscribe = isBuildingParams ? () => {} : subscriptionManager.subscribe();
+      const unsubscribe = args.length === 1 ? originalSubscribe(args[0]) : originalSubscribe(args[0], args[1], args[2]);
       return (skipAbortFetch?: boolean) => {
         internalUnsubscribe(skipAbortFetch);
         unsubscribe();

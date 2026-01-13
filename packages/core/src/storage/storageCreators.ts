@@ -66,7 +66,9 @@ function createSyncPersistStorage<S, PersistedState extends Partial<S>, PersistR
   function persist(name: string, storageValue: StorageValue<PersistedState>): void {
     try {
       if (shouldSkipPersistence(syncContext)) return;
-      storageValue.state = partialize(assertState<S, PersistedState>(storageValue.state));
+
+      assertStateType<S, PersistedState>(storageValue.state);
+      storageValue.state = partialize(storageValue.state);
       const metadataCapture = attachMetadata(syncContext, injectMetadata, storageValue);
       const serializedValue = serializer(storageValue);
 
@@ -126,7 +128,9 @@ export function createAsyncPersistStorage<S, PersistedState extends Partial<S>, 
   async function persist(name: string, storageValue: StorageValue<PersistedState>): Promise<void> {
     try {
       if (shouldSkipPersistence(syncContext)) return;
-      storageValue.state = partialize(assertState<S, PersistedState>(storageValue.state));
+
+      assertStateType<S, PersistedState>(storageValue.state);
+      storageValue.state = partialize(storageValue.state);
       const metadataCapture = attachMetadata(syncContext, injectMetadata, storageValue);
       const serializedValue = serializer(storageValue);
 
@@ -168,6 +172,10 @@ export function createAsyncPersistStorage<S, PersistedState extends Partial<S>, 
       }
     },
   };
+}
+
+function assertStateType<S, PersistedState extends Partial<S>>(state: S | PersistedState): asserts state is S {
+  return;
 }
 
 function createDefaultDeserializer<PersistedState extends Partial<unknown>>(
@@ -230,9 +238,4 @@ function shouldSkipPersistence(syncContext: SyncContext | undefined): boolean {
   if (!syncContext) return false;
   if (syncContext.getIsApplyingRemote()) return true;
   return false;
-}
-
-function assertState<S, PersistedState extends Partial<S>>(state: S | PersistedState): S {
-  // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-  return state as S;
 }

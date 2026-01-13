@@ -5,15 +5,14 @@ type MMKVInterface = Omit<FunctionKeys<SyncStorageInterface<string>>, 'get'> & {
 
 declare const require: (id: string) => { MMKV: new (options: { id: string }) => MMKVInterface };
 
-let storageInstance: SyncStorageInterface<string> | undefined;
+export function createStoresStorage(storageKeyPrefix: string): SyncStorageInterface<string> {
+  let mmkvStorage: SyncStorageInterface<string>;
 
-function getStorageInstance(): SyncStorageInterface<string> {
-  if (storageInstance) return storageInstance;
   try {
     const { MMKV } = require('react-native-mmkv');
-    const mmkv = new MMKV({ id: 'stores-storage' });
+    const mmkv = new MMKV({ id: storageKeyPrefix });
     const { getString, ...rest } = mmkv;
-    storageInstance = Object.assign(Object.create(null), rest, { get: getString });
+    mmkvStorage = Object.assign(Object.create(null), rest, { get: getString });
   } catch (e) {
     throw new Error(
       '[stores] react-native-mmkv could not be loaded.\n\n' +
@@ -23,18 +22,18 @@ function getStorageInstance(): SyncStorageInterface<string> {
         (e instanceof Error ? `\n${e.message}` : '')
     );
   }
-  assertMMKV(storageInstance);
-  return storageInstance;
-}
 
-export const storesStorage: SyncStorageInterface<string> = {
-  clearAll: () => getStorageInstance().clearAll(),
-  contains: key => getStorageInstance().contains(key),
-  delete: key => getStorageInstance().delete(key),
-  getAllKeys: () => getStorageInstance().getAllKeys(),
-  get: key => getStorageInstance().get(key),
-  set: (key, value) => getStorageInstance().set(key, value),
-};
+  assertMMKV(mmkvStorage);
+
+  return {
+    clearAll: () => mmkvStorage.clearAll(),
+    contains: key => mmkvStorage.contains(key),
+    delete: key => mmkvStorage.delete(key),
+    get: key => mmkvStorage.get(key),
+    getAllKeys: () => mmkvStorage.getAllKeys(),
+    set: (key, value) => mmkvStorage.set(key, value),
+  };
+}
 
 function assertMMKV(
   instance: SyncStorageInterface<unknown> | SyncStorageInterface<string> | undefined

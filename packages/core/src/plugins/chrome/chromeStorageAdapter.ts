@@ -1,24 +1,24 @@
+import { DEFAULT_STORAGE_KEY_PREFIX } from '../../config';
 import { StorageValue } from '../../storage/storageTypes';
 import { AsyncStorageInterface } from '../../types';
 import { isPlainObject } from '../../types/utils';
 import { isPromiseLike } from '../../utils/promiseUtils';
 import { replacer, reviver } from '../../utils/serialization';
 
-export const CHROME_STORAGE_NAMESPACE = 'stores/chrome-storage';
 const ENABLE_LOGS = false;
 
 export type AreaName = keyof Pick<typeof chrome.storage, 'local' | 'managed' | 'session' | 'sync'>;
 
 export type ChromeStorageAdapterOptions = {
   area?: AreaName;
-  namespace?: string;
+  storageKeyPrefix?: string;
 };
 
 export type ChromeStorageValue<PersistedState = unknown> = StorageValue<PersistedState>;
 
 export class ChromeStorageAdapter implements AsyncStorageInterface {
-  readonly area: 'local' | 'session' | 'sync' | 'managed';
-  readonly namespace: string;
+  readonly area: AreaName;
+  readonly storageKeyPrefix: string;
 
   readonly async = true;
   readonly deserializer = deserializeChromeStorageValue;
@@ -26,17 +26,16 @@ export class ChromeStorageAdapter implements AsyncStorageInterface {
 
   constructor(options?: ChromeStorageAdapterOptions) {
     this.area = options?.area ?? 'local';
-    this.namespace = options?.namespace ?? CHROME_STORAGE_NAMESPACE;
+    this.storageKeyPrefix = options?.storageKeyPrefix ?? DEFAULT_STORAGE_KEY_PREFIX;
   }
 
   async clearAll(): Promise<void> {
     const storage = this.ensureStorage();
     if (!storage) return;
-    const prefix = this.namespacePrefix();
-    if (!prefix) {
-      throw new Error('Cannot clear all storage with empty namespace. This would delete all storage entries. Please provide a namespace.');
+    if (!this.storageKeyPrefix) {
+      throw new Error('Cannot clear all storage with empty storageKeyPrefix. This would delete all storage entries.');
     }
-    const keys = await this.listPrefixedKeys(storage, prefix);
+    const keys = await this.listPrefixedKeys(storage, this.storageKeyPrefix);
     if (!keys.length) return;
     await this.execute(storage, done => storage.remove(keys, done));
   }
@@ -59,8 +58,9 @@ export class ChromeStorageAdapter implements AsyncStorageInterface {
   async getAllKeys(): Promise<string[]> {
     const storage = this.ensureStorage();
     if (!storage) return [];
-    const prefix = this.namespacePrefix();
     const result = await this.getFromStorage(storage, null);
+    const prefix = this.storageKeyPrefix;
+    if (!prefix) return Object.keys(result);
     return Object.keys(result)
       .filter(key => key.startsWith(prefix))
       .map(key => key.slice(prefix.length));
@@ -89,12 +89,8 @@ export class ChromeStorageAdapter implements AsyncStorageInterface {
     return getChromeStorageArea(this.area);
   }
 
-  private namespacePrefix(): string {
-    return this.namespace ? `${this.namespace}:` : '';
-  }
-
   private toStorageKey(key: string): string {
-    return `${this.namespacePrefix()}${key}`;
+    return this.storageKeyPrefix ? `${this.storageKeyPrefix}${key}` : key;
   }
 
   private async listPrefixedKeys(storage: chrome.storage.StorageArea, prefix: string): Promise<string[]> {

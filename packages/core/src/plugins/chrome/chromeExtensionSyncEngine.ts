@@ -1,9 +1,10 @@
+import { DEFAULT_STORAGE_KEY_PREFIX } from '../../config';
 import { StorageValue } from '../../storage/storageTypes';
 import { SyncEngine, SyncHandle, SyncRegistration, SyncValues } from '../../sync/types';
 import {
   AreaName,
-  CHROME_STORAGE_NAMESPACE,
   ChromeStorageAdapter,
+  ChromeStorageAdapterOptions,
   ChromeStorageValue,
   deserializeChromeStorageValue,
 } from './chromeStorageAdapter';
@@ -11,12 +12,7 @@ import {
 const ENABLE_LOGS = false;
 const ENABLE_METADATA_LOGS = false;
 
-export type ChromeExtensionSyncEngineOptions =
-  | {
-      area?: AreaName;
-      namespace?: string;
-    }
-  | { storage: ChromeStorageAdapter };
+export type ChromeExtensionSyncEngineOptions = ChromeStorageAdapterOptions | { storage: ChromeStorageAdapter };
 
 type RegistrationContainer = {
   destroyed: boolean;
@@ -30,7 +26,7 @@ export class ChromeExtensionSyncEngine implements SyncEngine {
   readonly sessionId: string;
 
   private readonly area: AreaName;
-  private readonly namespace: string;
+  private readonly storageKeyPrefix: string | undefined;
   private readonly registrations = new Map<string, RegistrationContainer>();
 
   private isListening = false;
@@ -38,10 +34,10 @@ export class ChromeExtensionSyncEngine implements SyncEngine {
   constructor(options?: ChromeExtensionSyncEngineOptions) {
     if (options && 'storage' in options) {
       this.area = options.storage.area;
-      this.namespace = options.storage.namespace;
+      this.storageKeyPrefix = options.storage.storageKeyPrefix;
     } else {
       this.area = options?.area ?? 'local';
-      this.namespace = options?.namespace ?? CHROME_STORAGE_NAMESPACE;
+      this.storageKeyPrefix = options?.storageKeyPrefix ?? DEFAULT_STORAGE_KEY_PREFIX;
     }
     this.sessionId = this.generateSessionId();
     this.attachListener();
@@ -176,7 +172,7 @@ export class ChromeExtensionSyncEngine implements SyncEngine {
       }
     }
 
-    // Fallback to state diff if no field metadata available
+    // Fall back to state diff if no field metadata available
     if (ENABLE_METADATA_LOGS) console.log('[🟡 SyncEngine 🟡] No field metadata available — falling back to full state diff');
     const oldPersistValue = this.parsePersistValue<Record<string, unknown>>(oldValue);
 
@@ -189,12 +185,8 @@ export class ChromeExtensionSyncEngine implements SyncEngine {
     return values;
   }
 
-  private namespacePrefix(): string {
-    return this.namespace ? `${this.namespace}:` : '';
-  }
-
   private toStorageKey(key: string): string {
-    return `${this.namespacePrefix()}${key}`;
+    return this.storageKeyPrefix ? `${this.storageKeyPrefix}${key}` : key;
   }
 
   private parsePersistValue<T extends Record<string, unknown>>(value: unknown): StorageValue<T> | null {

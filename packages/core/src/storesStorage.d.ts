@@ -1,1 +1,1 @@
-export * from './storesStorage.web';
+export { createStoresStorage } from './storesStorage.web';

@@ -114,14 +114,15 @@ export function createVirtualStore<
 
       let options = args[2];
       if (options?.fireImmediately) options = { ...options, fireImmediately: false };
-      const equalityFn = options?.equalityFn ?? Object.is;
 
       const prevSlice = selector(oldStore.getState());
       const nextSlice = selector(newStore.getState());
 
       // Re-subscribe to the new store
-      const newUnsub = newStore.subscribe(...args);
+      const newUnsub = newStore.subscribe(selector, listener, options);
       sub.unsubscribe = newUnsub;
+
+      const equalityFn = options?.equalityFn ?? Object.is;
       if (!equalityFn(prevSlice, nextSlice)) listener(nextSlice, prevSlice);
     }
   }
@@ -143,7 +144,8 @@ export function createVirtualStore<
   });
 
   function portableSubscribe(...args: SubscribeArgs<State>): UnsubscribeFn {
-    const unsubscribe = args.length === 1 ? useCachedStore.getState().subscribe(args[0]) : useCachedStore.getState().subscribe(...args);
+    const unsubscribe =
+      args.length === 1 ? useCachedStore.getState().subscribe(args[0]) : useCachedStore.getState().subscribe(args[0], args[1], args[2]);
     const sub: Subscription = {
       args,
       unsubscribe,
