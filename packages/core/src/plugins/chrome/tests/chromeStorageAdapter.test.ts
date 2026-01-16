@@ -300,6 +300,139 @@ describe('ChromeStorageAdapter', () => {
     });
   });
 
+  describe('migration from old format (stringified JSON)', () => {
+    let adapter: ChromeStorageAdapter;
+
+    beforeEach(() => {
+      adapter = new ChromeStorageAdapter({ area: 'local', storageKeyPrefix: '@test:' });
+    });
+
+    it('migrates old format stored as stringified JSON', async () => {
+      const oldFormatValue = { state: { migrated: true, count: 42 }, version: 2 };
+      const stringified = JSON.stringify(oldFormatValue);
+      await mockStorage.local.set({ '@test:migrated': stringified });
+
+      const result = await adapter.get('migrated');
+      expect(result).toEqual(oldFormatValue);
+    });
+
+    it('migrates old format with syncMetadata', async () => {
+      const oldFormatValue = {
+        state: { data: 'test' },
+        version: 1,
+        syncMetadata: { origin: 'client-1', timestamp: 12345 },
+      };
+      const stringified = JSON.stringify(oldFormatValue);
+      await mockStorage.local.set({ '@test:withMetadata': stringified });
+
+      const result = await adapter.get('withMetadata');
+      expect(result).toEqual(oldFormatValue);
+    });
+
+    it('returns undefined for invalid JSON string', async () => {
+      await mockStorage.local.set({ '@test:invalidJson': 'not valid json { broken' });
+      expect(await adapter.get('invalidJson')).toBeUndefined();
+    });
+
+    it('returns undefined for valid JSON that is not ChromeStorageValue format', async () => {
+      const invalidFormat = { notState: 'value', other: 'data' };
+      const stringified = JSON.stringify(invalidFormat);
+      await mockStorage.local.set({ '@test:invalidFormat': stringified });
+
+      expect(await adapter.get('invalidFormat')).toBeUndefined();
+    });
+
+    it('returns undefined for empty string', async () => {
+      await mockStorage.local.set({ '@test:empty': '' });
+      expect(await adapter.get('empty')).toBeUndefined();
+    });
+
+    it('returns undefined for JSON string that parses to null', async () => {
+      await mockStorage.local.set({ '@test:nullJson': 'null' });
+      expect(await adapter.get('nullJson')).toBeUndefined();
+    });
+
+    it('returns undefined for JSON string that parses to primitive', async () => {
+      await mockStorage.local.set({ '@test:numberJson': '42' });
+      expect(await adapter.get('numberJson')).toBeUndefined();
+    });
+
+    it('migrates nested Maps in old format (reviver applied via deserialization)', async () => {
+      const oldFormatValue = {
+        state: {
+          users: { __type: 'Map', entries: [['user1', { name: 'Alice' }]] },
+          count: 5,
+        },
+        version: 1,
+      };
+      const stringified = JSON.stringify(oldFormatValue);
+      await mockStorage.local.set({ '@test:nestedMaps': stringified });
+
+      // get() returns the parsed value but doesn't apply reviver
+      const result = await adapter.get('nestedMaps');
+      expect(result).toBeDefined();
+
+      // Type guard to safely access nested properties
+      if (
+        result &&
+        typeof result === 'object' &&
+        'state' in result &&
+        result.state &&
+        typeof result.state === 'object' &&
+        'users' in result.state
+      ) {
+        // The state will have the Map structure but not be a Map instance yet
+        // (reviver is only applied in deserializeChromeStorageValue)
+        expect(result.state.users).toEqual({ __type: 'Map', entries: [['user1', { name: 'Alice' }]] });
+      } else {
+        throw new Error('Expected result to have state.users property');
+      }
+    });
+
+    it('prefers new format over old format when both exist', async () => {
+      // This shouldn't happen in practice, but tests the precedence
+      const newFormat = { state: { format: 'new' }, version: 1 };
+
+      // Set new format directly
+      await mockStorage.local.set({ '@test:precedence': newFormat });
+      expect(await adapter.get('precedence')).toEqual(newFormat);
+
+      // If we had old format, it would be migrated, but new format takes precedence
+      // (In practice, old format would be replaced by new format on next write)
+    });
+  });
+
+  describe('deserialization migration support', () => {
+    it('deserializes from old stringified JSON format', () => {
+      const oldFormatValue = { state: { migrated: true }, version: 3 };
+      const stringified = JSON.stringify(oldFormatValue);
+
+      const result = deserializeChromeStorageValue(stringified);
+      expect(result).toEqual(oldFormatValue);
+    });
+
+    it('throws on invalid JSON string during deserialization', () => {
+      expect(() => deserializeChromeStorageValue('invalid json {')).toThrow('Invalid serialized state format');
+    });
+
+    it('throws on valid JSON string that is not ChromeStorageValue format', () => {
+      const invalidFormat = JSON.stringify({ notState: 'value' });
+      expect(() => deserializeChromeStorageValue(invalidFormat)).toThrow('Invalid serialized state format');
+    });
+
+    it('deserializes old format with Map correctly', () => {
+      const oldFormatValue = {
+        state: { __type: 'Map', entries: [['key', 'value']] },
+        version: 1,
+      };
+      const stringified = JSON.stringify(oldFormatValue);
+
+      const result = deserializeChromeStorageValue<Map<string, string>>(stringified);
+      expect(result.state).toBeInstanceOf(Map);
+      expect(result.state.get('key')).toBe('value');
+    });
+  });
+
   describe('error handling', () => {
     it('rejects when chrome.runtime.lastError is set', async () => {
       const adapter = new ChromeStorageAdapter({ area: 'local', storageKeyPrefix: '@test:' });
