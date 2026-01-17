@@ -72,9 +72,10 @@ export class ChromeStorageAdapter implements AsyncStorageInterface {
     const storageKey = this.toStorageKey(key);
     const result = await this.getFromStorage(storage, storageKey);
     const value = result[storageKey];
-    if (!isChromeStorageValue(value)) return undefined;
-    if (ENABLE_LOGS) console.log(`[ChromeStorageAdapter] get("${key}"): FOUND`, value);
-    return value;
+    const parsed = parseChromeStorageValue(value);
+    if (!parsed) return undefined;
+    if (ENABLE_LOGS) console.log(`[ChromeStorageAdapter] get("${key}"): FOUND`, parsed);
+    return parsed;
   }
 
   async set(key: string, value: unknown): Promise<void> {
@@ -154,15 +155,33 @@ export function serializeChromeStorageValue<PersistedState>(storageValue: Storag
 }
 
 export function deserializeChromeStorageValue<PersistedState>(serializedState: unknown): StorageValue<PersistedState> {
-  if (!isChromeStorageValue(serializedState)) {
+  const parsed = parseChromeStorageValue(serializedState);
+  if (!parsed) {
     throw new Error('[ChromeStorageAdapter] Invalid serialized state format');
   }
   return {
     // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-    state: applyReviverToState(serializedState.state) as PersistedState,
-    syncMetadata: serializedState.syncMetadata,
-    version: serializedState.version,
+    state: applyReviverToState(parsed.state) as PersistedState,
+    syncMetadata: parsed.syncMetadata,
+    version: parsed.version,
   };
+}
+
+function parseChromeStorageValue(value: unknown): StorageValue<unknown> | null {
+  // default case
+  if (isChromeStorageValue(value)) {
+    return value;
+  }
+  // migration case from old chrome storage format (stringified JSON)
+  if (typeof value === 'string') {
+    try {
+      const candidate = JSON.parse(value);
+      if (isChromeStorageValue(candidate)) {
+        return candidate;
+      }
+    } catch {}
+  }
+  return null;
 }
 
 function isChromeStorageValue(value: unknown): value is StorageValue<unknown> {
