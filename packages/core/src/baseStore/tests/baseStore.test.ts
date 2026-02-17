@@ -2,9 +2,9 @@
  * @jest-environment node
  */
 
-import { flushMacrotask } from 'src/sync/tests/testUtils';
 import { createBaseStore } from '../../createBaseStore';
 import { StoresError } from '../../logger';
+import { flushMacrotask } from '../../sync/tests/testUtils';
 import { AsyncStorageInterface, OptionallyPersistedStore, PersistedStore } from '../../types';
 import { isPlainObject } from '../../types/utils';
 
@@ -219,7 +219,7 @@ describe('createBaseStore / persistence + hydration', () => {
 
 function assertIsPersisted<S, PersistedState, PersistReturn>(
   store: OptionallyPersistedStore<S, PersistedState, PersistReturn>
-): asserts store is PersistedStore<S, PersistedState, false, PersistReturn> {
+): asserts store is PersistedStore<S, PersistedState, PersistReturn, false> {
   return;
 }
 

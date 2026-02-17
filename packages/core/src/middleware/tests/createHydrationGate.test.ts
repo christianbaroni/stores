@@ -3,8 +3,8 @@
  */
 
 import { createHydrationGate } from '../createHydrationGate';
+import { createMockSyncContext } from '../../sync/tests/testUtils';
 import { SetStateOverloads, StateCreator } from '../../types';
-import { createMockSyncContext } from 'src/sync/tests/testUtils';
 
 type TestState = { value: number; label?: string };
 

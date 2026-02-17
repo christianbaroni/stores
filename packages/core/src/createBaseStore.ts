@@ -24,7 +24,7 @@ export function createBaseStore<S>(createState: StateCreator<S>): Store<S>;
 export function createBaseStore<S, PersistedState extends Partial<S> = Partial<S>, PersistReturn extends void = void>(
   createState: StateCreator<S>,
   options: BaseStoreOptions<S, PersistedState, PersistReturn>
-): Store<S, PersistedState, false, PersistReturn>;
+): Store<S, PersistedState, PersistReturn, false>;
 
 /**
  * Creates a base store with async persistence.
@@ -35,7 +35,7 @@ export function createBaseStore<S, PersistedState extends Partial<S> = Partial<S
 export function createBaseStore<S, PersistedState extends Partial<S> = Partial<S>, PersistReturn extends Promise<void> = Promise<void>>(
   createState: StateCreator<S>,
   options: BaseStoreOptions<S, PersistedState, PersistReturn>
-): Store<S, PersistedState, false, PersistReturn>;
+): Store<S, PersistedState, PersistReturn, false>;
 
 /**
  * Creates a base store with optional persistence.
@@ -68,7 +68,7 @@ export function createBaseStore<S, PersistedState extends Partial<S> = Partial<S
 export function createBaseStore<S, PersistedState extends Partial<S>, PersistReturn>(
   createState: StateCreator<S>,
   options?: BaseStoreOptions<S, PersistedState, PersistReturn>
-): Store<S> | Store<S, PersistedState, false, PersistReturn> {
+): Store<S> | Store<S, PersistedState, PersistReturn, false> {
   markStoreCreated();
   const isPersisted = options !== undefined && typeof options.storageKey === 'string';
   const storageKey = isPersisted ? options.storageKey : undefined;

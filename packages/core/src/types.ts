@@ -16,7 +16,7 @@ type HydrationPromise<PersistReturn> =
       }
     : { hydrationPromise?: undefined };
 
-export type StorePersist<Store, PersistedState, PersistReturn> = Store extends {
+type WithPersist<Store, PersistedState, PersistReturn> = Store extends {
   getState: () => infer S;
   setState: {
     (...args: infer SetPartialArgs): infer _;
@@ -48,21 +48,21 @@ export type BaseStore<S, ExtraSubscribeOptions extends boolean = false> = UseBou
   subscribe: SubscribeOverloads<S, ExtraSubscribeOptions>;
 };
 
-export type PersistedStore<S, PersistedState = Partial<S>, ExtraSubscribeOptions extends boolean = false, PersistReturn = unknown> = {
+export type PersistedStore<S, PersistedState = Partial<S>, PersistReturn = unknown, ExtraSubscribeOptions extends boolean = false> = {
   (): S;
   <U>(selector: (state: S) => U, equalityFn?: (a: U, b: U) => boolean): U;
 } & Omit<BaseStore<S, ExtraSubscribeOptions>, 'setState' | 'persist'> &
-  StorePersist<BaseStore<S, ExtraSubscribeOptions>, PersistedState, PersistReturn>;
+  WithPersist<BaseStore<S, ExtraSubscribeOptions>, PersistedState, PersistReturn>;
 
-export type Store<S, PersistedState extends Partial<S> = never, ExtraSubscribeOptions extends boolean = false, PersistReturn = unknown> = [
+export type Store<S, PersistedState extends Partial<S> = never, PersistReturn = unknown, ExtraSubscribeOptions extends boolean = false> = [
   PersistedState,
 ] extends [never]
   ? BaseStore<S, ExtraSubscribeOptions>
-  : PersistedStore<S, PersistedState, ExtraSubscribeOptions, PersistReturn>;
+  : PersistedStore<S, PersistedState, PersistReturn, ExtraSubscribeOptions>;
 
 export type OptionallyPersistedStore<S, PersistedState, PersistReturn = void> = WithAsyncSet<Store<S>, S, PersistedState, PersistReturn> &
   UseStoreCallSignatures<S> & {
-    persist?: PersistedStore<S, PersistedState, false, PersistReturn>['persist'];
+    persist?: PersistedStore<S, PersistedState, PersistReturn, false>['persist'];
   };
 
 // ============ Common Utility Types =========================================== //
@@ -121,7 +121,7 @@ export type SetStateOverloads<S, PersistReturn extends Promise<void> | void = vo
 };
 
 export type WithAsyncSet<Store extends StoreApi<unknown>, S, PersistedState, PersistReturn> = Omit<Store, 'persist' | 'setState'> & {
-  persist?: PersistedStore<S, PersistedState, false, PersistReturn>['persist'];
+  persist?: PersistedStore<S, PersistedState, PersistReturn, false>['persist'];
   setState(update: SetPartial<InferStoreState<Store>>, replace?: false): PersistReturn;
   setState(update: SetFull<InferStoreState<Store>>, replace: true): PersistReturn;
 };
@@ -161,6 +161,10 @@ export type DerivedStore<S> = WithFlushUpdates<ReadOnlyDerivedStore<BaseStore<S>
 export type WithFlushUpdates<Store extends StoreApi<unknown>> = Store & {
   /**
    * Destroy the derived store and its subscriptions.
+   *
+   * Derived stores automatically clean up internal resources and subscriptions
+   * when no subscribers exist. So calling `destroy()` is usually unnecessary,
+   * unless `keepAlive: true` is specified and explict teardown is desired.
    */
   destroy: () => void;
   /**

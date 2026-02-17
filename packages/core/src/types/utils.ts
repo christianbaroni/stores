@@ -1,8 +1,10 @@
+const hasOwnProperty = Object.prototype.hasOwnProperty;
+
 /**
- * Safe `hasOwnProperty` check. Use to guard `for..in` loops against inherited properties.
+ * Typed `hasOwnProperty` alias.
  */
 export function hasOwn<T extends Record<string, unknown>, K extends string>(value: T, key: K): value is T & Record<K, unknown> {
-  return Object.prototype.hasOwnProperty.call(value, key);
+  return hasOwnProperty.call(value, key);
 }
 
 /**

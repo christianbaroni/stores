@@ -25,7 +25,7 @@ export function defaultSerializeState<PersistedState>(storageValue: StorageValue
   try {
     return JSON.stringify(storageValue, shouldUseReplacer ? replacer : undefined);
   } catch (error) {
-    logger.error(new StoresError(`[createBaseStore]: Failed to serialize Rainbow store data`), { error });
+    logger.error(new StoresError(`[createBaseStore]: Failed to serialize store data`), { error });
     throw error;
   }
 }
@@ -34,7 +34,7 @@ export function defaultDeserializeState<PersistedState>(serializedState: string,
   try {
     return JSON.parse(serializedState, shouldUseReviver ? reviver : undefined);
   } catch (error) {
-    logger.error(new StoresError(`[createBaseStore]: Failed to deserialize persisted Rainbow store data`), { error });
+    logger.error(new StoresError(`[createBaseStore]: Failed to deserialize persisted store data`), { error });
     throw error;
   }
 }

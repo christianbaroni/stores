@@ -1,13 +1,15 @@
 import { StoreApi } from 'zustand';
-import { BaseStore, DerivedStore, PersistedStore, SetFull, SetPartial, SetStateArgs, WithGetSnapshot } from '../types';
-import { QueryStore, QueryStoreState } from 'src/queryStore/types';
+import { QueryStore, QueryStoreState } from '../queryStore/types';
+import { BaseStore, InferStoreState, PersistedStore, SetFull, SetPartial, SetStateArgs } from '../types';
 
-export enum StoreTags {
-  QueryStore = '_queryStore',
-  VirtualStore = '_virtualStore',
-}
+export const StoreTags = Object.freeze({
+  QueryStore: Symbol('queryStore'),
+  VirtualStore: Symbol('virtualStore'),
+});
 
-export function assignStoreTag<S>(store: BaseStore<S>, tag: StoreTags): BaseStore<S> {
+type StoreTag = (typeof StoreTags)[keyof typeof StoreTags];
+
+export function assignStoreTag<S>(store: BaseStore<S>, tag: StoreTag): BaseStore<S> {
   return Object.assign(store, { [tag]: true });
 }
 
@@ -18,9 +20,14 @@ export function assignStoreTag<S>(store: BaseStore<S>, tag: StoreTags): BaseStor
 export function applyStateUpdate<S>(state: S, ...setArgs: SetStateArgs<S>): S {
   if (setArgs[1] === true) {
     return isFunctionSetter(setArgs[0]) ? setArgs[0](state) : setArgs[0];
-  } else {
-    return { ...state, ...(isFunctionSetter(setArgs[0]) ? setArgs[0](state) : setArgs[0]) };
   }
+  const partial = isFunctionSetter(setArgs[0]) ? setArgs[0](state) : setArgs[0];
+  if (isArrayReplacement(state, partial)) return partial;
+  return { ...state, ...partial };
+}
+
+function isArrayReplacement<S>(state: S, value: S | Partial<S>): value is S {
+  return Array.isArray(state);
 }
 
 /**
@@ -58,44 +65,50 @@ export function getStoreName(store: BaseStore<unknown>): string {
 /**
  * Checks if a store has a `destroy` method.
  */
-export function hasDestroy<S>(store: StoreApi<S>): store is StoreApi<S> & { destroy: () => void } {
+export function hasDestroy<T extends StoreApi<unknown>>(store: T): store is T & { destroy: () => void } {
   return 'destroy' in store;
 }
 
 /**
  * Checks if a store is a `DerivedStore` and reveals its internal `getSnapshot` method.
  */
-export function hasGetSnapshot<S>(store: BaseStore<S> | StoreApi<S>): store is WithGetSnapshot<DerivedStore<S>> {
+export function hasGetSnapshot<T extends BaseStore<unknown> | StoreApi<unknown>>(
+  store: T
+): store is T & { getSnapshot: () => InferStoreState<T> } {
   return 'getSnapshot' in store;
 }
 
 /**
  * Checks if a store is a `QueryStore`.
  */
-export function isQueryStore<S>(
-  store: StoreApi<S> | BaseStore<S> | QueryStore<S, Record<string, unknown>, S>
-): store is BaseStore<QueryStoreState<S, Record<string, unknown>, S>> {
+export function isQueryStore<T extends object>(
+  store: T
+): store is Extract<T, BaseStore<QueryStoreState<unknown, Record<string, unknown>, unknown>>> {
   return StoreTags.QueryStore in store;
 }
 
 /**
  * Checks if a store is a `DerivedStore`.
  */
-export function isDerivedStore<S>(store: BaseStore<S> | StoreApi<S>): store is DerivedStore<S> {
+export function isDerivedStore<T extends BaseStore<unknown> | StoreApi<unknown>>(
+  store: T
+): store is T & { destroy: () => void; flushUpdates: () => void } {
   return 'flushUpdates' in store;
 }
 
 /**
  * Checks if a store is persisted.
  */
-export function isPersistedStore<S>(store: BaseStore<S>): store is PersistedStore<S> {
+export function isPersistedStore<T extends BaseStore<unknown>>(
+  store: T
+): store is T & { persist: PersistedStore<InferStoreState<T>>['persist'] } {
   return 'persist' in store;
 }
 
 /**
  * Checks if a store is a virtual store.
  */
-export function isVirtualStore<S>(store: BaseStore<S> | StoreApi<S>): store is BaseStore<S> & { [StoreTags.VirtualStore]: true } {
+export function isVirtualStore<T extends BaseStore<unknown> | StoreApi<unknown>>(store: T): store is T & BaseStore<InferStoreState<T>> {
   return StoreTags.VirtualStore in store;
 }
 

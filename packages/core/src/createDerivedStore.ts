@@ -2,7 +2,7 @@ import { useSyncExternalStoreWithSelector } from 'use-sync-external-store/shim/w
 import { StoreApi } from 'zustand/vanilla';
 import { IS_DEV } from '@/env';
 import { PathFinder, createPathFinder, getOrCreateProxy } from './derivedStore/deriveProxy';
-import { activateCascade, enqueueDerive, getCurrentDeriveRank, isCascadeActive, joinCascade } from './derivedStore/globalDeriveScheduler';
+import { activateCascade, enqueueDerive, getCurrentDeriveRank, isCascadeActive, joinCascade } from './derivedStore/cascadeScheduler';
 import {
   BaseStore,
   DebounceOptions,
@@ -169,7 +169,6 @@ function derive<DerivedState>(
   // Core state
   let derivedState: DerivedState | UninitializedState = UNINITIALIZED;
   let deriveScheduled = false;
-  let didProduceNewState = true;
   let invalidated = true;
   let shouldRebuildSubscriptions = true;
 
@@ -211,7 +210,9 @@ function derive<DerivedState>(
 
   // ========== Derivation ==========
 
-  function derive(): DerivedState {
+  let didProduceNewState = true;
+
+  function runDerive(): DerivedState {
     if (!invalidated && isInitialized(derivedState)) return derivedState;
     invalidated = false;
 
@@ -294,7 +295,7 @@ function derive<DerivedState>(
       if (!enlistedInCascade) {
         enlistedInCascade = true;
         if (!isInitialized(prevStateForFlush)) prevStateForFlush = prevState;
-        joinCascade(storeId, flushAndReset);
+        joinCascade(storeId, onCascadeFlush);
       }
       return;
     }
@@ -324,22 +325,23 @@ function derive<DerivedState>(
     return derivedWatchers > 0 && derivedWatchers < watcherCount;
   }
 
-  // ========== Flush ==========
+  // ========== Cascade Flush ==========
 
-  function flush(): void {
+  /**
+   * Called by the cascade scheduler after derivations settle.
+   * Lazily derives and flushes non-derived-store watcher notifications.
+   */
+  function onCascadeFlush(): void {
+    if (!watchers.size) return;
+
     // Stores without derived watchers may be invalidated but not yet derived
     // Derive now before flushing to components
-    if (invalidated && !derivedWatchers) derive();
+    if (invalidated && !derivedWatchers) runDerive();
     if (!isInitialized(derivedState)) return;
 
     const prevState = isInitialized(prevStateForFlush) ? prevStateForFlush : derivedState;
     notifyNonDerivedWatchers(derivedState, prevState);
-  }
 
-  function flushAndReset(): void {
-    if (!watchers.size) return;
-    // Only flush if notifications were deferred (enlisted in cascade)
-    if (enlistedInCascade) flush();
     enlistedInCascade = false;
     prevStateForFlush = UNINITIALIZED;
   }
@@ -366,7 +368,7 @@ function derive<DerivedState>(
     if (!watchers.size) return;
     deriveScheduled = false;
     if (!invalidated) return;
-    derive();
+    runDerive();
   }
 
   // ========== Lifecycle Helpers ==========
@@ -383,7 +385,6 @@ function derive<DerivedState>(
 
   function deriveTask(): void {
     runScheduledDerive();
-    // Clear rank after derive completes
     enqueuedAtRank = null;
   }
 
@@ -415,7 +416,7 @@ function derive<DerivedState>(
           if (isInitialized(derivedState)) {
             prevStateForFlush = derivedState;
           }
-          joinCascade(storeId, flushAndReset);
+          joinCascade(storeId, onCascadeFlush);
         }
         return;
       }
@@ -423,15 +424,14 @@ function derive<DerivedState>(
 
     // Outside cascades (debounced or component-only stores, no active cascade)
     enqueuedAtRank = null;
-    if (derivedWatchers && !debounceOptions) derive();
-    else scheduleDerive();
+    scheduleDerive();
   }
 
   function getSnapshot(): DerivedState {
     if (!isInitialized(derivedState)) {
       // Ensures useSyncExternalStore doesn't trigger redundant derivations
       watchers.add(dummyWatcher);
-      const state = derive();
+      const state = runDerive();
       watchers.delete(dummyWatcher);
       return state;
     }
@@ -439,12 +439,12 @@ function derive<DerivedState>(
     return derivedState;
   }
 
-  // ========== Public Store Methods ==========
+  // ========== Public Methods ==========
 
   function getState(): DerivedState {
     if (invalidated || !isInitialized(derivedState)) {
       // If there are watchers, we should build subscriptions, otherwise compute directly
-      return watchers.size > 0 ? derive() : deriveFunction($);
+      return watchers.size > 0 ? runDerive() : deriveFunction($);
     }
     return derivedState;
   }
@@ -495,7 +495,7 @@ function derive<DerivedState>(
   function flushUpdates(): void {
     if (!watchers.size) return;
     if (debouncedDerive) debouncedDerive.flush();
-    else if (invalidated) derive();
+    else if (invalidated) runDerive();
   }
 
   function destroy(isInternalCall = true): void {

@@ -76,7 +76,7 @@ export function createVirtualStore<
   overridesOrOptions?: VirtualStoreOptions | ((getStore: () => Store) => Overrides),
   options?: VirtualStoreOptions
 ):
-  | StoreType<InferStoreState<Store>, InferPersistedState<Store, InferStoreState<Store>>, false, InferSetStateReturn<Store>>
+  | StoreType<InferStoreState<Store>, InferPersistedState<Store, InferStoreState<Store>>, InferSetStateReturn<Store>, false>
   | (BaseStore<InferStoreState<Store>, false> & Overrides) {
   type State = InferStoreState<Store>;
   type Subscription = PortableSubscription<Store, State>;

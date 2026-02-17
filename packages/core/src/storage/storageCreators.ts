@@ -1,10 +1,10 @@
-import { AsyncStorageInterface, BaseStoreOptions, EnforceStorageKey, SyncStorageInterface } from 'src/types';
 import { PersistStorage } from 'zustand/middleware';
 import { IS_BROWSER, IS_IOS, IS_TEST } from '@/env';
 import { getStoresConfig } from '../config';
-import { logger, StoresError } from '../logger';
+import { StoresError, logger } from '../logger';
 import { StorageValue } from './storageTypes';
 import { SyncContext } from '../sync/syncEnhancer';
+import { AsyncStorageInterface, BaseStoreOptions, EnforceStorageKey, SyncStorageInterface } from '../types';
 import { createAsyncMicrotaskScheduler } from '../utils/createAsyncMicrotaskScheduler';
 import { debounce } from '../utils/debounce';
 import { defaultDeserializeState, defaultSerializeState, omitStoreMethods } from '../utils/persistUtils';

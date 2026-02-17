@@ -1,18 +1,19 @@
-import { createBaseStore } from './createBaseStore';
 import { IS_DEV, IS_TEST } from '@/env';
+import { markStoreCreated } from './config';
+import { createBaseStore } from './createBaseStore';
 import { StoresError, ensureError, logger } from './logger';
 import { SubscriptionManager } from './queryStore/classes/SubscriptionManager';
 import {
   CacheEntry,
   FetchOptions,
   InternalStateKeys,
-  ReactiveParam,
   QueryStatuses,
+  QueryStatusInfo,
   QueryStoreConfig,
   QueryStoreState,
+  ReactiveParam,
   ResolvedEnabledResult,
   ResolvedParamsResult,
-  QueryStatusInfo,
 } from './queryStore/types';
 import { $, AttachValue, SignalFunction, attachValueSubscriptionMap } from './signal';
 import {
@@ -33,7 +34,6 @@ import { debounce } from './utils/debounce';
 import { dequal } from './utils/equality';
 import { omitStoreMethods } from './utils/persistUtils';
 import { time } from './utils/time';
-import { markStoreCreated } from './config';
 import { assignStoreTag, StoreTags } from './utils/storeUtils';
 import { hasOwn } from './types/utils';
 
@@ -80,7 +80,7 @@ export function createQueryStore<
 >(
   config: QueryStoreConfig<TQueryFnData, TParams, TData>,
   options: BaseStoreOptions<QueryStoreState<TData, TParams>, PersistedState, PersistReturn>
-): PersistedStore<QueryStoreState<TData, TParams>, PersistedState, false, PersistReturn>;
+): PersistedStore<QueryStoreState<TData, TParams>, PersistedState, PersistReturn, false>;
 
 /**
  * Creates a persisted, query-enabled store with data fetching capabilities (async storage).
@@ -99,7 +99,7 @@ export function createQueryStore<
 >(
   config: QueryStoreConfig<TQueryFnData, TParams, TData>,
   options: BaseStoreOptions<QueryStoreState<TData, TParams>, PersistedState, PersistReturn>
-): PersistedStore<QueryStoreState<TData, TParams>, PersistedState, false, PersistReturn>;
+): PersistedStore<QueryStoreState<TData, TParams>, PersistedState, PersistReturn, false>;
 
 /**
  * Creates a persisted, query-enabled store with data fetching capabilities (sync storage).
@@ -121,7 +121,7 @@ export function createQueryStore<
   config: QueryStoreConfig<TQueryFnData, TParams, TData, CustomState>,
   stateCreator: StateCreator<QueryStoreState<TData, TParams, CustomState>, CustomState>,
   options: BaseStoreOptions<QueryStoreState<TData, TParams, CustomState>, PersistedState, PersistReturn>
-): PersistedStore<QueryStoreState<TData, TParams, CustomState>, PersistedState, false, PersistReturn>;
+): PersistedStore<QueryStoreState<TData, TParams, CustomState>, PersistedState, PersistReturn, false>;
 
 /**
  * Creates a persisted, query-enabled store with data fetching capabilities (async storage).
@@ -143,7 +143,7 @@ export function createQueryStore<
   config: QueryStoreConfig<TQueryFnData, TParams, TData, CustomState>,
   stateCreator: StateCreator<QueryStoreState<TData, TParams, CustomState>, CustomState>,
   options: BaseStoreOptions<QueryStoreState<TData, TParams, CustomState>, PersistedState, PersistReturn>
-): PersistedStore<QueryStoreState<TData, TParams, CustomState>, PersistedState, false, PersistReturn>;
+): PersistedStore<QueryStoreState<TData, TParams, CustomState>, PersistedState, PersistReturn, false>;
 
 /**
  * Creates a query-enabled store with data fetching capabilities.
@@ -292,7 +292,7 @@ export function createQueryStore<
   maybeOptions?: BaseStoreOptions<QueryStoreState<TData, TParams, CustomState>, PersistedState, PersistReturn>
 ):
   | Store<QueryStoreState<TData, TParams, CustomState>>
-  | Store<QueryStoreState<TData, TParams, CustomState>, PersistedState, false, PersistReturn> {
+  | Store<QueryStoreState<TData, TParams, CustomState>, PersistedState, PersistReturn, false> {
   markStoreCreated();
   type S = QueryStoreState<TData, TParams, CustomState>;
 
@@ -300,8 +300,8 @@ export function createQueryStore<
   const customStateCreator = typeof creatorOrOptions === 'function' ? creatorOrOptions : createEmptyState<CustomState>;
   const options = typeof creatorOrOptions === 'object' ? creatorOrOptions : maybeOptions;
 
-  /* BaseStoreOptions is either SyncOptions or PersistWithOptionalSync - check for storageKey to discriminate */
-  const persistConfig = options && 'storageKey' in options ? options : undefined;
+  /* BaseStoreOptions is either SyncOptions or PersistWithOptionalSync */
+  const storeOptions = options && 'storageKey' in options ? options : undefined;
 
   const {
     fetcher,
@@ -328,8 +328,8 @@ export function createQueryStore<
 
   if (IS_DEV && !disableAutoRefetching && !suppressStaleTimeWarning && staleTime < MIN_STALE_TIME) {
     console.warn(
-      `[createQueryStore${persistConfig?.storageKey ? `: ${persistConfig.storageKey}` : ''}] ❌ Stale times under ${
-        MIN_STALE_TIME / 1000
+      `[createQueryStore${storeOptions?.storageKey ? `: ${storeOptions.storageKey}` : ''}] ❌ Stale times under ${
+        minStaleTime / 1000
       } seconds are not recommended. Provided staleTime: ${staleTime / 1000} seconds`
     );
   }
@@ -648,10 +648,7 @@ export function createQueryStore<
               // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
               transformedData = transform ? transform(rawResult, effectiveParams) : (rawResult as TData);
             } catch (transformError) {
-              throw new StoresError(
-                `[createQueryStore: ${persistConfig?.storageKey || currentQueryKey}]: transform failed`,
-                transformError
-              );
+              throw new StoresError(`[createQueryStore: ${storeOptions?.storageKey || currentQueryKey}]: transform failed`, transformError);
             }
 
             if (skipStoreUpdates) {
@@ -774,7 +771,7 @@ export function createQueryStore<
               } catch (onFetchedError) {
                 logger.error(
                   new StoresError(
-                    `[createQueryStore: ${persistConfig?.storageKey || currentQueryKey}]: onFetched callback failed`,
+                    `[createQueryStore: ${storeOptions?.storageKey || currentQueryKey}]: onFetched callback failed`,
                     onFetchedError
                   )
                 );
@@ -793,7 +790,7 @@ export function createQueryStore<
 
             if (skipStoreUpdates || !areParamsCurrent) {
               logger.error(
-                new StoresError(`[createQueryStore: ${persistConfig?.storageKey || currentQueryKey}]: Failed to fetch data`, typedError)
+                new StoresError(`[createQueryStore: ${storeOptions?.storageKey || currentQueryKey}]: Failed to fetch data`, typedError)
               );
               if (shouldThrow) throw typedError;
               return null;
@@ -862,7 +859,7 @@ export function createQueryStore<
             }
 
             logger.error(
-              new StoresError(`[createQueryStore: ${persistConfig?.storageKey || currentQueryKey}]: Failed to fetch data`, typedError)
+              new StoresError(`[createQueryStore: ${storeOptions?.storageKey || currentQueryKey}]: Failed to fetch data`, typedError)
             );
 
             if (shouldThrow) throw typedError;
@@ -959,11 +956,11 @@ export function createQueryStore<
     return baseMethods;
   };
 
-  const queryStore = persistConfig?.storageKey
+  const queryStore = storeOptions?.storageKey
     ? createBaseStore<S, PersistedState, [PersistReturn] extends Promise<void> ? PersistReturn : void>(
         createState,
-        Object.assign(Object.create(null), persistConfig, {
-          partialize: createBlendedPartialize<TData, TParams, S, CustomState, PersistedState>(keepPreviousData, persistConfig.partialize),
+        Object.assign(Object.create(null), storeOptions, {
+          partialize: createBlendedPartialize<TData, TParams, S, CustomState, PersistedState>(keepPreviousData, storeOptions.partialize),
         })
       )
     : options && !('storageKey' in options)

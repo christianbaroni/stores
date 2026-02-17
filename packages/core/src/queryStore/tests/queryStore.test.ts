@@ -2,12 +2,12 @@
  * @jest-environment node
  */
 
-import { createAsyncStorageMock } from 'src/storage/tests/storageCreators.test';
-import { createQueryStore, getQueryKey } from '../../createQueryStore';
 import { createBaseStore } from '../../createBaseStore';
+import { createQueryStore, getQueryKey } from '../../createQueryStore';
 import { QueryStatuses } from '../../queryStore/types';
+import { createAsyncStorageMock } from '../../storage/tests/storageCreators.test';
+import { flushMacrotask } from '../../sync/tests/testUtils';
 import { time } from '../../utils/time';
-import { flushMacrotask } from 'src/sync/tests/testUtils';
 
 // For these tests we use a simple type for the fetched data and query parameters.
 type TestData = string;

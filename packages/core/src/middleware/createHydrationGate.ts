@@ -1,7 +1,7 @@
-import { createHydrationCoordinator, HydrationCoordinator } from 'src/utils/hydrationCoordinator';
+import { ensureError } from '../logger';
+import { SyncContext } from '../sync/syncEnhancer';
 import { StateCreator, SetStateArgs, SetState } from '../types';
-import { ensureError } from 'src/logger';
-import { SyncContext } from 'src/sync/syncEnhancer';
+import { HydrationCoordinator, createHydrationCoordinator } from '../utils/hydrationCoordinator';
 
 type WrappedOnRehydrateStorage<S> = (
   userCallback: ((state: S) => ((finalState?: S, error?: unknown) => void) | void) | undefined,
