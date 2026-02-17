@@ -329,7 +329,7 @@ export function createQueryStore<
   if (IS_DEV && !disableAutoRefetching && !suppressStaleTimeWarning && staleTime < MIN_STALE_TIME) {
     console.warn(
       `[createQueryStore${storeOptions?.storageKey ? `: ${storeOptions.storageKey}` : ''}] ❌ Stale times under ${
-        minStaleTime / 1000
+        MIN_STALE_TIME / 1000
       } seconds are not recommended. Provided staleTime: ${staleTime / 1000} seconds`
     );
   }
