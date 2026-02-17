@@ -3,16 +3,37 @@ import { FunctionKeys } from './types/functions';
 
 type MMKVInterface = Omit<FunctionKeys<SyncStorageInterface<string>>, 'get'> & { getString: SyncStorageInterface<string>['get'] };
 
-declare const require: (id: string) => { MMKV: new (options: { id: string }) => MMKVInterface };
+/** react-native-mmkv v4+ — exports a createMMKV factory function */
+interface MMKVFactory {
+  createMMKV(opts: { id: string }): MMKVInterface & { remove(key: string): boolean };
+  MMKV?: undefined;
+}
+
+/** react-native-mmkv v2/v3 — exports an MMKV class constructor */
+interface MMKVClass {
+  MMKV: new (opts: { id: string }) => MMKVInterface & { delete(key: string): void };
+  createMMKV?: undefined;
+}
+
+declare function require(id: 'react-native-mmkv'): MMKVFactory | MMKVClass;
 
 export function createStoresStorage(storageKeyPrefix: string): SyncStorageInterface<string> {
   let mmkvStorage: SyncStorageInterface<string>;
 
   try {
-    const { MMKV } = require('react-native-mmkv');
-    const mmkv = new MMKV({ id: storageKeyPrefix });
-    const { getString, ...rest } = mmkv;
-    mmkvStorage = Object.assign(Object.create(null), rest, { get: getString });
+    const mmkvModule = require('react-native-mmkv');
+
+    if (typeof mmkvModule.createMMKV === 'function') {
+      // v4: factory function, .remove() instead of .delete()
+      const mmkv = mmkvModule.createMMKV({ id: storageKeyPrefix });
+      const { getString, remove, ...rest } = mmkv;
+      mmkvStorage = Object.assign(Object.create(null), rest, { get: getString, delete: (key: string) => remove(key) });
+    } else {
+      // v2/v3: class constructor, .delete()
+      const mmkv = new mmkvModule.MMKV({ id: storageKeyPrefix });
+      const { getString, ...rest } = mmkv;
+      mmkvStorage = Object.assign(Object.create(null), rest, { get: getString });
+    }
   } catch (e) {
     throw new Error(
       '[stores] react-native-mmkv could not be loaded.\n\n' +
