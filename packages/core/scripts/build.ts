@@ -26,7 +26,7 @@ async function build(): Promise<void> {
   write('\n');
 
   const [exports, types, web, native] = await Promise.all([
-    timed(() => execAsync('tsx scripts/generate-exports.ts', { cwd: root })),
+    timed(() => execAsync('tsx --tsconfig scripts/tsconfig.json scripts/generate-exports.ts', { cwd: root })),
     buildTypes(),
     buildPlatform('web'),
     buildPlatform('native'),

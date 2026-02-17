@@ -17,11 +17,9 @@
     "forceConsistentCasingInFileNames": true,
     "baseUrl": ".",
     "paths": {
-      "@/cli": ["../../cli"],
       "@/env": ["src/env.web.ts"],
       "@/storage": ["src/storesStorage.web.ts"]
     }
   },
-  "include": ["src/**/*", "build/**/*", "scripts/**/*", "tsup.config.ts"],
-  "references": [{ "path": "../../cli" }]
+  "include": ["src/**/*", "build/**/*", "tsup.config.ts"]
 }

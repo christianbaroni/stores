@@ -1,0 +1,14 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "composite": false,
+    "noEmit": true,
+    "paths": {
+      "@/cli": ["../../../cli", "../../../../../cli"],
+      "@/env": ["../src/env.web.ts"],
+      "@/storage": ["../src/storesStorage.web.ts"]
+    }
+  },
+  "include": ["./**/*.ts", "../build/**/*.ts"]
+}

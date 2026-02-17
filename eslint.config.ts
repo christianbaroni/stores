@@ -1,13 +1,13 @@
 import typescriptPlugin from '@typescript-eslint/eslint-plugin';
 import typescriptParser from '@typescript-eslint/parser';
+import jsdocPlugin from 'eslint-plugin-jsdoc';
 import prettierPlugin from 'eslint-plugin-prettier';
 import prettierRecommended from 'eslint-plugin-prettier/recommended';
 import reactHooksPlugin from 'eslint-plugin-react-hooks';
-import jsdocPlugin from 'eslint-plugin-jsdoc';
 
 export default [
   {
-    ignores: ['**/node_modules/', '**/dist/', '**/.wrangler/'],
+    ignores: ['**/node_modules/', '**/dist/', '**/tmp/', '**/.wrangler/'],
   },
   prettierRecommended,
   {

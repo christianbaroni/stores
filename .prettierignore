@@ -16,3 +16,6 @@ coverage
 
 # Cloudflare Workers
 .wrangler
+
+# Temporary files
+tmp

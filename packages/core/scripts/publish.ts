@@ -16,7 +16,7 @@ async function publish(): Promise<void> {
 
   write(`\n${bold(pkg.name)} ${dim(`v${pkg.version}`)}\n\n`);
 
-  step('build', () => exec('tsx scripts/build.ts', root));
+  step('build', () => exec('tsx --tsconfig scripts/tsconfig.json scripts/build.ts', root));
   step('test', () => exec('pnpm run test', root));
 
   write(`\n${info(`Package size: ${formatSize(getDirectorySize(join(root, 'dist')))}`)}\n`);
