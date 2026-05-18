@@ -65,6 +65,7 @@ const SHOULD_PERSIST_INTERNAL_STATE_MAP: Record<string, boolean> = {
 
 const FORCE_TRUE = Object.freeze({ force: true });
 const ONCE_TRUE = Object.freeze({ once: true });
+const UPDATE_QUERY_KEY_TRUE = Object.freeze({ updateQueryKey: true });
 
 /**
  * Creates a persisted, query-enabled store with data fetching capabilities (sync storage).
@@ -403,7 +404,7 @@ export function createQueryStore<
         lastHandledEnabled = newEnabled;
         subscriptionManager.setEnabled(newEnabled);
         if (newEnabled) {
-          queueMicrotask(() => api.getState().fetch(undefined, { updateQueryKey: true }));
+          queueMicrotask(() => api.getState().fetch(undefined, UPDATE_QUERY_KEY_TRUE));
         } else if (activeRefetchTimeout || abortInterruptedFetches) {
           if (abortInterruptedFetches) abortActiveFetch();
           if (activeRefetchTimeout) {
@@ -498,51 +499,45 @@ export function createQueryStore<
     function getStatus(statusKey: keyof QueryStatusInfo): QueryStatusInfo[keyof QueryStatusInfo];
     function getStatus(): QueryStatusInfo;
     function getStatus(statusKey?: keyof QueryStatusInfo): QueryStatusInfo[keyof QueryStatusInfo] | QueryStatusInfo {
+      const state = get();
+      const status = state.status;
+
       switch (statusKey) {
         case 'isIdle':
-          return get().status === QueryStatuses.Idle;
+          return status === QueryStatuses.Idle;
         case 'isLoading':
-          return get().status === QueryStatuses.Loading;
-        case 'isSuccess': {
-          const state = get();
-          const lastFetchedAt = state.queryCache[state.queryKey]?.lastFetchedAt;
-          if (typeof lastFetchedAt === 'number') return true;
-          return state.status === QueryStatuses.Success;
-        }
+          return status === QueryStatuses.Loading;
         case 'isError':
         case 'isInitialLoad':
+        case 'isSuccess':
         case undefined: {
-          const state = get();
-          const cacheEntry = state.queryCache[state.queryKey];
-          const lastFetchedAt = (disableCache ? lastFetchKey === state.queryKey && state.lastFetchedAt : cacheEntry?.lastFetchedAt) || null;
-          const status = state.status;
+          const queryKey = state.queryKey;
+          const cacheEntry = state.queryCache[queryKey];
+          const isError = disableCache ? status === QueryStatuses.Error : typeof cacheEntry?.errorInfo?.lastFailedAt === 'number';
+          if (statusKey === 'isError') return isError;
 
-          switch (statusKey) {
-            case 'isError': {
-              const cacheEntry = state.queryCache[state.queryKey];
-              const isError = disableCache ? status !== 'error' : typeof cacheEntry?.errorInfo?.lastFailedAt === 'number';
-              return isError;
-            }
-            case 'isInitialLoad': {
-              const isInitialLoad = !lastFetchedAt && status === QueryStatuses.Loading;
-              return isInitialLoad;
-            }
-          }
+          const lastFetchedAt = (disableCache ? lastFetchKey === queryKey && state.lastFetchedAt : cacheEntry?.lastFetchedAt) || null;
+          const hasData = lastFetchedAt !== null;
+          const isInitialLoad = !hasData && !isError && state.enabled;
+          if (statusKey === 'isInitialLoad') return isInitialLoad;
+
+          const isSuccess = hasData && !isError;
+          if (statusKey === 'isSuccess') return isSuccess;
 
           return {
-            isError: status === QueryStatuses.Error,
+            isError,
             isIdle: status === QueryStatuses.Idle,
             isLoading: status === QueryStatuses.Loading,
-            isInitialLoad: !lastFetchedAt && status === QueryStatuses.Loading,
-            isSuccess: status === QueryStatuses.Success,
+            isInitialLoad,
+            isSuccess,
           };
         }
       }
     }
 
     const baseMethods = {
-      ...customStateCreator(setWithEnabledHandling, get, api),
       ...initialData,
+      ...customStateCreator(setWithEnabledHandling, get, api),
 
       async fetch(
         params: TParams | Partial<TParams> | undefined,
@@ -823,8 +818,8 @@ export function createQueryStore<
                 if (errorRetryDelay !== Infinity) {
                   if (activeRefetchTimeout) clearTimeout(activeRefetchTimeout);
                   activeRefetchTimeout = setTimeout(() => {
-                    const { enabled, subscriptionCount } = subscriptionManager.get();
-                    if (enabled && subscriptionCount > 0) {
+                    const managerState = subscriptionManager.get();
+                    if (managerState.enabled && managerState.subscriptionCount > 0) {
                       baseMethods.fetch(params, FORCE_TRUE, true);
                     }
                   }, errorRetryDelay);
@@ -1029,31 +1024,6 @@ export function createQueryStore<
           typeof paramChangeThrottle === 'number' ? { leading: false, maxWait: paramChangeThrottle, trailing: true } : paramChangeThrottle
         );
 
-  if (attachVals?.enabled) {
-    const attachVal = attachVals.enabled;
-    const subscribeFn = getAttachValueSubscribeFn(attachVal);
-
-    if (subscribeFn) {
-      let oldVal = attachVal.value;
-      if (initialStoreEnabled !== oldVal) queryStore.setState(state => ({ ...state, enabled: oldVal }));
-      if (oldVal) subscriptionManager.setEnabled(oldVal);
-
-      if (enableLogs) console.log('[🌀 Enabled Subscription 🌀] Initial value:', oldVal);
-
-      const unsub = subscribeFn(() => {
-        const newVal = attachVal.value;
-        if (newVal !== oldVal) {
-          if (enableLogs) console.log('[🌀 Enabled Change 🌀] - [Old]:', `${oldVal},`, '[New]:', newVal);
-          oldVal = newVal;
-          queryStore.setState(state => ({ ...state, enabled: newVal }));
-        }
-      });
-      paramUnsubscribes.push(unsub);
-    }
-  } else if (initialStoreEnabled !== initialData.enabled) {
-    queryStore.setState(state => ({ ...state, enabled: initialData.enabled }));
-  }
-
   for (const k in attachVals?.params) {
     const attachVal = attachVals.params[k];
     if (!attachVal) continue;
@@ -1092,6 +1062,31 @@ export function createQueryStore<
       });
       paramUnsubscribes.push(unsub);
     }
+  }
+
+  if (attachVals?.enabled) {
+    const attachVal = attachVals.enabled;
+    const subscribeFn = getAttachValueSubscribeFn(attachVal);
+
+    if (subscribeFn) {
+      let oldVal = attachVal.value;
+      if (initialStoreEnabled !== oldVal) queryStore.setState(state => ({ ...state, enabled: oldVal }));
+      if (oldVal) subscriptionManager.setEnabled(oldVal);
+
+      if (enableLogs) console.log('[🌀 Enabled Subscription 🌀] Initial value:', oldVal);
+
+      const unsub = subscribeFn(() => {
+        const newVal = attachVal.value;
+        if (newVal !== oldVal) {
+          if (enableLogs) console.log('[🌀 Enabled Change 🌀] - [Old]:', `${oldVal},`, '[New]:', newVal);
+          oldVal = newVal;
+          queryStore.setState(state => ({ ...state, enabled: newVal }));
+        }
+      });
+      paramUnsubscribes.push(unsub);
+    }
+  } else if (initialStoreEnabled !== initialData.enabled) {
+    queryStore.setState(state => ({ ...state, enabled: initialData.enabled }));
   }
 
   isBuildingParams = false;
