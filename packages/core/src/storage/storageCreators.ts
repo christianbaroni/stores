@@ -50,7 +50,7 @@ export function createPersistStorage<S, PersistedState extends Partial<S>, Persi
  * Creates a synchronous persist storage adapter for Zustand.
  */
 function createSyncPersistStorage<S, PersistedState extends Partial<S>, PersistReturn>(
-  storage: SyncStorageInterface<unknown>,
+  storage: SyncStorageInterface,
   options: EnforceStorageKey<BaseStoreOptions<S, PersistedState, PersistReturn>>,
   persistThrottleMs: number | undefined,
   syncContext?: SyncContext
