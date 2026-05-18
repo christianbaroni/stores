@@ -410,6 +410,10 @@ export type ReactiveParam<T, TParams extends Record<string, unknown>, S extends 
   | T
   | (($: SignalFunction, store: BaseStore<S>) => AttachValue<T>);
 
+export type AttachValueParams<TParams extends Record<string, unknown>> = Partial<
+  Record<keyof TParams, AttachValue<TParams[Extract<keyof TParams, string>]>>
+>;
+
 /**
  * The result of resolving reactive and static parameter values.
  */
@@ -417,7 +421,7 @@ export type ResolvedParamsResult<TParams extends Record<string, unknown>> = {
   /**
    * Reactive parameter values wrapped in `AttachValue`, which trigger refetches when they change.
    */
-  attachVals: Partial<Record<keyof TParams, AttachValue<unknown>>>;
+  attachVals: AttachValueParams<TParams>;
 
   /**
    * Direct, non-reactive values resolved from the initial configuration.

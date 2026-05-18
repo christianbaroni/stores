@@ -276,7 +276,6 @@ describe('createQueryStore', () => {
 
       // The queryKey should be reset to an empty string.
       expect(store.getState().queryKey).toBe('');
-
     });
   });
 

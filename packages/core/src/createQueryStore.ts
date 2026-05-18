@@ -7,6 +7,7 @@ import { SubscriptionManager } from './queryStore/classes/SubscriptionManager';
 import { getQueryStoreDefaults } from './queryStore/queryStoreDefaults';
 export { defaultRetryDelay } from './queryStore/queryStoreDefaults';
 import {
+  AttachValueParams,
   CacheEntry,
   FetchOptions,
   InternalStateKeys,
@@ -33,13 +34,13 @@ import {
   Timeout,
   UnsubscribeFn,
 } from './types';
+import { hasOwn, isPlainObject } from './types/utils';
+import { NullObj, buildNullObject } from './utils/core';
 import { createMicrotaskScheduler } from './utils/createMicrotaskScheduler';
 import { debounce } from './utils/debounce';
 import { dequal } from './utils/equality';
 import { omitStoreMethods } from './utils/persistUtils';
-import { time } from './utils/time';
 import { assignStoreTag, StoreTags } from './utils/storeUtils';
-import { hasOwn } from './types/utils';
 
 const [persist, discard] = [true, false];
 
@@ -341,9 +342,9 @@ export function createQueryStore<
   const abortError = new Error('[createQueryStore: AbortError] Fetch interrupted');
   const cacheTimeIsFunction = typeof cacheTime === 'function';
   const enableLogs = IS_DEV && debugMode;
-  const paramKeys: (keyof TParams)[] = Object.keys(config.params ?? Object.create(null));
+  const paramKeys: (keyof TParams)[] = config.params ? Object.keys(config.params) : [];
 
-  let attachVals: { enabled: AttachValue<boolean> | null; params: Partial<Record<keyof TParams, AttachValue<unknown>>> } | null = null;
+  let attachVals: { enabled: AttachValue<boolean> | null; params: AttachValueParams<TParams> } | null = null;
   let directValues: { enabled: boolean | null; params: Partial<TParams> } | null = null;
   let staleTimeAttachVal: AttachValue<number> | null = null;
   let paramUnsubscribes: UnsubscribeFn[] = [];
@@ -370,15 +371,15 @@ export function createQueryStore<
     initialEnabled: initialData.enabled,
   });
 
-  const abortActiveFetch = () => {
+  function abortActiveFetch(): void {
     if (activeAbortController) {
       activeFetch = null;
       activeAbortController.abort();
       activeAbortController = null;
     }
-  };
+  }
 
-  const fetchWithAbortControl = async (params: TParams): Promise<TQueryFnData> => {
+  async function fetchWithAbortControl(params: TParams): Promise<TQueryFnData> {
     const abortController = new AbortController();
     activeAbortController = abortController;
 
@@ -392,11 +393,12 @@ export function createQueryStore<
         activeAbortController = null;
       }
     }
-  };
+  }
 
   const createState: StateCreator<S> = (set, get, api) => {
     const originalSet = api.setState;
-    const handleEnabledChange = (prevEnabled: boolean, newEnabled: boolean) => {
+
+    function handleEnabledChange(prevEnabled: boolean, newEnabled: boolean): void {
       if (prevEnabled !== newEnabled && lastHandledEnabled !== newEnabled) {
         lastHandledEnabled = newEnabled;
         subscriptionManager.setEnabled(newEnabled);
@@ -410,9 +412,9 @@ export function createQueryStore<
           }
         }
       }
-    };
+    }
 
-    const setWithEnabledHandling: typeof originalSet = (partial, _replace) => {
+    const setWithEnabledHandling: typeof originalSet = partial => {
       const isPartialFunction = typeof partial === 'function';
       if (isPartialFunction || partial.enabled !== undefined) {
         let handleNewEnabled: (() => void) | undefined;
@@ -458,7 +460,7 @@ export function createQueryStore<
         }
       },
 
-      onLastUnsubscribe: (skipAbortFetch?: boolean) => {
+      onLastUnsubscribe: skipAbortFetch => {
         if (activeRefetchTimeout) {
           clearTimeout(activeRefetchTimeout);
           activeRefetchTimeout = null;
@@ -469,7 +471,7 @@ export function createQueryStore<
       },
     });
 
-    const scheduleNextFetch = (params: TParams, options: FetchOptions | undefined) => {
+    function scheduleNextFetch(params: TParams, options: FetchOptions | undefined): void {
       if (disableAutoRefetching || options?.skipStoreUpdates) return;
       if (staleTime <= 0 || staleTime === Infinity) return;
 
@@ -491,7 +493,7 @@ export function createQueryStore<
           baseMethods.fetch(params, FORCE_TRUE, true);
         }
       }, timeUntilRefetch);
-    };
+    }
 
     function getStatus(statusKey: keyof QueryStatusInfo): QueryStatusInfo[keyof QueryStatusInfo];
     function getStatus(): QueryStatusInfo;
@@ -542,7 +544,11 @@ export function createQueryStore<
       ...customStateCreator(setWithEnabledHandling, get, api),
       ...initialData,
 
-      async fetch(params: TParams | Partial<TParams> | undefined, options: FetchOptions | undefined, isInternalFetch = false) {
+      async fetch(
+        params: TParams | Partial<TParams> | undefined,
+        options: FetchOptions | undefined,
+        isInternalFetch = false
+      ): Promise<TData | null> {
         const managerState = subscriptionManager.get();
 
         if (!options?.force && !options?.skipStoreUpdates && !managerState.enabled) return null;
@@ -615,7 +621,7 @@ export function createQueryStore<
 
         const effectiveCacheTime = options?.cacheTime ?? (cacheTimeIsFunction ? cacheTime(effectiveParams) : cacheTime);
 
-        const fetchOperation = async () => {
+        async function fetchOperation(): Promise<TData | null> {
           const storeIdentifier = storeOptions?.storageKey || currentQueryKey;
 
           try {
@@ -872,14 +878,14 @@ export function createQueryStore<
           } finally {
             if (!skipStoreUpdates && areParamsCurrent) activeFetch = null;
           }
-        };
+        }
 
         if (skipStoreUpdates || !areParamsCurrent) return fetchOperation();
 
         return (activeFetch = { key: currentQueryKey, promise: fetchOperation() }).promise;
       },
 
-      getCacheEntry(paramsOrQueryKey?: TParams | Partial<TParams> | string) {
+      getCacheEntry(paramsOrQueryKey?: TParams | Partial<TParams> | string): CacheEntry<TData> | null {
         if (disableCache) return null;
         const state = get();
         const currentQueryKey = !paramsOrQueryKey
@@ -891,7 +897,7 @@ export function createQueryStore<
         return state.queryCache[currentQueryKey] ?? null;
       },
 
-      getData(paramsOrQueryKey?: TParams | string) {
+      getData(paramsOrQueryKey?: TParams | string): TData | null {
         if (disableCache) return null;
         const state = get();
         const cacheEntry = state.getCacheEntry(paramsOrQueryKey);
@@ -904,7 +910,7 @@ export function createQueryStore<
 
       getStatus,
 
-      isDataExpired(cacheTimeOverride?: number) {
+      isDataExpired(cacheTimeOverride?: number): boolean {
         const state = get();
         const cacheEntry = state.queryCache[state.queryKey];
         const currentQueryKey = state.queryKey;
@@ -917,7 +923,7 @@ export function createQueryStore<
         return effectiveCacheTime === undefined || Date.now() - lastFetchedAt >= effectiveCacheTime;
       },
 
-      isStale(staleTimeOverride?: number) {
+      isStale(staleTimeOverride?: number): boolean {
         const state = get();
         const currentQueryKey = state.queryKey;
         const lastFetchedAt =
@@ -929,7 +935,7 @@ export function createQueryStore<
         return Date.now() - lastFetchedAt >= effectiveStaleTime;
       },
 
-      reset(resetStoreState = false) {
+      reset(resetStoreState = false): void {
         for (const unsub of paramUnsubscribes) unsub();
         paramUnsubscribes = [];
         attachVals = null;
@@ -964,7 +970,7 @@ export function createQueryStore<
   const queryStore = storeOptions?.storageKey
     ? createBaseStore<S, PersistedState, [PersistReturn] extends Promise<void> ? PersistReturn : void>(
         createState,
-        Object.assign(Object.create(null), storeOptions, {
+        buildNullObject(storeOptions, {
           partialize: createBlendedPartialize<TData, TParams, S, CustomState, PersistedState>(keepPreviousData, storeOptions.partialize),
         })
       )
@@ -1115,19 +1121,21 @@ function queryStoreError(storeIdentifier: string, stage: string, cause: unknown)
 
 function sortParamKeys<TParams extends Record<string, unknown>>(params: TParams): Record<string, unknown> {
   if (typeof params !== 'object' || params === null) return params;
-  // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+
   return Object.keys(params)
     .sort()
     .reduce<Record<string, unknown>>((acc, key) => {
       const value = params[key];
-      // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-      acc[key] = value !== null && typeof value === 'object' ? sortParamKeys(value as Record<string, unknown>) : value;
+      acc[key] = isPlainObject(value) ? sortParamKeys(value) : value;
       return acc;
-    }, {}) as TParams;
+    }, new NullObj());
 }
 
 function getCompleteParams<TParams extends Record<string, unknown>>(
-  attachVals: { enabled: AttachValue<boolean> | null; params: Partial<Record<keyof TParams, AttachValue<unknown>>> } | null,
+  attachVals: {
+    enabled: AttachValue<boolean> | null;
+    params: AttachValueParams<TParams>;
+  } | null,
   directValues: { enabled: boolean | null; params: Partial<TParams> } | null,
   paramKeys: (keyof TParams)[],
   params?: Partial<TParams>
@@ -1141,18 +1149,19 @@ function getCompleteParams<TParams extends Record<string, unknown>>(
 }
 
 function getCurrentResolvedParams<TParams extends Record<string, unknown>>(
-  attachVals: { enabled: AttachValue<boolean> | null; params: Partial<Record<keyof TParams, AttachValue<unknown>>> } | null,
+  attachVals: {
+    enabled: AttachValue<boolean> | null;
+    params: AttachValueParams<TParams>;
+  } | null,
   directValues: { enabled: boolean | null; params: Partial<TParams> } | null
 ): TParams {
-  const currentParams: Partial<TParams> = directValues?.params ?? Object.create(null);
+  const currentParams: TParams = Object.assign(new NullObj<TParams>(), directValues?.params);
   for (const k in attachVals?.params) {
     const attachVal = attachVals.params[k];
     if (!attachVal) continue;
-    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-    currentParams[k as keyof TParams] = attachVal.value as TParams[keyof TParams];
+    currentParams[k] = attachVal.value;
   }
-  // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-  return currentParams as TParams;
+  return currentParams;
 }
 
 function createEmptyState<CustomState>(): CustomState {
@@ -1179,13 +1188,14 @@ function pruneCache<S extends QueryStoreState<TData, TParams>, TData, TParams ex
   const pruneTime = Date.now();
   const preserve = keyToPreserve ?? ((keepPreviousData && state.queryKey) || null);
 
+  const newCache: Record<string, CacheEntry<TData>> = new NullObj();
   let prunedSomething = false;
-  const newCache: Record<string, CacheEntry<TData>> = Object.create(null);
 
   for (const key in state.queryCache) {
     if (!hasOwn(state.queryCache, key)) continue;
     const entry = state.queryCache[key];
     const isValid = !!entry && (pruneTime - (entry.lastFetchedAt ?? entry.errorInfo.lastFailedAt) < entry.cacheTime || key === preserve);
+
     if (!isValid) {
       prunedSomething = true;
     } else if (!keyToPreserve && entry.errorInfo && entry.errorInfo.retryCount > 0) {
@@ -1228,13 +1238,14 @@ function resolveParams<
   params: { [K in keyof TParams]: ReactiveParam<TParams[K], TParams, S, TData> } | undefined,
   store: Store<S>
 ): ResolvedParamsResult<TParams> & ResolvedEnabledResult {
-  const attachVals: Partial<Record<keyof TParams, AttachValue<unknown>>> = Object.create(null);
-  const directValues: Partial<TParams> = Object.create(null);
-  const resolvedParams: TParams = Object.create(null);
+  const attachVals: AttachValueParams<TParams> = new NullObj();
+  const directValues: Partial<TParams> = new NullObj();
+  const resolvedParams: TParams = new NullObj();
 
   for (const key in params) {
     if (!hasOwn(params, key)) continue;
     const param = params[key];
+
     if (isReactiveParam<TParams[typeof key], TParams, S, TData>(param)) {
       const attachVal = param($, store);
       attachVals[key] = attachVal;
@@ -1270,7 +1281,7 @@ function createBlendedPartialize<
 >(keepPreviousData: boolean, userPartialize: PersistConfig<S, PersistedState>['partialize'] | undefined): (state: S) => PersistedState {
   return (state: S): PersistedState => {
     const clonedState = { ...state };
-    const internalStateToPersist: Partial<S> = {};
+    const internalStateToPersist: Partial<S> = new NullObj();
 
     for (const key in clonedState) {
       if (!hasOwn(clonedState, key)) continue;
