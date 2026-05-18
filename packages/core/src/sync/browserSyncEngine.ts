@@ -1,6 +1,7 @@
 import { IS_BROWSER } from '@/env';
-import { StoresError, logger } from '../logger';
 import { SyncEngine, SyncHandle, SyncRegistration, SyncUpdate, SyncValues } from './types';
+import { StoresError } from '../errors';
+import { logger } from '../logger';
 
 // ============ Browser Sync Engine ============================================ //
 
@@ -122,7 +123,7 @@ class BrowserSyncEngine implements SyncEngine {
       if (this.channel) this.channel.postMessage(envelope);
       this.writeToStorage(envelope);
     } catch (error) {
-      logger.error(new StoresError('[sync] Failed to broadcast update'), { error });
+      logger.error(new StoresError('[sync] Failed to broadcast update', error));
     }
   }
 
@@ -138,7 +139,7 @@ class BrowserSyncEngine implements SyncEngine {
       const envelope: SyncEnvelope = JSON.parse(event.newValue);
       this.dispatch(envelope);
     } catch (error) {
-      logger.error(new StoresError('[sync] Failed to parse storage event payload'), { error });
+      logger.error(new StoresError('[sync] Failed to parse storage event payload', error));
     }
   };
 
@@ -163,7 +164,7 @@ class BrowserSyncEngine implements SyncEngine {
     try {
       this.storage.setItem(storageKey, JSON.stringify(envelope));
     } catch (error) {
-      logger.error(new StoresError('[sync] Failed to write broadcast payload to storage'), { error });
+      logger.error(new StoresError('[sync] Failed to write broadcast payload to storage', error));
     }
   }
 }

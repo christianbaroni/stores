@@ -1,7 +1,8 @@
 import { IS_DEV } from '@/env';
 import { getStoresConfig } from '../config';
-import { StoresError, logger } from '../logger';
 import { StateCreator } from '../types';
+import { StoresError } from '../errors';
+import { logger } from '../logger';
 import { isPromiseLike } from '../utils/promiseUtils';
 import { applyStateUpdate } from '../utils/storeUtils';
 import { FieldMetadata, NormalizedSyncConfig, SyncHandle, SyncStateKey, SyncUpdate, SyncValues } from './types';

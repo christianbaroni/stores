@@ -1,14 +1,5 @@
 import { IS_DEV, IS_TEST } from '@/env';
 
-export class StoresError extends Error {
-  cause: Error;
-  constructor(message: string, error?: unknown) {
-    super(message);
-    this.name = 'StoresError';
-    this.cause = ensureError(error);
-  }
-}
-
 export interface Logger {
   debug: (message: string, context?: Record<string, unknown>) => void;
   error: {
@@ -33,11 +24,6 @@ export let logger: Logger = {
     if (IS_DEV) console.warn(message, context);
   },
 };
-
-export function ensureError(error: unknown): Error {
-  if (error instanceof Error) return error;
-  return new Error(String(error));
-}
 
 export function setLogger(customLogger: Logger): void {
   logger = customLogger;

@@ -1,4 +1,4 @@
-import { ensureError } from '../logger';
+import { ensureError } from '../errors';
 import { SyncContext } from '../sync/syncEnhancer';
 import { StateCreator, SetStateArgs, SetState } from '../types';
 import { HydrationCoordinator, createHydrationCoordinator } from '../utils/hydrationCoordinator';

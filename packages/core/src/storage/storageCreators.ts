@@ -1,7 +1,8 @@
 import { PersistStorage } from 'zustand/middleware';
 import { IS_BROWSER, IS_IOS, IS_TEST } from '@/env';
 import { getStoresConfig } from '../config';
-import { StoresError, logger } from '../logger';
+import { StoresError } from '../errors';
+import { logger } from '../logger';
 import { StorageValue } from './storageTypes';
 import { SyncContext } from '../sync/syncEnhancer';
 import { AsyncStorageInterface, BaseStoreOptions, EnforceStorageKey, SyncStorageInterface } from '../types';
@@ -76,10 +77,10 @@ function createSyncPersistStorage<S, PersistedState extends Partial<S>, PersistR
         storage.set(name, serializedValue);
         clearMetadataSnapshot(syncContext, metadataCapture);
       } catch (error) {
-        logger.error(new StoresError(`[createBaseStore]: Failed to persist store data`), { error });
+        logger.error(new StoresError(`[createBaseStore]: Failed to persist store data`, error));
       }
     } catch (error) {
-      logger.error(new StoresError(`[createBaseStore]: Failed to persist store data`), { error });
+      logger.error(new StoresError(`[createBaseStore]: Failed to persist store data`, error));
     }
   }
 
@@ -102,7 +103,7 @@ function createSyncPersistStorage<S, PersistedState extends Partial<S>, PersistR
       try {
         storage.delete(name);
       } catch (error) {
-        logger.error(new StoresError(`[createBaseStore]: Failed to delete persisted store data`), { error });
+        logger.error(new StoresError(`[createBaseStore]: Failed to delete persisted store data`, error));
       }
     },
   };
@@ -138,10 +139,10 @@ export function createAsyncPersistStorage<S, PersistedState extends Partial<S>, 
         await storage.set(name, serializedValue);
         clearMetadataSnapshot(syncContext, metadataCapture);
       } catch (error) {
-        logger.error(new StoresError(`[createBaseStore]: Failed to persist store data`), { error });
+        logger.error(new StoresError(`[createBaseStore]: Failed to persist store data`, error));
       }
     } catch (error) {
-      logger.error(new StoresError(`[createBaseStore]: Failed to serialize persisted store data`), { error });
+      logger.error(new StoresError(`[createBaseStore]: Failed to serialize persisted store data`, error));
     }
   }
 
@@ -168,7 +169,7 @@ export function createAsyncPersistStorage<S, PersistedState extends Partial<S>, 
       try {
         await storage.delete(name);
       } catch (error) {
-        logger.error(new StoresError(`[createBaseStore]: Failed to delete persisted store data`), { error });
+        logger.error(new StoresError(`[createBaseStore]: Failed to delete persisted store data`, error));
       }
     },
   };

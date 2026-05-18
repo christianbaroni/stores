@@ -1,7 +1,8 @@
 import { IS_DEV, IS_TEST } from '@/env';
 import { markStoreCreated } from './config';
 import { createBaseStore } from './createBaseStore';
-import { StoresError, ensureError, logger } from './logger';
+import { StoresError, ensureError } from './errors';
+import { logger } from './logger';
 import { SubscriptionManager } from './queryStore/classes/SubscriptionManager';
 import {
   CacheEntry,
@@ -615,6 +616,8 @@ export function createQueryStore<
         const effectiveCacheTime = options?.cacheTime ?? (cacheTimeIsFunction ? cacheTime(effectiveParams) : cacheTime);
 
         const fetchOperation = async () => {
+          const storeIdentifier = storeOptions?.storageKey || currentQueryKey;
+
           try {
             if (enableLogs) {
               if (!isInternalFetch && params && !hasAllRequiredParams(params, paramKeys)) {
@@ -648,7 +651,7 @@ export function createQueryStore<
               // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
               transformedData = transform ? transform(rawResult, effectiveParams) : (rawResult as TData);
             } catch (transformError) {
-              throw new StoresError(`[createQueryStore: ${storeOptions?.storageKey || currentQueryKey}]: transform failed`, transformError);
+              throw queryStoreError(storeIdentifier, 'transform', transformError);
             }
 
             if (skipStoreUpdates) {
@@ -673,14 +676,18 @@ export function createQueryStore<
 
                   let newState = state;
                   const cacheEntryBeforeSetData = newState.queryCache[currentQueryKey];
-                  setData({
-                    data: transformedData,
-                    params: effectiveParams,
-                    queryKey: currentQueryKey,
-                    set: (partial: S | Partial<S> | ((state: S) => S | Partial<S>)) => {
-                      newState = typeof partial === 'function' ? { ...newState, ...partial(newState) } : { ...newState, ...partial };
-                    },
-                  });
+                  try {
+                    setData({
+                      data: transformedData,
+                      params: effectiveParams,
+                      queryKey: currentQueryKey,
+                      set: partial => {
+                        newState = typeof partial === 'function' ? { ...newState, ...partial(newState) } : { ...newState, ...partial };
+                      },
+                    });
+                  } catch (setDataError) {
+                    throw queryStoreError(storeIdentifier, 'setData', setDataError);
+                  }
 
                   if (!disableCache && Object.is(cacheEntryBeforeSetData, newState.queryCache[currentQueryKey])) {
                     newState = {
@@ -733,14 +740,18 @@ export function createQueryStore<
                 if (enableLogs) console.log('[💾 Setting Data 💾] for params:', JSON.stringify(effectiveParams));
 
                 const cacheEntryBeforeSetData = newState.queryCache[currentQueryKey];
-                setData({
-                  data: transformedData,
-                  params: effectiveParams,
-                  queryKey: currentQueryKey,
-                  set: (partial: S | Partial<S> | ((state: S) => S | Partial<S>)) => {
-                    newState = typeof partial === 'function' ? { ...newState, ...partial(newState) } : { ...newState, ...partial };
-                  },
-                });
+                try {
+                  setData({
+                    data: transformedData,
+                    params: effectiveParams,
+                    queryKey: currentQueryKey,
+                    set: partial => {
+                      newState = typeof partial === 'function' ? { ...newState, ...partial(newState) } : { ...newState, ...partial };
+                    },
+                  });
+                } catch (setDataError) {
+                  throw queryStoreError(storeIdentifier, 'setData', setDataError);
+                }
 
                 if (!disableCache && Object.is(cacheEntryBeforeSetData, newState.queryCache[currentQueryKey])) {
                   newState.queryCache = {
@@ -769,12 +780,7 @@ export function createQueryStore<
               try {
                 onFetched({ data: transformedData, fetch: baseMethods.fetch, params: effectiveParams, set: setWithEnabledHandling });
               } catch (onFetchedError) {
-                logger.error(
-                  new StoresError(
-                    `[createQueryStore: ${storeOptions?.storageKey || currentQueryKey}]: onFetched callback failed`,
-                    onFetchedError
-                  )
-                );
+                logger.error(queryStoreError(storeIdentifier, 'onFetched callback', onFetchedError));
               }
             }
 
@@ -788,10 +794,9 @@ export function createQueryStore<
             const shouldThrow = !isInternalFetch && options?.throwOnError === true;
             const typedError = ensureError(error);
 
+            if (typedError instanceof StoresError) logger.error(typedError);
+
             if (skipStoreUpdates || !areParamsCurrent) {
-              logger.error(
-                new StoresError(`[createQueryStore: ${storeOptions?.storageKey || currentQueryKey}]: Failed to fetch data`, typedError)
-              );
               if (shouldThrow) throw typedError;
               return null;
             }
@@ -800,7 +805,11 @@ export function createQueryStore<
             const existingRetryCount = entry?.errorInfo?.retryCount ?? 0;
             const newRetryCount = existingRetryCount + 1;
 
-            onError?.(typedError, existingRetryCount);
+            try {
+              onError?.(typedError, existingRetryCount);
+            } catch (onErrorError) {
+              logger.error(queryStoreError(storeIdentifier, 'onError callback', onErrorError));
+            }
 
             if (existingRetryCount < maxRetries) {
               if (subscriptionManager.get().subscriptionCount > 0) {
@@ -857,10 +866,6 @@ export function createQueryStore<
                 status: QueryStatuses.Error,
               }));
             }
-
-            logger.error(
-              new StoresError(`[createQueryStore: ${storeOptions?.storageKey || currentQueryKey}]: Failed to fetch data`, typedError)
-            );
 
             if (shouldThrow) throw typedError;
             return null;
@@ -1131,6 +1136,10 @@ export function parseQueryKey<TParams extends Record<string, unknown>>(queryKey:
 }
 
 function sortParamKeys<TParams extends Record<string, unknown>>(params: TParams): TParams {
+function queryStoreError(storeIdentifier: string, stage: string, cause: unknown): StoresError {
+  return new StoresError(`[createQueryStore: ${storeIdentifier}]: ${stage} failed`, cause);
+}
+
   if (typeof params !== 'object' || params === null) return params;
   // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
   return Object.keys(params)

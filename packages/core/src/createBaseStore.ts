@@ -1,7 +1,7 @@
 import { persist, PersistOptions, subscribeWithSelector } from 'zustand/middleware';
 import { createWithEqualityFn } from 'zustand/traditional';
 import { getStoresConfig, markStoreCreated } from './config';
-import { StoresError } from './logger';
+import { StoresError } from './errors';
 import { createHydrationGate } from './middleware/createHydrationGate';
 import { createPersistStorage } from './storage/storageCreators';
 import { createSyncedStateCreator } from './sync/syncEnhancer';

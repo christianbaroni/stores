@@ -1,36 +1,38 @@
-/* -- Core --------- */
+/* -- Core ---------- */
 export { configureStores } from './config';
 export { createBaseStore } from './createBaseStore';
 export * from './createDerivedStore';
 export * from './createQueryStore';
 export * from './createVirtualStore';
+export { StoresError } from './errors';
 
-/* -- Helpers ------ */
+/* -- Helpers ------- */
 export { replacer, reviver } from './utils/serialization';
 export {
   applyStateUpdate,
   destroyStore,
   destroyStores,
   getStoreName,
+  hasGetSnapshot,
   isDerivedStore,
   isPersistedStore,
   isQueryStore,
   isVirtualStore,
 } from './utils/storeUtils';
 
-/* -- Hooks -------- */
+/* -- Hooks --------- */
 export * from './hooks/useListen';
 export * from './hooks/useStableValue';
 
-/* -- Sync --------- */
+/* -- Sync ---------- */
 export * from './sync/types';
 
-/* -- Types -------- */
+/* -- Types --------- */
 export * from './queryStore/types';
 export * from './storage/storageTypes';
 export * from './types';
 
-/* -- Utilities ---- */
+/* -- Utilities ----- */
 export * from './utils/createStoreActions';
 export { deepEqual, shallowEqual } from './utils/equality';
 export { time } from './utils/time';

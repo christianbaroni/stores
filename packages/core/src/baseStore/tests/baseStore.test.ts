@@ -3,7 +3,7 @@
  */
 
 import { createBaseStore } from '../../createBaseStore';
-import { StoresError } from '../../logger';
+import { StoresError } from '../../errors';
 import { flushMacrotask } from '../../sync/tests/testUtils';
 import { AsyncStorageInterface, OptionallyPersistedStore, PersistedStore } from '../../types';
 import { isPlainObject } from '../../types/utils';
