@@ -42,16 +42,22 @@ type WithPersist<Store, PersistedState, PersistReturn> = Store extends {
 
 export type StateCreator<S, U = S> = ZustandStateCreator<S, [SubscribeWithSelector], [SubscribeWithSelector], U>;
 
+export type UseBoundStoreWithEqualityFn<Store extends StoreApi<unknown>, State = InferStoreState<Store>> = UseStoreCallSignatures<State> &
+  Store;
+
 export type BaseStore<S, ExtraSubscribeOptions extends boolean = false> = UseBoundStoreWithEqualityFn<
   Mutate<StoreApi<S>, [SubscribeWithSelector]>
 > & {
   subscribe: SubscribeOverloads<S, ExtraSubscribeOptions>;
 };
 
-export type PersistedStore<S, PersistedState = Partial<S>, PersistReturn = unknown, ExtraSubscribeOptions extends boolean = false> = {
-  (): S;
-  <U>(selector: (state: S) => U, equalityFn?: (a: U, b: U) => boolean): U;
-} & Omit<BaseStore<S, ExtraSubscribeOptions>, 'setState' | 'persist'> &
+export type PersistedStore<
+  S,
+  PersistedState = Partial<S>,
+  PersistReturn = unknown,
+  ExtraSubscribeOptions extends boolean = false,
+> = UseStoreCallSignatures<S> &
+  Omit<BaseStore<S, ExtraSubscribeOptions>, 'setState' | 'persist'> &
   WithPersist<BaseStore<S, ExtraSubscribeOptions>, PersistedState, PersistReturn>;
 
 export type Store<S, PersistedState extends Partial<S> = never, PersistReturn = unknown, ExtraSubscribeOptions extends boolean = false> = [
@@ -270,12 +276,12 @@ export interface SyncStorageInterface<SerializedState = unknown> {
    * Adapter-level deserializer used when a store does not supply its own.
    * Acts as the default before falling back to the framework implementation.
    */
-  readonly deserializer?: <PersistedState>(serializedState: SerializedState) => StorageValue<PersistedState>;
+  deserializer?<PersistedState>(serializedState: SerializedState): StorageValue<PersistedState>;
   /**
    * Adapter-level serializer used when a store does not supply its own.
    * Acts as the default before falling back to the framework implementation.
    */
-  readonly serializer?: <PersistedState>(storageValue: StorageValue<PersistedState>) => SerializedState;
+  serializer?<PersistedState>(storageValue: StorageValue<PersistedState>): SerializedState;
   clearAll(): void;
   contains(key: string): boolean;
   delete(key: string): void;
@@ -294,12 +300,12 @@ export type AsyncStorageInterface<SerializedState = unknown> = {
    * Adapter-level deserializer used when a store does not supply its own.
    * Acts as the default before falling back to the framework implementation.
    */
-  readonly deserializer?: <PersistedState>(serializedState: SerializedState) => StorageValue<PersistedState>;
+  deserializer?<PersistedState>(serializedState: SerializedState): StorageValue<PersistedState>;
   /**
    * Adapter-level serializer used when a store does not supply its own.
    * Acts as the default before falling back to the framework implementation.
    */
-  readonly serializer?: <PersistedState>(storageValue: StorageValue<PersistedState>) => SerializedState;
+  serializer?<PersistedState>(storageValue: StorageValue<PersistedState>): SerializedState;
   clearAll(): Promise<void>;
   contains(key: string): Promise<boolean>;
   delete(key: string): Promise<void>;
@@ -316,7 +322,7 @@ export type PersistConfig<S, PersistedState = Partial<S>, PersistReturn = void> 
    * A function to convert the serialized value back into the state object.
    * If not provided, the storage adapter's `deserializer` is used before falling back to the default implementation.
    */
-  deserializer?: <SerializedState>(serializedState: SerializedState) => StorageValue<PersistedState>;
+  deserializer?: (serializedState: unknown) => StorageValue<PersistedState>;
 
   /**
    * A function to merge persisted state with current state during hydration.
@@ -353,7 +359,7 @@ export type PersistConfig<S, PersistedState = Partial<S>, PersistReturn = void> 
    * A function to serialize the state and version for storage.
    * If not provided, the storage adapter's `serializer` is used before falling back to the default implementation.
    */
-  serializer?: <SerializedState>(storageValue: StorageValue<PersistedState>) => SerializedState;
+  serializer?: (storageValue: StorageValue<PersistedState>) => string;
 
   /**
    * Custom storage implementation. If async, `setState` will return a Promise that resolves

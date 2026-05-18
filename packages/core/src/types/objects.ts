@@ -1,5 +1,8 @@
-import { FunctionKeys, UnknownFunction } from './functions';
+import { UnknownFunction } from './functions';
 
-export type NoOverlap<State, Bundled extends ObjectMethods> = Extract<keyof Bundled, FunctionKeys<State>> extends never ? Bundled : never;
+/** Forces TypeScript to expand a type for cleaner IDE display. */
+export type Prettify<T> = T extends infer U ? { [K in keyof U]: U[K] } : never;
+
+export type NoOverlap<A, B> = B & Record<Extract<keyof A, keyof B>, never>;
 
 export type ObjectMethods = Record<string, UnknownFunction>;

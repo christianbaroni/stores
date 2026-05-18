@@ -1,4 +1,4 @@
-import { AttachValue, SignalFunction } from '../signal';
+import { AttachValue, SignalFunction } from './signalTypes';
 import { BaseStore, DebounceOptions, SetPartial, Store } from '../types';
 
 // ============ Query Store Type =============================================== //
@@ -155,8 +155,6 @@ export type QueryStoreConfig<
   /**
    * The duration, in milliseconds, that data is considered fresh after fetching.
    * After becoming stale, the store may automatically refetch data in the background if there are active subscribers.
-   *
-   * **Note:** Stale times under 5 seconds are strongly discouraged.
    * @default time.minutes(2)
    */
   staleTime?: number | ReactiveParam<number, TParams, S, TData>;
@@ -166,12 +164,6 @@ export type QueryStoreConfig<
    * @default false
    */
   suppressStaleTimeWarning?: boolean;
-
-  /**
-   * @deprecated Only use for backwards compatibility.
-   * @default true
-   */
-  useParsableQueryKeys?: boolean;
 };
 
 // ============ Query Store State ============================================== //

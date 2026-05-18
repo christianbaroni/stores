@@ -1,6 +1,6 @@
 import { persist, PersistOptions, subscribeWithSelector } from 'zustand/middleware';
 import { createWithEqualityFn } from 'zustand/traditional';
-import { getStoresConfig, markStoreCreated } from './config';
+import { getStorageConfig, markStoreCreated } from './config';
 import { StoresError } from './errors';
 import { createHydrationGate } from './middleware/createHydrationGate';
 import { createPersistStorage } from './storage/storageCreators';
@@ -73,7 +73,7 @@ export function createBaseStore<S, PersistedState extends Partial<S>, PersistRet
   const isPersisted = options !== undefined && typeof options.storageKey === 'string';
   const storageKey = isPersisted ? options.storageKey : undefined;
   const normalizedSync = options?.sync ? normalizeSyncOption(options.sync, storageKey) : undefined;
-  const parsedStorage = isPersisted ? (options.storage ?? getStoresConfig().storage) : undefined;
+  const parsedStorage = isPersisted ? (options.storage ?? getStorageConfig().storage) : undefined;
 
   const syncMiddleware = normalizedSync ? createSyncedStateCreator(createState, normalizedSync, parsedStorage?.async ?? false) : undefined;
   const stateCreator = syncMiddleware?.stateCreator ?? createState;

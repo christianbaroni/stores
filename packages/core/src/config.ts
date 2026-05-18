@@ -1,10 +1,13 @@
 import { IS_BROWSER, IS_DEV } from '@/env';
 import { createStoresStorage } from '@/storage';
 import { Logger, setLogger } from './logger';
+import { QueryStoreConfig } from './queryStore/types';
 import { createBrowserSyncEngine } from './sync/browserSyncEngine';
 import { createNoopSyncEngine } from './sync/noopSyncEngine';
 import { SyncEngine } from './sync/types';
 import { AsyncStorageInterface, SyncStorageInterface } from './types';
+import { NonFunction } from './types/functions';
+import { Prettify } from './types/objects';
 
 // ============ Types ========================================================== //
 
@@ -12,10 +15,20 @@ import { AsyncStorageInterface, SyncStorageInterface } from './types';
  * Global configuration for all stores.
  */
 export type StoresConfig = {
-  /** Custom logger for debug output. Defaults to a no-op logger in production. */
+  /**
+   * Custom logger for debug output. Defaults to a no-op logger in production.
+   */
   logger: Logger;
 
-  /** Storage backend for persisted stores. Defaults to `localStorage` in browsers, MMKV in React Native. */
+  /**
+   * Default options used by all query stores.
+   */
+  queryStoreDefaults: QueryStoreDefaults;
+
+  /**
+   * Storage backend for persisted stores. Defaults to `localStorage` in browsers,
+   * MMKV in React Native.
+   */
   storage: AsyncStorageInterface | SyncStorageInterface;
 
   /**
@@ -25,10 +38,34 @@ export type StoresConfig = {
    */
   storageKeyPrefix: string;
 
-  /** Sync engine for cross-client state synchronization. Defaults to cross-tab sync in browsers. */
+  /**
+   * Sync engine for cross-client state synchronization. Defaults to cross-tab sync
+   * in browsers, no-op in other environments.
+   */
   syncEngine: SyncEngine;
 };
 
+export type QueryStoreDefaults = Prettify<
+  ConfigDefaults<QueryStoreConfig<unknown, Record<string, unknown>>, 'disableCache' | 'enabled' | 'params', 'retryDelay'>
+> & {
+  /**
+   * Minimum stale time for auto-refetching query stores under which to log warnings in development.
+   * `false` disables warnings.
+   * @default false
+   */
+  minStaleTime?: number | false;
+};
+
+type ConfigDefaults<C, Excluded extends keyof C = never, AllowedFunctions extends keyof C = never> = Omit<
+  {
+    [K in keyof C as K extends AllowedFunctions ? K : NonFunction<C[K]> extends undefined ? never : K]?: K extends AllowedFunctions
+      ? C[K]
+      : NonFunction<C[K]>;
+  },
+  Excluded
+>;
+
+type Options = Pick<StoresConfig, 'queryStoreDefaults'>;
 type StorageConfig = Pick<StoresConfig, 'storage' | 'syncEngine'>;
 
 // ============ Constants ====================================================== //
@@ -37,13 +74,16 @@ export const DEFAULT_STORAGE_KEY_PREFIX = 'stores:';
 
 // ============ Stores Config ================================================== //
 
-let activeConfig: StorageConfig | undefined;
+let optionsConfig: Options | undefined;
+let storageConfig: StorageConfig | undefined;
 let configLocked = false;
 
 /**
- * Configures global defaults for all stores. Must be called before creating any stores.
+ * Configures global defaults for all stores.
  *
- * @see {@link StoresConfig} for details.
+ * If used, must be called before creating any stores.
+ *
+ * @see {@link StoresConfig}
  *
  * @example
  * ```ts
@@ -53,14 +93,22 @@ let configLocked = false;
  * });
  * ```
  */
-export function configureStores(update: Partial<StoresConfig>): void {
+export function configureStores(config: Partial<StoresConfig>): void {
   if (IS_DEV) throwIfLocked();
-  if (update.logger) setLogger(update.logger);
-  activeConfig ??= buildConfig(update);
+  if (config.logger) setLogger(config.logger);
+  optionsConfig ??= buildOptions(config);
+  storageConfig ??= buildStorageConfig(config);
 }
 
-export function getStoresConfig(): StorageConfig {
-  return (activeConfig ??= buildConfig(undefined));
+// ============ Internal Helpers =============================================== //
+
+export function getOptions(): Options | undefined {
+  if (!optionsConfig) return undefined;
+  return optionsConfig;
+}
+
+export function getStorageConfig(): StorageConfig {
+  return (storageConfig ??= buildStorageConfig(undefined));
 }
 
 export function markStoreCreated(): void {
@@ -69,10 +117,15 @@ export function markStoreCreated(): void {
 
 // ============ Utilities ====================================================== //
 
-function buildConfig(update: Partial<StoresConfig> | undefined): StorageConfig {
+function buildOptions(config: Partial<StoresConfig> | undefined): Options | undefined {
+  if (!config?.queryStoreDefaults) return undefined;
+  return { queryStoreDefaults: config.queryStoreDefaults };
+}
+
+function buildStorageConfig(config: Partial<StoresConfig> | undefined): StorageConfig {
   return {
-    storage: update?.storage ?? createStoresStorage(update?.storageKeyPrefix ?? DEFAULT_STORAGE_KEY_PREFIX),
-    syncEngine: update?.syncEngine ?? (IS_BROWSER ? createBrowserSyncEngine() : createNoopSyncEngine()),
+    storage: config?.storage ?? createStoresStorage(config?.storageKeyPrefix ?? DEFAULT_STORAGE_KEY_PREFIX),
+    syncEngine: config?.syncEngine ?? (IS_BROWSER ? createBrowserSyncEngine() : createNoopSyncEngine()),
   };
 }
 

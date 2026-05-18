@@ -1,6 +1,6 @@
 import { PersistStorage } from 'zustand/middleware';
 import { IS_BROWSER, IS_IOS, IS_TEST } from '@/env';
-import { getStoresConfig } from '../config';
+import { getStorageConfig } from '../config';
 import { StoresError } from '../errors';
 import { logger } from '../logger';
 import { StorageValue } from './storageTypes';
@@ -35,7 +35,7 @@ export function createPersistStorage<S, PersistedState extends Partial<S>, Persi
   persistStorage: SyncPersistStorage<PersistedState> | PersistStorage<PersistedState, Promise<void>>;
   version: number;
 } {
-  const parsedStorage = storage ?? options.storage ?? getStoresConfig().storage;
+  const parsedStorage = storage ?? options.storage ?? getStorageConfig().storage;
   const persistThrottleMs = (options.sync ? undefined : (options.persistThrottleMs ?? DEFAULT_PERSIST_THROTTLE_MS)) || undefined;
   const version = options.version ?? 0;
 
@@ -48,7 +48,6 @@ export function createPersistStorage<S, PersistedState extends Partial<S>, Persi
 
 /**
  * Creates a synchronous persist storage adapter for Zustand.
- * Behavior unchanged, but shown here in full for completeness.
  */
 function createSyncPersistStorage<S, PersistedState extends Partial<S>, PersistReturn>(
   storage: SyncStorageInterface<unknown>,

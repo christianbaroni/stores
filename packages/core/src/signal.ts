@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/consistent-type-assertions */
+import { AttachValue } from './queryStore/signalTypes';
 import { BaseStore, UnsubscribeFn } from './types';
 import { dequal } from './utils/equality';
 import { hasGetSnapshot } from './utils/storeUtils';
@@ -13,17 +14,6 @@ const storeSignalCache = new WeakMap<
   BaseStore<unknown>,
   Map<(state: unknown) => unknown, Map<(a: unknown, b: unknown) => boolean, AttachValue<unknown>>>
 >();
-
-type NestedAttachValue<T> = T extends object ? { readonly [K in keyof T]: AttachValue<T[K]> } : Record<string, never>;
-
-export type AttachValue<T> = {
-  readonly value: T;
-} & NestedAttachValue<T>;
-
-export type SignalFunction = {
-  <T>(store: BaseStore<T>): AttachValue<T>;
-  <T, S>(store: BaseStore<T>, selector: (state: T) => S, equalityFn?: (a: S, b: S) => boolean): AttachValue<S>;
-};
 
 export type Subscribe = (callback: () => void) => UnsubscribeFn;
 export type GetValue = () => unknown;
@@ -172,4 +162,8 @@ function getOrCreateAttachValue<T, S>(store: BaseStore<T>, selector: (state: T) 
   attachValueSubscriptionMap.set(rootVal, subscribe);
   byEqFn.set(equalityFn as (a: unknown, b: unknown) => boolean, rootVal);
   return rootVal as AttachValue<S>;
+}
+
+export function getAttachValueSubscribeFn<AttachVal extends AttachValue<unknown>>(attachVal: AttachVal): Subscribe | undefined {
+  return attachValueSubscriptionMap.get(attachVal);
 }

@@ -1,6 +1,6 @@
 import { IS_DEV } from '@/env';
-import { getStoresConfig } from '../config';
 import { StateCreator } from '../types';
+import { getStorageConfig } from '../config';
 import { StoresError } from '../errors';
 import { logger } from '../logger';
 import { isPromiseLike } from '../utils/promiseUtils';
@@ -42,7 +42,7 @@ export function createSyncedStateCreator<T extends Record<string, unknown>>(
   stateCreator: StateCreator<T>;
   syncContext: SyncContext;
 } {
-  const resolvedEngine = config.engine ?? getStoresConfig().syncEngine;
+  const resolvedEngine = config.engine ?? getStorageConfig().syncEngine;
   const syncContext = buildSyncContext(isAsync);
 
   const enhancedStateCreator: StateCreator<T> = (set, get, api) => {
