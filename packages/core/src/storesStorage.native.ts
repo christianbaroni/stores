@@ -1,4 +1,3 @@
-import { createMMKV, MMKV } from 'react-native-mmkv';
 import { SyncStorageInterface } from './types';
 import { FunctionKeys } from './types/functions';
 
@@ -16,28 +15,27 @@ export function createStoresStorage(storageKeyPrefix: string): SyncStorageInterf
 
     try {
       const mmkv = createMMKVInstance(storageKeyPrefix);
-      let deleteKey: SyncStorageInterface<string>['delete'] | undefined;
+      let deleteFn: SyncStorageInterface<string>['delete'] | undefined;
 
       if (typeof mmkv.delete === 'function') {
-        const mmkvDelete = mmkv.delete;
-        deleteKey = key => mmkvDelete.call(mmkv, key);
+        deleteFn = mmkv.delete.bind(mmkv);
       } else if (typeof mmkv.remove === 'function') {
-        const mmkvRemove = mmkv.remove;
-        deleteKey = key => mmkvRemove.call(mmkv, key);
+        deleteFn = mmkv.remove.bind(mmkv);
       }
 
-      if (typeof deleteKey !== 'function') {
+      if (typeof deleteFn !== 'function') {
         throw new Error('[stores]: Storage instance does not conform to expected interface');
       }
 
       const adapter: SyncStorageInterface<string> = {
-        clearAll: () => mmkv.clearAll(),
-        contains: key => mmkv.contains(key),
-        delete: key => deleteKey(key),
-        get: key => mmkv.getString(key),
-        getAllKeys: () => mmkv.getAllKeys(),
-        set: (key, value) => mmkv.set(key, value),
+        clearAll: mmkv.clearAll.bind(mmkv),
+        contains: mmkv.contains.bind(mmkv),
+        delete: deleteFn,
+        get: mmkv.getString.bind(mmkv),
+        getAllKeys: mmkv.getAllKeys.bind(mmkv),
+        set: mmkv.set.bind(mmkv),
       };
+
       mmkvStorage = adapter;
     } catch (e) {
       throw new Error(
@@ -64,6 +62,8 @@ export function createStoresStorage(storageKeyPrefix: string): SyncStorageInterf
 }
 
 function createMMKVInstance(storageKeyPrefix: string): MMKVInterface {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { createMMKV, MMKV } = require('react-native-mmkv');
   if (typeof createMMKV === 'function') return createMMKV({ id: storageKeyPrefix });
   if (typeof MMKV === 'function') return new MMKV({ id: storageKeyPrefix });
   throw new Error('[stores]: react-native-mmkv module does not export MMKV/createMMKV.');
