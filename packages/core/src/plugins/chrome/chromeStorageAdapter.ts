@@ -58,9 +58,11 @@ export class ChromeStorageAdapter implements AsyncStorageInterface {
   async getAllKeys(): Promise<string[]> {
     const storage = this.ensureStorage();
     if (!storage) return [];
+
     const result = await this.getFromStorage(storage, null);
     const prefix = this.storageKeyPrefix;
     if (!prefix) return Object.keys(result);
+
     return Object.keys(result)
       .filter(key => key.startsWith(prefix))
       .map(key => key.slice(prefix.length));
@@ -69,11 +71,13 @@ export class ChromeStorageAdapter implements AsyncStorageInterface {
   async get(key: string): Promise<unknown> {
     const storage = this.ensureStorage();
     if (!storage) return undefined;
+
     const storageKey = this.toStorageKey(key);
     const result = await this.getFromStorage(storage, storageKey);
     const value = result[storageKey];
     const parsed = parseChromeStorageValue(value);
     if (!parsed) return undefined;
+
     if (ENABLE_LOGS) console.log(`[ChromeStorageAdapter] get("${key}"): FOUND`, parsed);
     return parsed;
   }
@@ -82,6 +86,7 @@ export class ChromeStorageAdapter implements AsyncStorageInterface {
     if (ENABLE_LOGS) console.log('[💾 storage.set 💾] Persisting value for key:', key);
     const storage = this.ensureStorage();
     if (!storage) return;
+
     const storageKey = this.toStorageKey(key);
     await this.execute(storage, done => storage.set({ [storageKey]: value }, done));
   }
@@ -113,7 +118,7 @@ export class ChromeStorageAdapter implements AsyncStorageInterface {
     return new Promise<TResult>((resolve, reject) => {
       let settled = false;
 
-      const finish = (result: TResult): void => {
+      function finish(result: TResult): void {
         if (settled) return;
         settled = true;
         const runtimeError = getRuntimeError();
@@ -122,7 +127,7 @@ export class ChromeStorageAdapter implements AsyncStorageInterface {
           return;
         }
         resolve(result);
-      };
+      }
 
       try {
         const maybePromise = operation(finish);
@@ -160,19 +165,17 @@ export function deserializeChromeStorageValue<PersistedState>(serializedState: u
     throw new Error('[ChromeStorageAdapter] Invalid serialized state format');
   }
   return {
-    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-    state: applyReviverToState(parsed.state) as PersistedState,
+    state: reviveChromeStorageState<PersistedState>(parsed.state),
     syncMetadata: parsed.syncMetadata,
     version: parsed.version,
   };
 }
 
 function parseChromeStorageValue(value: unknown): StorageValue<unknown> | null {
-  // default case
-  if (isChromeStorageValue(value)) {
-    return value;
-  }
-  // migration case from old chrome storage format (stringified JSON)
+  // -- Default case
+  if (isChromeStorageValue(value)) return value;
+
+  // -- Migrate from legacy stringified JSON format
   if (typeof value === 'string') {
     try {
       const candidate = JSON.parse(value);
@@ -181,6 +184,7 @@ function parseChromeStorageValue(value: unknown): StorageValue<unknown> | null {
       }
     } catch {}
   }
+
   return null;
 }
 
@@ -192,6 +196,7 @@ function isChromeStorageValue(value: unknown): value is StorageValue<unknown> {
 function applyReplacerToState(value: unknown, replacerFn = replacer): unknown {
   if (value instanceof Map || value instanceof Set) return replacerFn.call(undefined, '', value);
   if (!isPlainObject(value)) return value;
+
   const result: Record<string, unknown> = {};
   for (const [key, child] of Object.entries(value)) {
     result[key] = replacerFn.call(value, key, child);
@@ -199,9 +204,11 @@ function applyReplacerToState(value: unknown, replacerFn = replacer): unknown {
   return result;
 }
 
-function applyReviverToState(value: unknown, reviverFn = reviver): unknown {
+function reviveChromeStorageState<PersistedState>(value: unknown): PersistedState;
+function reviveChromeStorageState(value: unknown, reviverFn = reviver): unknown {
   const revivedRoot = reviverFn.call(undefined, '', value);
   if (!isPlainObject(revivedRoot)) return revivedRoot;
+
   const result: Record<string, unknown> = {};
   for (const entry of Object.entries(revivedRoot)) {
     const key = entry[0];

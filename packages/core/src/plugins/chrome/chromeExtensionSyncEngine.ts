@@ -1,6 +1,7 @@
 import { DEFAULT_STORAGE_KEY_PREFIX } from '../../config';
 import { StorageValue } from '../../storage/storageTypes';
 import { SyncEngine, SyncHandle, SyncRegistration, SyncValues } from '../../sync/types';
+import { hasOwn } from '../../types/utils';
 import {
   AreaName,
   ChromeStorageAdapter,
@@ -14,11 +15,11 @@ const ENABLE_METADATA_LOGS = false;
 
 export type ChromeExtensionSyncEngineOptions = ChromeStorageAdapterOptions | { storage: ChromeStorageAdapter };
 
-type RegistrationContainer = {
+type RegistrationContainer<T extends Record<string, unknown>> = {
   destroyed: boolean;
   hydrated: boolean;
   listeners: Set<() => void>;
-  registration: SyncRegistration<Record<string, unknown>>;
+  registration: SyncRegistration<T>;
 };
 
 export class ChromeExtensionSyncEngine implements SyncEngine {
@@ -27,7 +28,7 @@ export class ChromeExtensionSyncEngine implements SyncEngine {
 
   private readonly area: AreaName;
   private readonly storageKeyPrefix: string | undefined;
-  private readonly registrations = new Map<string, RegistrationContainer>();
+  private readonly registrations = new Map<string, RegistrationContainer<Record<string, unknown>>>();
 
   private isListening = false;
 
@@ -43,25 +44,29 @@ export class ChromeExtensionSyncEngine implements SyncEngine {
     this.attachListener();
   }
 
-  private generateSessionId(): string {
-    if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
-    return `${Math.random().toString(36).slice(2)}:${Date.now().toString(36)}`;
+  destroy(): void {
+    for (const registration of this.registrations.values()) {
+      registration.destroyed = true;
+      registration.listeners.clear();
+    }
+    this.detachListener();
   }
 
   register<T extends Record<string, unknown>>(registration: SyncRegistration<T>): SyncHandle<T> {
     this.attachListener();
 
-    const container: RegistrationContainer = {
+    const container: RegistrationContainer<T> = {
       destroyed: false,
-      hydrated: true, // Immediately hydrated - persist will handle its own hydration
+      // Hydrate immediately - persist will handle its own hydration
+      hydrated: true,
       listeners: new Set(),
-      // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-      registration: registration as SyncRegistration<Record<string, unknown>>,
+      registration,
     };
 
-    this.registrations.set(registration.key, container);
+    this.setRegistration(registration.key, container);
+
     if (ENABLE_LOGS)
-      console.log('[SyncEngine] REGISTERED store:', registration.key, 'sessionId:', this.sessionId, 'fields:', registration.fields);
+      console.log('[SyncEngine] Registered store:', registration.key, 'sessionId:', this.sessionId, 'fields:', registration.fields);
 
     return {
       destroy: () => {
@@ -86,6 +91,11 @@ export class ChromeExtensionSyncEngine implements SyncEngine {
        */
       publish: null,
     };
+  }
+
+  private generateSessionId(): string {
+    if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
+    return `${Math.random().toString(36).slice(2)}:${Date.now().toString(36)}`;
   }
 
   private attachListener(): void {
@@ -135,7 +145,7 @@ export class ChromeExtensionSyncEngine implements SyncEngine {
 
         if (ENABLE_LOGS) console.log(`[📡 SyncEngine 📡] Passed fields to syncEnhancer:`, Object.keys(values).join(', '));
       } catch (error) {
-        // Ignore errors, sync is best-effort
+        // Ignore errors, sync is best effort
         if (ENABLE_LOGS) console.error(`[SyncEngine] Error processing update for ${storeKey}:`, error);
         continue;
       }
@@ -148,7 +158,7 @@ export class ChromeExtensionSyncEngine implements SyncEngine {
    * Does NOT perform conflict resolution - that's handled by syncEnhancer.processUpdate.
    */
   private extractChangedFields(
-    container: RegistrationContainer,
+    container: RegistrationContainer<Record<string, unknown>>,
     incomingState: Record<string, unknown>,
     metadata: ChromeStorageValue['syncMetadata'] | undefined,
     oldValue: unknown
@@ -160,7 +170,7 @@ export class ChromeExtensionSyncEngine implements SyncEngine {
       let populatedFromMetadata = false;
       for (const field of container.registration.fields) {
         const fieldKey = String(field);
-        if (Object.prototype.hasOwnProperty.call(metadataFields, fieldKey)) {
+        if (hasOwn(metadataFields, fieldKey)) {
           values[field] = incomingState[field];
           populatedFromMetadata = true;
         }
@@ -183,6 +193,11 @@ export class ChromeExtensionSyncEngine implements SyncEngine {
     }
 
     return values;
+  }
+
+  private setRegistration<T extends Record<string, unknown>>(key: string, container: RegistrationContainer<T>): void;
+  private setRegistration(key: string, container: RegistrationContainer<Record<string, unknown>>): void {
+    this.registrations.set(key, container);
   }
 
   private toStorageKey(key: string): string {

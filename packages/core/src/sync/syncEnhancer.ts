@@ -1,8 +1,8 @@
 import { IS_DEV } from '@/env';
-import { StateCreator } from '../types';
 import { getStorageConfig } from '../config';
 import { StoresError } from '../errors';
 import { logger } from '../logger';
+import { StateCreator, SubscribeArgs, SubscribeOverloads } from '../types';
 import { isPromiseLike } from '../utils/promiseUtils';
 import { applyStateUpdate } from '../utils/storeUtils';
 import { FieldMetadata, NormalizedSyncConfig, SyncHandle, SyncStateKey, SyncUpdate, SyncValues } from './types';
@@ -60,14 +60,14 @@ export function createSyncedStateCreator<T extends Record<string, unknown>>(
     let applyPromiseChain: Promise<void> = Promise.resolve();
     let canProcessRemoteUpdates = !isAsync;
 
-    const generateTimestamp = (): number => {
+    function generateTimestamp(): number {
       const candidate = Date.now();
       const next = candidate > latestTimestamp ? candidate : latestTimestamp + 1;
       latestTimestamp = next;
       return next;
-    };
+    }
 
-    const setMetadata = (timestamp: number, keys: readonly SyncStateKey<T>[]) => {
+    function setPersistMetadata(timestamp: number, keys: readonly SyncStateKey<T>[]): void {
       if (!syncContext?.setSessionId || !syncContext?.setTimestamp || !resolvedEngine.sessionId) return;
 
       syncContext.setSessionId(resolvedEngine.sessionId);
@@ -78,9 +78,9 @@ export function createSyncedStateCreator<T extends Record<string, unknown>>(
         for (const key of keys) timestamps[String(key)] = timestamp;
         syncContext.mergeFieldTimestamps(timestamps);
       }
-    };
+    }
 
-    const queueOrPublish = (update: PendingUpdate<T>) => {
+    function queueOrPublish(update: PendingUpdate<T>): void {
       const sessionId = resolvedEngine.sessionId;
       for (const key of update.keys) lastWrites.set(key, [update.timestamp, sessionId]);
 
@@ -89,9 +89,9 @@ export function createSyncedStateCreator<T extends Record<string, unknown>>(
         return;
       }
       handle.publish?.({ replace: update.replace, sessionId, timestamp: update.timestamp, values: update.values });
-    };
+    }
 
-    const flushPendingUpdates = () => {
+    function flushPendingUpdates(): void {
       if (!handle || !pendingUpdates.length) return;
 
       for (const pending of pendingUpdates) {
@@ -99,20 +99,19 @@ export function createSyncedStateCreator<T extends Record<string, unknown>>(
         for (const key of pending.keys) {
           lastWrites.set(key, [pending.timestamp, sessionId]);
         }
-        setMetadata(pending.timestamp, pending.keys);
+        setPersistMetadata(pending.timestamp, pending.keys);
         handle.publish?.({ replace: pending.replace, sessionId, timestamp: pending.timestamp, values: pending.values });
       }
       pendingUpdates.length = 0;
-    };
+    }
 
-    const enhancedSet: typeof set = function (update: Parameters<typeof set>[0], replace?: boolean): void | Promise<void> {
+    function enhancedSet(update: Parameters<typeof set>[0], replace?: boolean): void | Promise<void> {
       if (isApplyingRemote || !syncKeySet) return replace ? set(update, replace) : set(update);
 
       const timestamp = generateTimestamp();
       let publishKeys: SyncStateKey<T>[] = [];
       let publishValues: SyncValues<T> = Object.create(null);
 
-      // Single set() call that executes update once and computes changes
       const wrappedUpdate = (state: T): T => {
         const newState = applyStateUpdate(state, update, replace);
 
@@ -123,24 +122,22 @@ export function createSyncedStateCreator<T extends Record<string, unknown>>(
           }
         }
 
-        // Set metadata for persist middleware
-        if (publishKeys.length) setMetadata(timestamp, publishKeys);
-
+        if (publishKeys.length) setPersistMetadata(timestamp, publishKeys);
         return newState;
       };
 
       const maybePromise: void | Promise<void> = replace ? set(wrappedUpdate, true) : set(wrappedUpdate);
 
-      const publish = () => {
+      function publish(): void {
         if (!publishKeys.length) return;
         queueOrPublish({ keys: publishKeys, replace: replace ?? false, values: publishValues, timestamp });
-      };
+      }
 
       if (isPromiseLike(maybePromise)) return maybePromise.finally(publish);
 
       publish();
       return maybePromise;
-    };
+    }
 
     const originalSet = api.setState;
     api.setState = enhancedSet;
@@ -150,7 +147,7 @@ export function createSyncedStateCreator<T extends Record<string, unknown>>(
     if (!syncKeys.length) return state;
     syncKeySet = new Set(syncKeys);
 
-    const processUpdate = async (update: SyncUpdate<T>) => {
+    async function processUpdate(update: SyncUpdate<T>) {
       latestTimestamp = Math.max(latestTimestamp, update.timestamp);
       const updates: SyncValues<T> = Object.create(null);
       const currentState = get();
@@ -233,19 +230,19 @@ export function createSyncedStateCreator<T extends Record<string, unknown>>(
         isApplyingRemote = false;
         if (syncContext) syncContext.setIsApplyingRemote(false);
       }
-    };
+    }
 
-    const scheduleProcessUpdate = (update: SyncUpdate<T>) => {
+    function scheduleProcessUpdate(update: SyncUpdate<T>): void {
       if (isAsync) applyPromiseChain = applyPromiseChain.then(() => processUpdate(update));
       else void processUpdate(update);
-    };
+    }
 
-    const flushPendingRemoteUpdates = () => {
+    function flushPendingRemoteUpdates(): void {
       if (!pendingRemoteUpdates.length) return;
       const queued = pendingRemoteUpdates.slice();
       pendingRemoteUpdates.length = 0;
       for (const queuedUpdate of queued) scheduleProcessUpdate(queuedUpdate);
-    };
+    }
 
     handle = resolvedEngine.register<T>({
       apply: update => {
@@ -261,15 +258,37 @@ export function createSyncedStateCreator<T extends Record<string, unknown>>(
       key: config.key,
     });
 
-    const onHydrationComplete = () => {
+    if (handle?.onFirstSubscribe || handle?.onLastUnsubscribe) {
+      let subscriberCount = 0;
+      const originalSubscribe: SubscribeOverloads<T> = api.subscribe;
+
+      api.subscribe = (...args: SubscribeArgs<T>) => {
+        if (!subscriberCount) handle.onFirstSubscribe?.();
+        subscriberCount += 1;
+
+        const unsubscribe = args.length === 1 ? originalSubscribe(args[0]) : originalSubscribe(args[0], args[1], args[2]);
+
+        return () => {
+          unsubscribe();
+          subscriberCount -= 1;
+          if (!subscriberCount) {
+            queueMicrotask(() => {
+              if (!subscriberCount) handle.onLastUnsubscribe?.();
+            });
+          }
+        };
+      };
+    }
+
+    function onHydrationComplete(): void {
       isHydrated = true;
       flushPendingUpdates();
-    };
+    }
 
-    const onHydrationFlushEnd = () => {
+    function onHydrationFlushEnd(): void {
       canProcessRemoteUpdates = true;
       flushPendingRemoteUpdates();
-    };
+    }
 
     /**
      * Determine when to mark as hydrated:
@@ -277,7 +296,7 @@ export function createSyncedStateCreator<T extends Record<string, unknown>>(
      *   2. If sync engine provides onHydrated: use that
      *   3. Otherwise: immediate
      */
-    if (isAsync && syncContext) {
+    if (isAsync) {
       // Wait for external hydration signal from persist middleware
       syncContext.onHydrationComplete = onHydrationComplete;
       syncContext.onHydrationFlushEnd = onHydrationFlushEnd;
@@ -286,7 +305,7 @@ export function createSyncedStateCreator<T extends Record<string, unknown>>(
       handle.onHydrated(onHydrationComplete);
       onHydrationFlushEnd();
     } else {
-      // No hydration needed - mark as hydrated immediately
+      // No hydration needed
       onHydrationComplete();
       onHydrationFlushEnd();
     }
@@ -362,7 +381,7 @@ function buildSyncContext(isAsync: boolean): SyncContext {
 /**
  * Readable indices for `FieldMetadata` tuples.
  */
-const [TIMESTAMP, SESSION_ID]: [0, 1] = [0, 1];
+export const [TIMESTAMP, SESSION_ID]: [0, 1] = [0, 1];
 
 /**
  * Determines whether an incoming update supersedes the last known write.

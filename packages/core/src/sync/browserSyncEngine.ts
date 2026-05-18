@@ -1,7 +1,8 @@
 import { IS_BROWSER } from '@/env';
-import { SyncEngine, SyncHandle, SyncRegistration, SyncUpdate, SyncValues } from './types';
 import { StoresError } from '../errors';
 import { logger } from '../logger';
+import { SyncEngine, SyncHandle, SyncRegistration, SyncUpdate } from './types';
+import { hasOwn } from '../types/utils';
 
 // ============ Browser Sync Engine ============================================ //
 
@@ -84,14 +85,13 @@ class BrowserSyncEngine implements SyncEngine {
     return this.origin;
   }
 
-  register<T extends Record<string, unknown>>(registration: SyncRegistration<T>): SyncHandle<T> {
+  register(registration: SyncRegistration<Record<string, unknown>>): SyncHandle<Record<string, unknown>> {
     const listener: Listener = envelope => {
       if (envelope.origin === this.origin || envelope.storeKey !== registration.key) return;
-      const filteredValues: SyncValues<T> = Object.create(null);
-      for (const key of registration.fields) {
-        if (Object.prototype.hasOwnProperty.call(envelope.values, key)) {
-          // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-          filteredValues[key] = envelope.values[key] as SyncValues<T>[typeof key];
+      const filteredValues: Record<string, unknown> = Object.create(null);
+      for (const field of registration.fields) {
+        if (hasOwn(envelope.values, field)) {
+          filteredValues[field] = envelope.values[field];
         }
       }
       if (!Object.keys(filteredValues).length) return;
@@ -110,7 +110,7 @@ class BrowserSyncEngine implements SyncEngine {
     }
     listeners.add(listener);
 
-    return new BrowserSyncHandle<T>({
+    return new BrowserSyncHandle({
       broadcast: envelope => this.broadcast(envelope),
       origin: this.origin,
       storeKey: registration.key,

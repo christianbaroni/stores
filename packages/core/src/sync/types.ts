@@ -1,6 +1,5 @@
-// ============ Sync Engine Types ============================================== //
-
-type UnknownFunction = (...args: unknown[]) => unknown;
+import { SyncDeltaDescriptor, SyncDeltaPayload } from '../plugins/delta/types';
+import { UnknownFunction } from '../types/functions';
 
 // ============ Field Metadata ================================================= //
 
@@ -22,32 +21,14 @@ export type SyncValues<T extends Record<string, unknown>> = Partial<T> & {
 
 // ============ Delta Types =================================================== //
 
-export type RecordDeltaPayload<TValue = unknown> = {
-  readonly clear?: true;
-  readonly del?: readonly string[];
-  readonly set?: Record<string, TValue>;
-  readonly patch?: Record<string, RecordDeltaPayload>;
-};
-
-export type SyncDeltaPayload<TValue = unknown> = { readonly kind: 'record' } & RecordDeltaPayload<TValue>;
-
-export type SyncDeltaDescriptor = {
-  /**
-   * Minimum fraction of the full payload the delta must save (0–1).
-   */
-  readonly minSavingsRatio?: number;
-  /**
-   * Minimum number of bytes the delta must save compared to sending the full payload.
-   */
-  readonly minSavingsBytes?: number;
-};
-
 /**
  * Per-field delta configuration. Use `true` to enable with defaults, or provide thresholds.
  */
 export type SyncDeltaConfig<T extends Record<string, unknown>> = Partial<Record<SyncStateKey<T>, SyncDeltaDescriptor | true>>;
 
 export type SyncDeltaMap<T extends Record<string, unknown>> = Partial<Record<SyncStateKey<T>, SyncDeltaPayload<T[SyncStateKey<T>]>>>;
+
+// ============ Sync Update =================================================== //
 
 export type SyncUpdate<T extends Record<string, unknown>> = {
   deltas?: SyncDeltaMap<T>;
@@ -57,124 +38,90 @@ export type SyncUpdate<T extends Record<string, unknown>> = {
   values: SyncValues<T>;
 };
 
+// ============ Sync Registration ============================================= //
+
+/**
+ * Passed to `SyncEngine.register()` to connect a store to the sync system.
+ */
 export type SyncRegistration<T extends Record<string, unknown>> = {
+  /** Callback invoked by the engine to apply incoming remote updates to the store. */
   apply: (update: SyncUpdate<T>) => void;
-  fields: ReadonlyArray<SyncStateKey<T>>;
-  getState: () => T;
-  key: string;
+  /** Per-field delta configuration. Only used by delta-capable engines. */
   delta?: SyncDeltaConfig<T>;
+  /** The state keys to sync. Non-function properties only. */
+  fields: ReadonlyArray<SyncStateKey<T>>;
+  /** Returns the store's current state. Used by engines that need to read state (e.g., for diffing). */
+  getState: () => T;
+  /** Unique identifier for this store. Must match across clients to sync the same data. */
+  key: string;
 };
 
+/**
+ * Returned by `SyncEngine.register()`. Controls the lifecycle of a synced store.
+ */
 export interface SyncHandle<T extends Record<string, unknown>> {
+  /**
+   * Permanently removes this store from the sync engine. After calling, the handle
+   * is invalid and the store will no longer send or receive updates. To temporarily
+   * pause sync, use `onFirstSubscribe`/`onLastUnsubscribe` lifecycle hooks instead.
+   */
   destroy: () => void;
+
+  /** Returns `true` once the store has received its initial state from the engine. */
   hydrated?: () => boolean;
+
+  /**
+   * Called when the store's subscriber count goes from 0 to 1. The registration
+   * remains active. Use for lazy resource acquisition (e.g., opening a WebSocket).
+   */
+  onFirstSubscribe?: () => void;
+
+  /** Registers a one-time callback to run when hydration completes. */
   onHydrated?: (callback: () => void) => void;
+
+  /**
+   * Called when the store's subscriber count drops to 0. The registration remains
+   * active and `onFirstSubscribe` will fire again on the next subscription.
+   * Use for resource cleanup (e.g., closing idle connections).
+   */
+  onLastUnsubscribe?: () => void;
+
+  /**
+   * Broadcasts a state update to other clients. Set to `null` for engines where
+   * publishing is implicit (e.g., `chrome.storage` where the write itself triggers sync).
+   */
   publish: ((update: SyncUpdate<T>) => void) | null;
 }
 
+// ============ Sync Engine =================================================== //
+
+/**
+ * Interface for multi-client state synchronization. Stores register to send and receive updates.
+ */
 export interface SyncEngine {
-  register<T extends Record<string, unknown>>(registration: SyncRegistration<T>): SyncHandle<T>;
-  registerPresence?<Presence>(registration: SyncPresenceRegistration<Presence>): SyncPresenceChannel<Presence> | null;
   /**
-   * When true, injects sync metadata (`{ origin, timestamp, fields }`) into the persisted
-   * storage payload. Only takes effect when used with a persisted store.
-   *
-   * Useful for sync engines that use storage events as their transport (e.g., `chrome.storage`).
+   * When `true`, embeds sync metadata (`{ origin, timestamp, fields }`) into persisted
+   * storage values. Required for engines that use storage writes as their transport.
+   * Only effective when the store is also persisted.
    * @default false
    */
   readonly injectStorageMetadata?: boolean;
+
+  /** Registers a store for synchronization. Returns a handle to control the sync lifecycle. */
+  register: {
+    <T extends Record<string, unknown>>(registration: SyncRegistration<T>): SyncHandle<T>;
+    (registration: SyncRegistration<Record<string, unknown>>): SyncHandle<Record<string, unknown>>;
+  };
+
+  /** Unique identifier for this client session. Used for conflict resolution and filtering self-updates. */
   readonly sessionId: string;
 }
 
 export type SyncMergeFn<T, TState = unknown> = (incoming: T, current: T, currentState: TState, incomingValues: Partial<TState>) => T;
 
-export type SyncPresenceJoinHandler<Presence> = (userId: string, data: Presence) => void;
-
-export type SyncPresenceUpdateHandler<Presence> = (userId: string, data: Presence) => void;
-
-export type SyncPresenceLeaveHandler = (userId: string) => void;
-
-export type PresencePruneStrategy = 'updates' | 'activity';
-
-type PresenceActivityField<Presence> = Presence extends Record<string, unknown> ? Extract<keyof Presence, string> : string;
-
-export type SyncPresenceHeartbeatConfig<Presence> =
-  | {
-      /** Interval in milliseconds between heartbeat broadcasts */
-      interval: number;
-      /** Reuse the last presence payload for each heartbeat (default). */
-      behavior?: 'reuse' | undefined;
-    }
-  | {
-      /** Interval in milliseconds between heartbeat broadcasts */
-      interval: number;
-      /** Clone the payload and refresh an activity field on every heartbeat. */
-      behavior: 'refresh-activity';
-      /**
-       * Field from the presence payload to refresh. Defaults to the prune strategy's activity field or `timestamp`.
-       */
-      activityField?: PresenceActivityField<Presence>;
-    }
-  | {
-      /** Interval in milliseconds between heartbeat broadcasts */
-      interval: number;
-      /** Derive a custom payload for each heartbeat. */
-      behavior: 'transform';
-      /**
-       * Transform invoked before each heartbeat. Return a payload to broadcast, or void to reuse the current data.
-       */
-      onHeartbeat: (currentData: Presence) => Presence | void;
-    };
-
-export type SyncPresenceRegistration<Presence> = {
-  key: string;
-  /**
-   * Optional heartbeat configuration. When enabled, presence data is re-broadcast at the
-   * specified interval. Use `'reuse'` (default) to emit the last payload unchanged, `'refresh-activity'`
-   * to automatically update a timestamp-like field on object payloads, or `'transform'` to derive a custom payload.
-   */
-  heartbeat?: SyncPresenceHeartbeatConfig<Presence>;
-  /**
-   * Optional stale presence pruning. When enabled, remote presence entries that
-   * haven't been updated within the specified threshold are automatically removed.
-   */
-  pruneStale?: {
-    /**
-     * Determines how staleness is evaluated.
-     * - `updates` (default) considers the time since the last presence message arrived.
-     * - `activity` considers a timestamp field within the presence payload (defaults to `timestamp`).
-     */
-    basedOn?: PresencePruneStrategy;
-    /**
-     * Field from the presence payload to inspect when `basedOn` is set to `activity`.
-     * Defaults to `timestamp`.
-     */
-    activityField?: PresenceActivityField<Presence>;
-    /** Time in milliseconds after which presence is considered stale */
-    after: number;
-    /** Optional callback invoked before removing stale presence */
-    onPrune?: (userId: string, data: Presence) => void;
-  };
-  onJoin?: SyncPresenceJoinHandler<Presence>;
-  onLeave?: SyncPresenceLeaveHandler;
-  onUpdate?: SyncPresenceUpdateHandler<Presence>;
-};
-
-export interface SyncPresenceChannel<Presence> {
-  join(userId: string, data: Presence): void;
-  leave(): void;
-  update(data: Presence): void;
-  /**
-   * Destroys the presence channel and cleans up all resources.
-   * Automatically calls leave() and clears all timers.
-   * Safe to call multiple times.
-   */
-  destroy(): void;
-}
+// ============ Sync Config =================================================== //
 
 export type SyncConfig<T extends Record<string, unknown>> = {
-  engine?: SyncEngine;
-  fields?: ReadonlyArray<SyncStateKey<T>>;
   /**
    * The delta configuration for the sync engine.
    *
@@ -182,6 +129,18 @@ export type SyncConfig<T extends Record<string, unknown>> = {
    * @default undefined
    */
   delta?: SyncDeltaConfig<T>;
+
+  /**
+   * The sync engine implementation to use.
+   *
+   * Defaults to cross-tab sync in browser environments. No-op in other environments unless a
+   * custom engine is provided.
+   */
+  engine?: SyncEngine;
+
+  /** The state keys to sync. If unspecified, all non-function store properties are synced. */
+  fields?: ReadonlyArray<SyncStateKey<T>>;
+
   /**
    * When true, injects sync metadata (`{ origin, timestamp, fields }`) into the persisted
    * storage payload. Only takes effect when used with a persisted store.
@@ -192,7 +151,11 @@ export type SyncConfig<T extends Record<string, unknown>> = {
    * @default false
    */
   injectStorageMetadata?: boolean;
+
+  /** The key used to identify the store to the sync engine. Required if `storageKey` is absent. */
   key?: string;
+
+  /** Optional merge function to use for each synced state key. Use with caution. */
   merge?: {
     [K in SyncStateKey<T>]?: SyncMergeFn<T[K], T>;
   };
@@ -203,25 +166,4 @@ export type SyncConfig<T extends Record<string, unknown>> = {
  */
 export type NormalizedSyncConfig<T extends Record<string, unknown>> = SyncConfig<T> & {
   key: string;
-};
-
-// ============ Authentication Types ========================================= //
-
-export type SyncAuthPhase = 'connect' | 'refresh' | 'challenge';
-
-export type SyncAuthPayload = {
-  readonly headers?: Record<string, string>;
-  readonly query?: Record<string, string>;
-  readonly token?: string;
-};
-
-export type SyncAuthFailure = {
-  readonly code: string;
-  readonly message?: string;
-  readonly retryable: boolean;
-};
-
-export type SyncAuthenticator = {
-  readonly getPayload: (phase: SyncAuthPhase) => Promise<SyncAuthPayload | null> | SyncAuthPayload | null;
-  readonly onFailure?: (failure: SyncAuthFailure) => void;
 };
