@@ -1,10 +1,10 @@
 import { StoreApi } from 'zustand';
 import { IS_DEV } from '@/env';
 import { InferStoreState } from '../types';
-import { NoOverlap, ObjectMethods } from '../types/objects';
-import { FunctionKeys, UnknownFunction } from '../types/functions';
-import { isVirtualStore } from './storeUtils';
+import { NoOverlap } from '../types/objects';
+import { FunctionKeys, FunctionRecord, UnknownFunction } from '../types/functions';
 import { nullObject } from './core';
+import { isVirtualStore } from './storeUtils';
 
 export type StoreActions<Store extends StoreApi<unknown>> = Pick<InferStoreState<Store>, FunctionKeys<InferStoreState<Store>>>;
 
@@ -27,12 +27,12 @@ export type StoreActions<Store extends StoreApi<unknown>> = Pick<InferStoreState
  */
 export function createStoreActions<Store extends StoreApi<unknown>>(store: Store): StoreActions<Store>;
 
-export function createStoreActions<Store extends StoreApi<unknown>, Bundled extends ObjectMethods>(
+export function createStoreActions<Store extends StoreApi<unknown>, Bundled extends FunctionRecord>(
   store: Store,
   bundledMethods: NoOverlap<InferStoreState<Store>, Bundled>
 ): StoreActions<Store> & Bundled;
 
-export function createStoreActions<Store extends StoreApi<unknown>, Bundled extends ObjectMethods>(
+export function createStoreActions<Store extends StoreApi<unknown>, Bundled extends FunctionRecord>(
   store: Store,
   bundledMethods?: NoOverlap<InferStoreState<Store>, Bundled>
 ): StoreActions<Store> | (StoreActions<Store> & Bundled) {
