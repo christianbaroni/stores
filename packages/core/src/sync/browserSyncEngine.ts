@@ -1,8 +1,9 @@
 import { IS_BROWSER } from '@/env';
 import { StoresError } from '../errors';
 import { logger } from '../logger';
-import { SyncEngine, SyncHandle, SyncRegistration, SyncUpdate } from './types';
 import { hasOwn } from '../types/utils';
+import { nullObject } from '../utils/core';
+import { SyncEngine, SyncHandle, SyncRegistration, SyncUpdate } from './types';
 
 // ============ Browser Sync Engine ============================================ //
 
@@ -50,7 +51,7 @@ class BrowserSyncHandle<T extends Record<string, unknown>> implements SyncHandle
   }
 
   publish(update: SyncUpdate<T>): void {
-    const values: Record<string, unknown> = Object.create(null);
+    const values: Record<string, unknown> = nullObject();
     for (const entry of Object.entries(update.values)) {
       values[entry[0]] = entry[1];
     }
@@ -88,7 +89,7 @@ class BrowserSyncEngine implements SyncEngine {
   register(registration: SyncRegistration<Record<string, unknown>>): SyncHandle<Record<string, unknown>> {
     const listener: Listener = envelope => {
       if (envelope.origin === this.origin || envelope.storeKey !== registration.key) return;
-      const filteredValues: Record<string, unknown> = Object.create(null);
+      const filteredValues: Record<string, unknown> = nullObject();
       for (const field of registration.fields) {
         if (hasOwn(envelope.values, field)) {
           filteredValues[field] = envelope.values[field];

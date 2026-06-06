@@ -2,6 +2,7 @@ import { DEFAULT_STORAGE_KEY_PREFIX } from '../../config';
 import { StorageValue } from '../../storage/storageTypes';
 import { SyncEngine, SyncHandle, SyncRegistration, SyncValues } from '../../sync/types';
 import { hasOwn } from '../../types/utils';
+import { nullObject } from '../../utils/core';
 import {
   AreaName,
   ChromeStorageAdapter,
@@ -163,7 +164,7 @@ export class ChromeExtensionSyncEngine implements SyncEngine {
     metadata: ChromeStorageValue['syncMetadata'] | undefined,
     oldValue: unknown
   ): SyncValues<Record<string, unknown>> {
-    const values: SyncValues<Record<string, unknown>> = Object.create(null);
+    const values: SyncValues<Record<string, unknown>> = nullObject();
     const metadataFields = metadata?.fields;
 
     if (metadataFields && Object.keys(metadataFields).length > 0) {

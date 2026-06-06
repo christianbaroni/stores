@@ -35,7 +35,7 @@ import {
   UnsubscribeFn,
 } from './types';
 import { hasOwn, isPlainObject } from './types/utils';
-import { NullObj, buildNullObject } from './utils/core';
+import { buildNullObject, nullObject } from './utils/core';
 import { createMicrotaskScheduler } from './utils/createMicrotaskScheduler';
 import { debounce } from './utils/debounce';
 import { dequal } from './utils/equality';
@@ -1123,7 +1123,7 @@ function sortParamKeys<TParams extends Record<string, unknown>>(params: TParams)
       const value = params[key];
       acc[key] = isPlainObject(value) ? sortParamKeys(value) : value;
       return acc;
-    }, new NullObj());
+    }, nullObject());
 }
 
 function getCompleteParams<TParams extends Record<string, unknown>>(
@@ -1150,7 +1150,7 @@ function getCurrentResolvedParams<TParams extends Record<string, unknown>>(
   } | null,
   directValues: { enabled: boolean | null; params: Partial<TParams> } | null
 ): TParams {
-  const currentParams: TParams = Object.assign(new NullObj<TParams>(), directValues?.params);
+  const currentParams: TParams = Object.assign(nullObject<TParams>(), directValues?.params);
   for (const k in attachVals?.params) {
     const attachVal = attachVals.params[k];
     if (!attachVal) continue;
@@ -1183,7 +1183,7 @@ function pruneCache<S extends QueryStoreState<TData, TParams>, TData, TParams ex
   const pruneTime = Date.now();
   const preserve = keyToPreserve ?? ((keepPreviousData && state.queryKey) || null);
 
-  const newCache: Record<string, CacheEntry<TData>> = new NullObj();
+  const newCache: Record<string, CacheEntry<TData>> = nullObject();
   let prunedSomething = false;
 
   for (const key in state.queryCache) {
@@ -1233,9 +1233,9 @@ function resolveParams<
   params: { [K in keyof TParams]: ReactiveParam<TParams[K], TParams, S, TData> } | undefined,
   store: Store<S>
 ): ResolvedParamsResult<TParams> & ResolvedEnabledResult {
-  const attachVals: AttachValueParams<TParams> = new NullObj();
-  const directValues: Partial<TParams> = new NullObj();
-  const resolvedParams: TParams = new NullObj();
+  const attachVals: AttachValueParams<TParams> = nullObject();
+  const directValues: Partial<TParams> = nullObject();
+  const resolvedParams: TParams = nullObject();
 
   for (const key in params) {
     if (!hasOwn(params, key)) continue;
@@ -1276,7 +1276,7 @@ function createBlendedPartialize<
 >(keepPreviousData: boolean, userPartialize: PersistConfig<S, PersistedState>['partialize'] | undefined): (state: S) => PersistedState {
   return (state: S): PersistedState => {
     const clonedState = { ...state };
-    const internalStateToPersist: Partial<S> = new NullObj();
+    const internalStateToPersist: Partial<S> = nullObject();
 
     for (const key in clonedState) {
       if (!hasOwn(clonedState, key)) continue;

@@ -33,6 +33,7 @@ export * from './storage/storageTypes';
 export * from './types';
 
 /* -- Utilities ----- */
+export { identity, nullObject } from './utils/core';
 export * from './utils/createStoreActions';
 export { deepEqual, shallowEqual } from './utils/equality';
 export { time } from './utils/time';

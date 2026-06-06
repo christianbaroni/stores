@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/consistent-type-assertions */
 import { AttachValue } from './queryStore/signalTypes';
 import { BaseStore, UnsubscribeFn } from './types';
+import { nullObject } from './utils/core';
 import { dequal } from './utils/equality';
 import { hasGetSnapshot } from './utils/storeUtils';
 
@@ -152,7 +153,7 @@ function getOrCreateAttachValue<T, S>(store: BaseStore<T>, selector: (state: T) 
       },
     };
 
-    return new Proxy(Object.create(null), handler) as AttachValue<unknown>;
+    return new Proxy(nullObject(), handler) as AttachValue<unknown>;
   };
 
   const rootVal = createAttachValue('');

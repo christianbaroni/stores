@@ -3,6 +3,7 @@ import { getStorageConfig } from '../config';
 import { StoresError } from '../errors';
 import { logger } from '../logger';
 import { StateCreator, SubscribeArgs, SubscribeOverloads } from '../types';
+import { nullObject } from '../utils/core';
 import { isPromiseLike } from '../utils/promiseUtils';
 import { applyStateUpdate } from '../utils/storeUtils';
 import { FieldMetadata, NormalizedSyncConfig, SyncHandle, SyncStateKey, SyncUpdate, SyncValues } from './types';
@@ -74,7 +75,7 @@ export function createSyncedStateCreator<T extends Record<string, unknown>>(
       syncContext.setTimestamp(timestamp);
 
       if (syncContext.mergeFieldTimestamps && keys.length > 0) {
-        const timestamps: Record<string, number> = Object.create(null);
+        const timestamps: Record<string, number> = nullObject();
         for (const key of keys) timestamps[String(key)] = timestamp;
         syncContext.mergeFieldTimestamps(timestamps);
       }
@@ -110,7 +111,7 @@ export function createSyncedStateCreator<T extends Record<string, unknown>>(
 
       const timestamp = generateTimestamp();
       let publishKeys: SyncStateKey<T>[] = [];
-      let publishValues: SyncValues<T> = Object.create(null);
+      let publishValues: SyncValues<T> = nullObject();
 
       const wrappedUpdate = (state: T): T => {
         const newState = applyStateUpdate(state, update, replace);
@@ -149,7 +150,7 @@ export function createSyncedStateCreator<T extends Record<string, unknown>>(
 
     async function processUpdate(update: SyncUpdate<T>) {
       latestTimestamp = Math.max(latestTimestamp, update.timestamp);
-      const updates: SyncValues<T> = Object.create(null);
+      const updates: SyncValues<T> = nullObject();
       const currentState = get();
       const updateTimestamp = update.timestamp;
       let keysToClear: SyncStateKey<T>[] | undefined;

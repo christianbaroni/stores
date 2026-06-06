@@ -4,6 +4,7 @@ import { InferStoreState } from '../types';
 import { NoOverlap, ObjectMethods } from '../types/objects';
 import { FunctionKeys, UnknownFunction } from '../types/functions';
 import { isVirtualStore } from './storeUtils';
+import { nullObject } from './core';
 
 export type StoreActions<Store extends StoreApi<unknown>> = Pick<InferStoreState<Store>, FunctionKeys<InferStoreState<Store>>>;
 
@@ -42,7 +43,8 @@ export function createStoreActions<Store extends StoreApi<unknown>, Bundled exte
 
 function extractFunctionProperties<Store extends StoreApi<State>, State>(store: Store): StoreActions<Store> {
   const state = store.getState();
-  const result = Object.create(null);
+  const result: StoreActions<Store> = nullObject();
+  const editableResult: Record<string, unknown> = result;
 
   if (IS_DEV) {
     const isObject = typeof state === 'object' && state !== null;
@@ -51,16 +53,11 @@ function extractFunctionProperties<Store extends StoreApi<State>, State>(store: 
 
   if (isVirtualStore(store)) {
     for (const key in state) {
-      if (isFunctionKey(state, key)) {
-        result[key] = createVirtualStoreAction(store, key);
-      }
+      if (isFunctionKey(state, key)) editableResult[key] = createVirtualStoreAction(store, key);
     }
-    return result;
-  }
-
-  for (const key in state) {
-    if (isFunctionKey(state, key)) {
-      result[key] = state[key];
+  } else {
+    for (const key in state) {
+      if (isFunctionKey(state, key)) editableResult[key] = state[key];
     }
   }
 
