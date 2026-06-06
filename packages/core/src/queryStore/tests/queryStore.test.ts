@@ -15,6 +15,27 @@ type TestParams = { id: number };
 
 describe('createQueryStore', () => {
   // ──────────────────────────────────────────────
+  // Initialization
+  // ──────────────────────────────────────────────
+  describe('Initialization', () => {
+    it('should initialize the current query key before activation', () => {
+      const fetcher = jest.fn(async (params: TestParams) => {
+        return `data-${params.id}`;
+      });
+      const store = createQueryStore<TestData, TestParams>({
+        enabled: false,
+        fetcher,
+        params: { id: 1 },
+      });
+
+      expect(store.getState().queryKey).toBe(getQueryKey({ id: 1 }));
+      expect(store.getState().getData()).toBeNull();
+      expect(store.getState().getStatus('isInitialLoad')).toBe(false);
+      expect(fetcher).not.toHaveBeenCalled();
+    });
+  });
+
+  // ──────────────────────────────────────────────
   // Successful Fetch
   // ──────────────────────────────────────────────
   describe('Successful Fetch', () => {
@@ -31,10 +52,10 @@ describe('createQueryStore', () => {
       expect(store.getState().getData()).toBeNull();
       expect(store.getState().status).toBe(QueryStatuses.Idle);
 
-      const result = await store.getState().fetch({ id: 1 });
+      const result = await store.getState().fetch();
       expect(result).toBe('data-1');
       expect(fetcher).toHaveBeenCalledTimes(1);
-      expect(store.getState().getData({ id: 1 })).toBe('data-1');
+      expect(store.getState().getData()).toBe('data-1');
 
       const status = store.getState().getStatus();
       expect(status.isSuccess).toBe(true);
@@ -64,18 +85,18 @@ describe('createQueryStore', () => {
       // Use fake timers because retries are scheduled via setTimeout.
       jest.useFakeTimers();
 
-      const fetchPromise = store.getState().fetch({ id: 1 });
+      const fetchPromise = store.getState().fetch();
       // Fast-forward timers so that any scheduled retry happens.
       jest.runAllTimers();
       const result = await fetchPromise;
       expect(result).toBeNull();
 
-      const fetchPromise2 = store.getState().fetch({ id: 1 });
+      const fetchPromise2 = store.getState().fetch();
       jest.runAllTimers();
       const result2 = await fetchPromise2;
       expect(result2).toBeNull();
 
-      const fetchPromise3 = store.getState().fetch({ id: 1 });
+      const fetchPromise3 = store.getState().fetch();
       jest.runAllTimers();
       const result3 = await fetchPromise3;
       expect(result3).toBeNull();
@@ -99,43 +120,54 @@ describe('createQueryStore', () => {
   // Abort Fetch
   // ──────────────────────────────────────────────
   describe('Abort Fetch', () => {
-    it('should abort previous fetch when a new fetch is triggered', async () => {
-      // Create a fetcher that never resolves (to simulate a long-running request)
-      // but listens to abort events.
-      let abortSignal: AbortSignal | null = null;
+    it('should abort the active current-path fetch when current params change', async () => {
+      const paramsStore = createBaseStore<{ id: number; setId: (id: number) => void }>(set => ({
+        id: 1,
+        setId: id => set({ id }),
+      }));
+
+      let firstFetchAborted = false;
       const fetcher = jest.fn((params: TestParams, controller: AbortController | null) => {
-        abortSignal = controller ? controller.signal : null;
+        if (params.id !== 1) return Promise.resolve(`data-${params.id}`);
+
+        const firstAbortSignal = controller?.signal;
         return new Promise<TestData>((_resolve, reject) => {
-          if (abortSignal) {
-            abortSignal.addEventListener('abort', () => reject(new Error('[createQueryStore: AbortError] Fetch interrupted')), {
-              once: true,
-            });
+          if (firstAbortSignal) {
+            firstAbortSignal.addEventListener(
+              'abort',
+              () => {
+                firstFetchAborted = true;
+                reject(new Error('[createQueryStore: AbortError] Fetch interrupted'));
+              },
+              { once: true }
+            );
           }
         });
       });
 
       const store = createQueryStore<TestData, TestParams>({
         fetcher,
-        params: { id: 2 },
+        params: { id: $ => $(paramsStore).id },
       });
 
-      // Start the first fetch; it will hang.
-      const firstFetchPromise = store.getState().fetch({ id: 1 });
-      // Now trigger a second fetch that will force a new fetch call (and abort the previous one).
-      // For the second call, override the fetcher so it returns resolved data.
-      fetcher.mockImplementationOnce(async (params: TestParams) => {
-        return `data-${params.id}`;
+      const unsubscribe = store.subscribe(() => {
+        return;
       });
-      const secondFetchPromise = store.getState().fetch({ id: 2 }, { force: true });
 
-      // The first fetch should return null because it was aborted.
-      const firstResult = await firstFetchPromise;
-      expect(firstResult).toBeNull();
+      try {
+        await Promise.resolve();
 
-      const secondResult = await secondFetchPromise;
-      expect(secondResult).toBe('data-2');
-      // The store data should now reflect the second fetch.
-      expect(store.getState().getData({ id: 2 })).toBe('data-2');
+        const firstFetchPromise = store.getState().fetch();
+        paramsStore.getState().setId(2);
+        await flushMacrotask();
+
+        await expect(firstFetchPromise).resolves.toBeNull();
+        expect(firstFetchAborted).toBe(true);
+        expect(store.getState().queryKey).toBe(getQueryKey({ id: 2 }));
+        expect(store.getState().getData()).toBe('data-2');
+      } finally {
+        unsubscribe();
+      }
     });
   });
 
@@ -230,17 +262,17 @@ describe('createQueryStore', () => {
         params: { id: 6 },
       });
 
-      const result1 = await store.getState().fetch({ id: 6 });
+      const result1 = await store.getState().fetch();
       expect(result1).toMatch(/^data-6-/);
       expect(fetcher).toHaveBeenCalledTimes(1);
 
       // Force a fetch even though data is already cached.
-      const result2 = await store.getState().fetch({ id: 6 }, { force: true });
+      const result2 = await store.getState().fetch(undefined, { force: true });
       expect(result2).toMatch(/^data-6-/);
       expect(fetcher).toHaveBeenCalledTimes(2);
 
       // The store's cached data should now be updated.
-      expect(store.getState().getData({ id: 6 })).toBe(result2);
+      expect(store.getState().getData()).toBe(result2);
     });
   });
 
@@ -263,15 +295,9 @@ describe('createQueryStore', () => {
       expect(store.getState().status).toBe(QueryStatuses.Success);
       expect(store.getState().queryKey).toBe('{}');
 
-      // Now fetch with a param.
-      await store.getState().fetch({ id: 7 });
-      expect(store.getState().getData({ id: 7 })).toBe('data-7');
-      expect(store.getState().status).toBe(QueryStatuses.Success);
-      expect(store.getState().queryKey).toBe('{"id":7}');
-
       // Call reset and verify that state is cleared.
       store.getState().reset(true);
-      expect(store.getState().getData({ id: 7 })).toBeNull();
+      expect(store.getState().getData()).toBeNull();
       expect(store.getState().status).toBe(QueryStatuses.Idle);
 
       // The queryKey should be reset to an empty string.
@@ -294,7 +320,7 @@ describe('createQueryStore', () => {
         params: { id: 8 },
       });
 
-      const result = await store.getState().fetch({ id: 8 });
+      const result = await store.getState().fetch();
       expect(result).toBe('data-8');
       expect(onFetched).toHaveBeenCalled();
       // Verify that the callback receives the expected properties.
@@ -332,7 +358,7 @@ describe('createQueryStore', () => {
         })
       );
 
-      const result = await store.getState().fetch({ id: 9 });
+      const result = await store.getState().fetch();
       expect(result).toBe('data-9');
       // The custom state field should be updated by the setData callback.
       expect(store.getState().customData).toBe('data-9');
@@ -363,9 +389,9 @@ describe('createQueryStore', () => {
         params: { id: 10 },
       });
 
-      const promise1 = store.getState().fetch({ id: 10 });
+      const promise1 = store.getState().fetch();
       await Promise.resolve(); // allow state update to propagate
-      const promise2 = store.getState().fetch({ id: 10 });
+      const promise2 = store.getState().fetch();
       await Promise.resolve();
 
       // Resolve the underlying promise with an object
@@ -402,7 +428,7 @@ describe('createQueryStore', () => {
         staleTime,
       });
 
-      await store.getState().fetch({ id: 11 });
+      await store.getState().fetch();
       expect(fetcher).toHaveBeenCalledTimes(1);
 
       // Simulate a subscription so that the store's auto-refetch logic is active.
@@ -419,10 +445,10 @@ describe('createQueryStore', () => {
   });
 
   // ──────────────────────────────────────────────
-  // Parameter Change (Static Params)
+  // Manual Fetch Parameters
   // ──────────────────────────────────────────────
-  describe('Parameter Change', () => {
-    it('should update queryKey when parameters change', async () => {
+  describe('Manual Fetch Parameters', () => {
+    it('should not move the current query key when fetching custom params', async () => {
       const fetcher = jest.fn(async (params: TestParams) => {
         return `data-${params.id}`;
       });
@@ -431,16 +457,16 @@ describe('createQueryStore', () => {
         params: { id: 12 },
       });
 
-      // First fetch with id=12.
-      await store.getState().fetch({ id: 12 });
-      const initialQueryKey = store.getState().queryKey;
-      expect(initialQueryKey).toBe(getQueryKey({ id: 12 }));
+      await store.getState().fetch();
+      const currentQueryKey = store.getState().queryKey;
+      expect(currentQueryKey).toBe(getQueryKey({ id: 12 }));
+      expect(store.getState().getData()).toBe('data-12');
 
-      // Fetch with a different parameter.
-      await store.getState().fetch({ id: 13 });
-      const newQueryKey = store.getState().queryKey;
-      expect(newQueryKey).toBe(getQueryKey({ id: 13 }));
-      expect(newQueryKey).not.toBe(initialQueryKey);
+      const result = await store.getState().fetch({ id: 13 });
+      expect(result).toBe('data-13');
+      expect(store.getState().queryKey).toBe(currentQueryKey);
+      expect(store.getState().getData()).toBe('data-12');
+      expect(store.getState().getData({ id: 13 })).toBe('data-13');
     });
   });
 

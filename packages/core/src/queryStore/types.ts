@@ -21,7 +21,21 @@ export type QueryStoreConfig<
   TData = TQueryFnData,
   CustomState = unknown,
   S extends QueryStoreState<TData, TParams, CustomState> = QueryStoreState<TData, TParams, CustomState>,
-> = {
+> = ([TQueryFnData] extends [TData]
+  ? {
+      /**
+       * A function to transform the raw fetched data** (`TQueryFnData`) into another
+       * form (`TData`). If not provided, the raw data returned by `fetcher` is used.
+       */
+      transform?: (data: TQueryFnData, params: TParams) => TData;
+    }
+  : {
+      /**
+       * A function to transform the raw fetched data** (`TQueryFnData`) into another
+       * form (`TData`). If not provided, the raw data returned by `fetcher` is used.
+       */
+      transform: (data: TQueryFnData, params: TParams) => TData;
+    }) & {
   /**
    * **A function responsible for fetching data from a remote source.**
    * Receives parameters of type TParams and optionally an abort controller.
@@ -29,8 +43,8 @@ export type QueryStoreConfig<
    *
    * ---
    * `abortController` is by default available, unless either:
-   * - `abortInterruptedFetches` is set to `false` in the store's config
-   * - The fetch was manually triggered with `skipStoreUpdates: true`
+   *  - `abortInterruptedFetches` is set to `false` in the store's config
+   *  - The fetch was manually triggered with `skipStoreUpdates: true`
    */
   fetcher: (params: TParams, abortController: AbortController | null) => TQueryFnData | Promise<TQueryFnData>;
 
@@ -62,15 +76,9 @@ export type QueryStoreConfig<
   setData?: (info: SetDataParams<TData, TParams, CustomState, S>) => void;
 
   /**
-   * **A function to transform the raw fetched data** (`TQueryFnData`) into another form (`TData`).
-   * If not provided, the raw data returned by `fetcher` is used.
-   */
-  transform?: (data: TQueryFnData, params: TParams) => TData;
-
-  /**
    * If `true`, the store will abort any partially completed fetches when:
-   * - A new fetch is initiated due to a change in parameters
-   * - All components subscribed to the store via selectors are unmounted
+   *  - A new fetch is initiated due to a change in parameters
+   *  - All components subscribed to the store via selectors are unmounted
    * @default true
    */
   abortInterruptedFetches?: boolean;
@@ -169,10 +177,9 @@ export type QueryStoreConfig<
 // ============ Query Store State ============================================== //
 
 /**
- * The full state structure managed by the query store. This type is generally internal,
- * though the state it defines can be accessed via the store's public interface.
+ * The internal state structure managed by the query store.
  */
-export type QueryStoreState<TData, TParams extends Record<string, unknown>, CustomState = unknown> = {
+export type QueryStoreInternalState<TData, TParams extends Record<string, unknown>> = {
   /**
    * Initiates a data fetch for the given parameters. If no parameters are provided,
    * the store's current parameters are used.
@@ -263,7 +270,17 @@ export type QueryStoreState<TData, TParams extends Record<string, unknown>, Cust
    * The current status of the query's remote data fetching operation.
    */
   status: QueryStatus;
-} & CustomState;
+};
+
+/**
+ * The full state structure managed by the query store. This type is generally internal,
+ * though the state it defines can be accessed via the store's public interface.
+ */
+export type QueryStoreState<TData, TParams extends Record<string, unknown>, CustomState = unknown> = QueryStoreInternalState<
+  TData,
+  TParams
+> &
+  CustomState;
 
 // ============ Fetch Options ================================================== //
 
@@ -338,10 +355,10 @@ export const QueryStatuses = {
  * Represents the current status of the query's remote data fetching operation.
  *
  * Possible values:
- * - **`'error'`**: The most recent request encountered an error.
- * - **`'idle'`**: No request in progress, no error, no data yet.
- * - **`'loading'`**: A request is currently in progress.
- * - **`'success'`**: The most recent request has succeeded and data is available.
+ *  - **`'error'`**: The most recent request encountered an error.
+ *  - **`'idle'`**: No request in progress, no error, no data yet.
+ *  - **`'loading'`**: A request is currently in progress.
+ *  - **`'success'`**: The most recent request has succeeded and data is available.
  */
 export type QueryStatus = (typeof QueryStatuses)[keyof typeof QueryStatuses];
 
@@ -403,8 +420,8 @@ export type QueryStoreParams<
 /**
  * Represents a parameter that can be provided directly or defined via a reactive `AttachValue`.
  * A parameter can be:
- * - A static value (e.g. `string`, `number`).
- * - A function that returns an `AttachValue<T>` when given a `SignalFunction`.
+ *  - A static value (e.g. `string`, `number`).
+ *  - A function that returns an `AttachValue<T>` when given a `SignalFunction`.
  */
 export type ReactiveParam<T, TParams extends Record<string, unknown>, S extends QueryStoreState<TData, TParams>, TData> =
   | T
@@ -459,7 +476,7 @@ export type ResolvedEnabledResult = {
 /**
  * The keys that make up the internal state of the store.
  */
-export type InternalStateKeys = keyof QueryStoreState<unknown, Record<string, unknown>>;
+export type InternalStateKeys = keyof QueryStoreInternalState<unknown, Record<string, unknown>>;
 
 // ============ Query Config Helpers =========================================== //
 
