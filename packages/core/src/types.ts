@@ -1,12 +1,14 @@
-import { Mutate, StateCreator as ZustandStateCreator, StoreApi } from 'zustand';
-import { PersistOptions } from 'zustand/middleware';
-import { UseBoundStoreWithEqualityFn } from 'zustand/traditional';
-import { StorageValue } from './storage/storageTypes';
-import { SyncConfig } from './sync/types';
+import type { Mutate, StateCreator as ZustandStateCreator, StoreApi, StoreMutatorIdentifier } from 'zustand';
+import type { PersistOptions } from 'zustand/middleware';
+import type { StorageValue } from './storage/storageTypes';
+import type { SyncConfig } from './sync/types';
 
 // ============ Middleware Helpers ============================================= //
 
 type SubscribeWithSelector = ['zustand/subscribeWithSelector', never];
+
+export type StoreMutators = [StoreMutatorIdentifier, unknown][];
+export type StoreMutatorsWithSelector<Mutators extends StoreMutators = StoreMutators> = [SubscribeWithSelector, ...Mutators];
 
 type HydrationPromise<PersistReturn> =
   PersistReturn extends Promise<void>

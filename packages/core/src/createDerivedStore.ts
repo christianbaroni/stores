@@ -1,9 +1,9 @@
-import { useSyncExternalStoreWithSelector } from 'use-sync-external-store/shim/with-selector';
 import { StoreApi } from 'zustand/vanilla';
 import { IS_DEV } from '@/env';
 import { activateCascade, enqueueDerive, getCurrentDeriveRank, isCascadeActive, joinCascade } from './derivedStore/cascadeScheduler';
 import { getOrCreateProxy, stripProxies } from './derivedStore/deriveProxy';
 import { PathFinder, createPathFinder } from './derivedStore/pathFinder';
+import { useSyncExternalStoreWithSelector } from './hooks/useSyncExternalStoreWithSelector';
 import {
   BaseStore,
   DebounceOptions,

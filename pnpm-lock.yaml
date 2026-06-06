@@ -106,9 +106,6 @@ importers:
       react-native-mmkv:
         specifier: '>=2.0.0'
         version: 4.0.0(react-native-nitro-modules@0.31.2(react-native@0.82.1(@babel/core@7.28.5)(@types/react@19.2.2)(react@19.1.1))(react@19.1.1))(react-native@0.82.1(@babel/core@7.28.5)(@types/react@19.2.2)(react@19.1.1))(react@19.1.1)
-      use-sync-external-store:
-        specifier: 1.6.0
-        version: 1.6.0(react@19.1.1)
       zustand:
         specifier: 5.0.10
         version: 5.0.10(@types/react@19.2.2)(react@19.1.1)(use-sync-external-store@1.6.0(react@19.1.1))
@@ -125,9 +122,6 @@ importers:
       '@types/react':
         specifier: 19.2.2
         version: 19.2.2
-      '@types/use-sync-external-store':
-        specifier: 1.5.0
-        version: 1.5.0
       esbuild:
         specifier: ^0.25.10
         version: 0.25.11
