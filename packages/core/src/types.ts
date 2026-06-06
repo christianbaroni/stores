@@ -134,6 +134,13 @@ export type WithAsyncSet<Store extends StoreApi<unknown>, S, PersistedState, Per
 
 // ============ Subscribe Types ================================================ //
 
+/**
+ * Minimum store API required for subscription.
+ */
+export type SubscribableStore = {
+  subscribe(selector: Selector<unknown, unknown>, listener: () => void, options?: SubscribeOptions<unknown>): UnsubscribeFn;
+};
+
 export type SubscribeOptions<Selected> = {
   equalityFn?: EqualityFn<Selected>;
   fireImmediately?: boolean;

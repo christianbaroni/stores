@@ -116,6 +116,403 @@ describe('createDerivedStore', () => {
   // Proxy-Based Subscription
   // ──────────────────────────────────────────────
   describe('Proxy-Based Subscription', () => {
+    it('should not leak tracking proxies into derived output', async () => {
+      const rows = [{ id: 1 }, { id: 2 }];
+      const nextRows = [{ id: 3 }];
+      const profile = { name: 'Alice' };
+      const baseStore = createBaseStore(() => ({
+        profile,
+        rows,
+        selectedId: 1,
+      }));
+
+      const useDerived = createDerivedStore($ => {
+        const state = $(baseStore);
+        return {
+          nested: {
+            rows: state.rows,
+          },
+          profiles: [state.profile],
+          rows: state.rows,
+          selectedId: state.selectedId,
+        };
+      });
+
+      const rowsWatcher = jest.fn();
+      const nestedRowsWatcher = jest.fn();
+      const profileWatcher = jest.fn();
+      const unsubscribe = useDerived.subscribe(state => state.rows, rowsWatcher);
+      const unsubscribeNestedRows = useDerived.subscribe(state => state.nested.rows, nestedRowsWatcher);
+      const unsubscribeProfile = useDerived.subscribe(state => state.profiles[0], profileWatcher);
+      await flushMicrotasks();
+
+      expect(useDerived.getState().rows).toBe(rows);
+      expect(useDerived.getState().nested.rows).toBe(rows);
+      expect(useDerived.getState().profiles[0]).toBe(profile);
+
+      baseStore.setState({ selectedId: 2 });
+      await flushMicrotasks();
+
+      expect(useDerived.getState().rows).toBe(rows);
+      expect(useDerived.getState().nested.rows).toBe(rows);
+      expect(useDerived.getState().profiles[0]).toBe(profile);
+      expect(rowsWatcher).toHaveBeenCalledTimes(0);
+      expect(nestedRowsWatcher).toHaveBeenCalledTimes(0);
+      expect(profileWatcher).toHaveBeenCalledTimes(0);
+
+      baseStore.setState({ rows: nextRows });
+      await flushMicrotasks();
+
+      expect(useDerived.getState().rows).toBe(nextRows);
+      expect(useDerived.getState().nested.rows).toBe(nextRows);
+      expect(useDerived.getState().profiles[0]).toBe(profile);
+      expect(rowsWatcher).toHaveBeenCalledTimes(1);
+      expect(nestedRowsWatcher).toHaveBeenCalledTimes(1);
+      expect(profileWatcher).toHaveBeenCalledTimes(0);
+
+      unsubscribe();
+      unsubscribeNestedRows();
+      unsubscribeProfile();
+    });
+
+    it('should strip proxy values without invoking unrelated returned-container accessors', async () => {
+      const rows = [{ id: 1 }, { id: 2 }];
+      const baseStore = createBaseStore(() => ({
+        rows,
+        selectedId: 1,
+      }));
+
+      let expensiveReads = 0;
+      const useDerived = createDerivedStore($ => {
+        const state = $(baseStore);
+        const output = {
+          nested: {
+            rows: state.rows,
+          },
+        };
+
+        Object.defineProperty(output, 'expensive', {
+          enumerable: true,
+          get() {
+            expensiveReads += 1;
+            throw new Error('derived proxy stripping walked an unread branch');
+          },
+        });
+
+        return output;
+      });
+
+      const rowsWatcher = jest.fn();
+      const unsubscribe = useDerived.subscribe(state => state.nested.rows, rowsWatcher);
+      await flushMicrotasks();
+
+      expect(expensiveReads).toBe(0);
+      expect(useDerived.getState().nested.rows).toBe(rows);
+
+      baseStore.setState({ selectedId: 2 });
+      await flushMicrotasks();
+
+      expect(expensiveReads).toBe(0);
+      expect(rowsWatcher).toHaveBeenCalledTimes(0);
+
+      unsubscribe();
+    });
+
+    it('should unwrap a root tracking proxy embedded directly in derived output', async () => {
+      const baseStore = createBaseStore(() => ({
+        count: 1,
+      }));
+
+      const useDerived = createDerivedStore($ => {
+        const state = $(baseStore);
+        return { state };
+      });
+
+      const unsubscribe = useDerived.subscribe(() => {});
+      await flushMicrotasks();
+
+      expect(useDerived.getState().state).toBe(baseStore.getState());
+
+      baseStore.setState({ count: 2 });
+      await flushMicrotasks();
+
+      expect(useDerived.getState().state).toBe(baseStore.getState());
+      expect(useDerived.getState().state.count).toBe(2);
+
+      unsubscribe();
+    });
+
+    it('should subscribe when a root tracking proxy is embedded in a nested derived object', async () => {
+      const baseStore = createBaseStore(() => ({
+        count: 1,
+      }));
+
+      const useDerived = createDerivedStore($ => {
+        const state = $(baseStore);
+        return { nested: { state } };
+      });
+
+      const watcher = jest.fn();
+      const unsubscribe = useDerived.subscribe(state => state.nested.state.count, watcher);
+      await flushMicrotasks();
+
+      expect(useDerived.getState().nested.state).toBe(baseStore.getState());
+
+      baseStore.setState({ count: 2 });
+      await flushMicrotasks();
+
+      expect(useDerived.getState().nested.state).toBe(baseStore.getState());
+      expect(watcher).toHaveBeenCalledTimes(1);
+      expect(watcher).toHaveBeenLastCalledWith(2, 1);
+
+      unsubscribe();
+    });
+
+    it('should unwrap a root tracking proxy embedded directly in a derived array', async () => {
+      const baseStore = createBaseStore(() => ({
+        count: 1,
+      }));
+
+      const useDerived = createDerivedStore($ => {
+        const state = $(baseStore);
+        return [state];
+      });
+
+      const unsubscribe = useDerived.subscribe(() => {});
+      await flushMicrotasks();
+
+      expect(useDerived.getState()[0]).toBe(baseStore.getState());
+
+      baseStore.setState({ count: 2 });
+      await flushMicrotasks();
+
+      expect(useDerived.getState()[0]).toBe(baseStore.getState());
+      expect(useDerived.getState()[0].count).toBe(2);
+
+      unsubscribe();
+    });
+
+    it('should not invoke array accessors while stripping direct proxy arrays', async () => {
+      let reads = 0;
+      const baseStore = createBaseStore(() => ({
+        count: 1,
+      }));
+
+      const useDerived = createDerivedStore($ => {
+        const state = $(baseStore);
+        const output: unknown[] = [state];
+        Object.defineProperty(output, '1', {
+          get() {
+            reads += 1;
+            return 'accessor';
+          },
+        });
+        return output;
+      });
+
+      const unsubscribe = useDerived.subscribe(() => {});
+      await flushMicrotasks();
+
+      expect(reads).toBe(0);
+      expect(useDerived.getState()[0]).toBe(baseStore.getState());
+
+      unsubscribe();
+    });
+
+    it('should subscribe when a root tracking proxy is embedded in a nested derived array', async () => {
+      const baseStore = createBaseStore(() => ({
+        count: 1,
+      }));
+
+      const useDerived = createDerivedStore($ => {
+        const state = $(baseStore);
+        return { list: [state] };
+      });
+
+      const watcher = jest.fn();
+      const unsubscribe = useDerived.subscribe(state => state.list[0].count, watcher);
+      await flushMicrotasks();
+
+      expect(useDerived.getState().list[0]).toBe(baseStore.getState());
+
+      baseStore.setState({ count: 2 });
+      await flushMicrotasks();
+
+      expect(useDerived.getState().list[0]).toBe(baseStore.getState());
+      expect(watcher).toHaveBeenCalledTimes(1);
+      expect(watcher).toHaveBeenLastCalledWith(2, 1);
+
+      unsubscribe();
+    });
+
+    it('should not invoke array accessors while stripping tracked proxy arrays', async () => {
+      let reads = 0;
+      const baseStore = createBaseStore(() => ({
+        count: 1,
+        profile: { name: 'Alice' },
+      }));
+
+      const useDerived = createDerivedStore($ => {
+        const state = $(baseStore);
+        void state.profile;
+        const output: unknown[] = [state];
+        Object.defineProperty(output, '1', {
+          get() {
+            reads += 1;
+            return 'accessor';
+          },
+        });
+        return output;
+      });
+
+      const unsubscribe = useDerived.subscribe(() => {});
+      await flushMicrotasks();
+
+      expect(reads).toBe(0);
+      expect(useDerived.getState()[0]).toBe(baseStore.getState());
+
+      unsubscribe();
+    });
+
+    it('should subscribe when a root tracking proxy is embedded inside an object in a derived array', async () => {
+      const baseStore = createBaseStore(() => ({
+        count: 1,
+      }));
+
+      const useDerived = createDerivedStore($ => {
+        const state = $(baseStore);
+        return { list: [{ state }] };
+      });
+
+      const watcher = jest.fn();
+      const unsubscribe = useDerived.subscribe(state => state.list[0].state.count, watcher);
+      await flushMicrotasks();
+
+      expect(useDerived.getState().list[0].state).toBe(baseStore.getState());
+
+      baseStore.setState({ count: 2 });
+      await flushMicrotasks();
+
+      expect(useDerived.getState().list[0].state).toBe(baseStore.getState());
+      expect(watcher).toHaveBeenCalledTimes(1);
+      expect(watcher).toHaveBeenLastCalledWith(2, 1);
+
+      unsubscribe();
+    });
+
+    it('should subscribe to an escaped root proxy in an array when other object paths were observed', async () => {
+      type Row = { id: number };
+      type SourceState = {
+        count: number;
+        rows: Row[];
+      };
+
+      const rows = [{ id: 1 }];
+      const baseStore = createBaseStore<SourceState>(() => ({
+        count: 1,
+        rows,
+      }));
+
+      const useDerived = createDerivedStore<[SourceState, Row[]]>($ => {
+        const state = $(baseStore);
+        return [state, state.rows];
+      });
+
+      const watcher = jest.fn();
+      const unsubscribe = useDerived.subscribe(state => state[0].count, watcher);
+      await flushMicrotasks();
+
+      expect(useDerived.getState()[0]).toBe(baseStore.getState());
+      expect(useDerived.getState()[1]).toBe(rows);
+
+      baseStore.setState({ count: 2 });
+      await flushMicrotasks();
+
+      expect(useDerived.getState()[0]).toBe(baseStore.getState());
+      expect(watcher).toHaveBeenCalledTimes(1);
+      expect(watcher).toHaveBeenLastCalledWith(2, 1);
+
+      unsubscribe();
+    });
+
+    it('should subscribe to object-contained array escapes when other object paths were observed', async () => {
+      const rows = [{ id: 1 }];
+      const baseStore = createBaseStore(() => ({
+        count: 1,
+        rows,
+      }));
+
+      const useDerived = createDerivedStore($ => {
+        const state = $(baseStore);
+        return {
+          list: [{ state }],
+          rows: state.rows,
+        };
+      });
+
+      const watcher = jest.fn();
+      const unsubscribe = useDerived.subscribe(state => state.list[0].state.count, watcher);
+      await flushMicrotasks();
+
+      expect(useDerived.getState().list[0].state).toBe(baseStore.getState());
+      expect(useDerived.getState().rows).toBe(rows);
+
+      baseStore.setState({ count: 2 });
+      await flushMicrotasks();
+
+      expect(useDerived.getState().list[0].state).toBe(baseStore.getState());
+      expect(watcher).toHaveBeenCalledTimes(1);
+      expect(watcher).toHaveBeenLastCalledWith(2, 1);
+
+      unsubscribe();
+    });
+
+    it('should not recurse indefinitely through cyclic returned arrays during proxy stripping', async () => {
+      const loop: unknown[] = [];
+      loop.push(loop);
+
+      const baseStore = createBaseStore(() => ({
+        count: 1,
+      }));
+
+      const useDerived = createDerivedStore($ => {
+        const state = $(baseStore);
+        return { loop, state };
+      });
+
+      const unsubscribe = useDerived.subscribe(() => {});
+      await flushMicrotasks();
+
+      expect(useDerived.getState().loop).toBe(loop);
+      expect(useDerived.getState().state).toBe(baseStore.getState());
+
+      unsubscribe();
+    });
+
+    it('should not wrap non-plain outputs just because an object path was observed', async () => {
+      const publishedAt = new Date('2026-05-01T00:00:00.000Z');
+      const baseStore = createBaseStore(() => ({
+        profile: { name: 'Alice' },
+      }));
+
+      const useDerived = createDerivedStore($ => {
+        void $(baseStore).profile;
+        return publishedAt;
+      });
+
+      const unsubscribe = useDerived.subscribe(() => {});
+      await flushMicrotasks();
+
+      expect(useDerived.getState()).toBe(publishedAt);
+
+      baseStore.setState({ profile: { name: 'Grace' } });
+      await flushMicrotasks();
+
+      expect(useDerived.getState()).toBe(publishedAt);
+
+      unsubscribe();
+    });
+
     it('should not trigger watchers when reassigning an identical nested value, but should when that nested value actually changes', async () => {
       const baseStore = createBaseStore(() => ({
         user: {

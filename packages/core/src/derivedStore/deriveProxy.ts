@@ -1,33 +1,11 @@
-import { BaseStore, Selector } from '../types';
-import { getStoreName, hasGetSnapshot } from '../utils/storeUtils';
-import { pluralize } from '../utils/stringUtils';
+import { BaseStore } from '../types';
+import { isPlainObject } from '../types/utils';
+import { hasGetSnapshot } from '../utils/storeUtils';
+import { TrackPathFn } from './pathFinder';
 
-// ============ Settings ======================================================= //
+// ============ Constants ====================================================== //
 
-/**
- * Minimum object depth at which subscription consolidation is allowed.
- *   - `1`: Never consolidate at root — top-level fields get individual subscriptions.
- *   - `2`: Never consolidate at root or depth 1, etc.
- */
-const MIN_CONSOLIDATION_DEPTH = 1;
-
-// ============ Types ========================================================== //
-
-type PathEntry = {
-  path: string[];
-  store: BaseStore<unknown>;
-  invocation?: TrackedInvocation;
-  isLeaf: boolean;
-};
-
-type TrackedInvocation = {
-  args: unknown[] | undefined;
-  method: string;
-};
-
-type TrackPathFn = (store: BaseStore<unknown>, path: string[], isLeaf: boolean, invocation?: TrackedInvocation) => void;
-
-type SubscriptionBuilder = (store: BaseStore<unknown>, selector: Selector<unknown, unknown>) => void;
+const TRACKING_PROXY_UNWRAP = Symbol('stores.deriveProxy.unwrap');
 
 // ============ Proxy Creator ================================================== //
 
@@ -37,17 +15,13 @@ type SubscriptionBuilder = (store: BaseStore<unknown>, selector: Selector<unknow
  * to either the accessed path or the value returned by an invoked store method.
  */
 export function getOrCreateProxy<S>(store: BaseStore<S>, rootProxyCache: WeakMap<BaseStore<unknown>, unknown>, trackPath: TrackPathFn): S {
-  // The WeakMap can't handle generics, so here we re-apply the correct type
-  // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-  const proxyByStore = rootProxyCache.get(store) as S | undefined;
+  const cachedProxy = rootProxyCache.get(store);
+  if (isCachedProxy<S>(cachedProxy)) return cachedProxy;
 
-  if (!proxyByStore) {
-    const snapshot = hasGetSnapshot(store) ? store.getSnapshot() : store.getState();
-    const newProxy = createTrackingProxy(snapshot, store, trackPath);
-    rootProxyCache.set(store, newProxy);
-    return newProxy;
-  }
-  return proxyByStore;
+  const snapshot = hasGetSnapshot(store) ? store.getSnapshot() : store.getState();
+  const newProxy = createTrackingProxy(snapshot, store, trackPath);
+  rootProxyCache.set(store, newProxy);
+  return newProxy;
 }
 
 function createTrackingProxy<S>(snapshot: S, store: BaseStore<unknown>, trackPath: TrackPathFn, path: string[] = []): S {
@@ -72,6 +46,11 @@ function buildProxy<T extends object>(
 ): T {
   return new Proxy<T>(value, {
     get(target, propKey, receiver) {
+      if (propKey === TRACKING_PROXY_UNWRAP) {
+        trackPath(store, path, true);
+        return target;
+      }
+
       // -- If we've already bailed out on this object, no further sub-proxies
       if (bailedOutObjects.has(target)) {
         return Reflect.get(target, propKey, receiver);
@@ -97,8 +76,8 @@ function buildProxy<T extends object>(
         const isStoreMethod = Object.prototype.hasOwnProperty.call(target, propKey);
 
         if (isStoreMethod) {
-          // Return a wrapped function that tracks invocation when called. This allows us
-          // to build a selector that points to the value *returned* by the method call.
+          // Return a wrapped function that tracks invocation when called. This allows
+          // building a selector that points to the value *returned* by the method call.
           return function (...args: unknown[]) {
             trackPath(store, newPath, true, { method: propKeyString, args: args.length ? args : undefined });
             return Reflect.apply(childValue, target, args);
@@ -150,206 +129,69 @@ function buildProxy<T extends object>(
   });
 }
 
-// ============ Proxy Subscription Utilities =================================== //
-
-function buildProxySubscriptions(finalPaths: Set<PathEntry>, createSubscription: SubscriptionBuilder, shouldLog: boolean): void {
-  for (const entry of finalPaths) {
-    createSubscription(
-      entry.store,
-      entry.invocation ? buildInvocationSelector(entry.path, entry.invocation) : buildPathSelector(entry.path)
-    );
-  }
-  if (shouldLog) logTrackedPaths(finalPaths);
-}
+// ============ Proxy Stripping ================================================= //
 
 /**
- * Builds a selector that returns the value at the specified path.
+ * Strips tracking proxies from published values to ensure
+ * proxies remain confined to internal tracking contexts.
  */
-function buildPathSelector(path: string[]): Selector<unknown, unknown> {
-  return state => getValueAtPath(state, path);
+export function stripProxies<T>(value: T): T;
+export function stripProxies(value: unknown, seen?: WeakSet<object>): unknown;
+export function stripProxies(value: unknown, seen?: WeakSet<object>): unknown {
+  if (!value || typeof value !== 'object') return value;
+
+  const target = unwrapTrackingProxy(value);
+  if (target) return target;
+
+  if (Array.isArray(value)) stripArrayProxyValues(value, seen);
+  else if (isPlainObject(value)) stripOwnProxyValues(value, seen);
+
+  return value;
 }
 
-/**
- * Builds a selector that returns the value returned by invoking the
- * specified method on the parent object.
- */
-function buildInvocationSelector(path: string[], invocation: TrackedInvocation): Selector<unknown, unknown> {
-  const parentPath = path.slice(0, -1);
-  return state => {
-    const parentObject = getValueAtPath(state, parentPath);
-    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-    const fn = (parentObject as Record<string, unknown> | undefined)?.[invocation.method];
-    return typeof fn === 'function' ? fn.apply(parentObject, invocation.args) : undefined;
-  };
+function stripArrayProxyValues(value: unknown[], seen?: WeakSet<object>): void {
+  const visited = enterContainer(value, seen);
+  if (!visited) return;
+
+  for (let i = 0; i < value.length; i++) {
+    stripPropertyValue(value, String(i), visited);
+  }
 }
 
-/**
- * Gets the value at the specified path in an object.
- *
- * `path` is an array of keys used to traverse the object.
- *
- * @example
- * ```ts
- * const obj = { a: { b: { c: 1 } } };
- * getValueAtPath(obj, ['a', 'b', 'c']); // 1
- * ```
- */
-function getValueAtPath<T>(obj: T, path: string[]): T {
-  let current = obj;
-  for (const p of path) {
-    if (!current || typeof current !== 'object') return current;
-    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-    current = (current as Record<string, T>)[p];
-  }
-  return current;
+function stripOwnProxyValues(value: object, seen?: WeakSet<object>): void {
+  const visited = enterContainer(value, seen);
+  if (!visited) return;
+
+  for (const key of Reflect.ownKeys(value)) stripPropertyValue(value, key, visited);
 }
 
-// ============ Proxy Path Tracking ============================================ //
+function stripPropertyValue(target: object, key: PropertyKey, seen: WeakSet<object>): void {
+  const descriptor = Reflect.getOwnPropertyDescriptor(target, key);
+  if (!descriptor || !('value' in descriptor)) return;
 
-export type PathFinder = {
-  buildProxySubscriptions(createSubscription: SubscriptionBuilder, shouldLog: boolean): void;
-  trackPath: TrackPathFn;
-};
+  const nextValue = stripProxies(descriptor.value, seen);
+  if (nextValue === descriptor.value) return;
 
-/**
- * A factory that returns a proxy path-tracking object with two methods:
- *  - `buildProxySubscriptions()`: builds subscriptions to the final paths
- *  - `trackPath()`: records usage of a store path
- */
-export function createPathFinder(): PathFinder {
-  // Each store maps to its trie root node
-  const storeMap = new Map<BaseStore<unknown>, TrieNode>();
-
-  return {
-    buildProxySubscriptions(createSubscription: SubscriptionBuilder, shouldLog: boolean) {
-      const results = new Set<PathEntry>();
-      for (const [store, rootNode] of storeMap) {
-        collectMinimalPaths(rootNode, store, [], 0, results);
-      }
-      buildProxySubscriptions(results, createSubscription, shouldLog);
-    },
-
-    trackPath(store, path, isLeaf, invocation) {
-      let root = storeMap.get(store);
-      if (!root) {
-        root = createTrieNode();
-        storeMap.set(store, root);
-      }
-      insertPath(root, path, 0, isLeaf, invocation);
-    },
-  };
+  descriptor.value = nextValue;
+  Reflect.defineProperty(target, key, descriptor);
 }
 
-type TrieNode = {
-  children?: Record<string, TrieNode>;
-  invocation?: TrackedInvocation;
-  isLeaf?: boolean;
-};
+// ============ Helpers ======================================================== //
 
-type RootNode = Record<string, TrieNode>;
-
-/**
- * Creates a prototype-free trie node object.
- */
-function createTrieNode<T extends TrieNode | RootNode = TrieNode>(): T {
-  return Object.create(null);
+function unwrapTrackingProxy(value: object): object | undefined {
+  const target = Reflect.get(value, TRACKING_PROXY_UNWRAP);
+  return target && typeof target === 'object' ? target : undefined;
 }
 
-/**
- * Inserts a path into the trie, creating nodes to represent the path.
- */
-function insertPath(node: TrieNode, path: string[], index: number, isLeaf?: boolean, invocation?: TrackedInvocation): void {
-  if (index === path.length) {
-    if (isLeaf) node.isLeaf = true;
-    if (invocation) node.invocation = invocation;
-    return;
-  }
-  if (!node.children) {
-    node.children = createTrieNode<RootNode>();
-  }
-  const segment = path[index];
-  let child = node.children?.[segment];
-  if (!child) {
-    child = createTrieNode();
-    node.children[segment] = child;
-  }
-  insertPath(child, path, index + 1, isLeaf, invocation);
+function enterContainer(value: object, seen?: WeakSet<object>): WeakSet<object> | null {
+  const visited = seen ?? new WeakSet<object>();
+  if (visited.has(value)) return null;
+  visited.add(value);
+  return visited;
 }
 
-/**
- * Determines and collects the final paths to build selectors for.
- */
-function collectMinimalPaths(
-  node: TrieNode,
-  store: BaseStore<unknown>,
-  path: string[],
-  depth: number,
-  results: Set<PathEntry>,
-  minConsolidationDepth = MIN_CONSOLIDATION_DEPTH
-): void {
-  const children = node.children;
-  if (!children) {
-    // Leaf node
-    results.add({ store, path, invocation: node.invocation, isLeaf: node.isLeaf ?? false });
-    return;
-  }
-  const childKeys = Object.keys(children);
-  const childCount = childKeys.length;
+// ============ Type Guards ==================================================== //
 
-  // 1) No children => leaf
-  if (childCount === 0) {
-    results.add({ store, path, invocation: node.invocation, isLeaf: node.isLeaf ?? false });
-    return;
-  }
-
-  // 2) Is a leaf (or at/beyond min depth with multiple children) => subscribe here
-  if (node.isLeaf || (depth >= minConsolidationDepth && childCount > 1)) {
-    results.add({ store, path, invocation: node.invocation, isLeaf: node.isLeaf ?? false });
-    // Only recurse into children that have an invocation
-    for (const key of childKeys) {
-      const child = children[key];
-      if (child.invocation) collectMinimalPaths(child, store, [...path, key], depth + 1, results, minConsolidationDepth);
-    }
-    return;
-  }
-
-  // 3) Below min consolidation depth with multiple children => skip this node, recurse each child
-  if (depth < minConsolidationDepth && childCount > 1 && !node.isLeaf) {
-    for (const key of childKeys) {
-      collectMinimalPaths(children[key], store, [...path, key], depth + 1, results, minConsolidationDepth);
-    }
-    return;
-  }
-
-  // 4) Exactly one child, not a leaf => merge downward
-  if (childCount === 1) {
-    const onlyKey = childKeys[0];
-    collectMinimalPaths(children[onlyKey], store, [...path, onlyKey], depth + 1, results, minConsolidationDepth);
-    return;
-  }
-
-  // If no prior conditions met, subscribe here
-  results.add({ store, path, invocation: node.invocation, isLeaf: node.isLeaf ?? false });
-}
-
-// ============ Debug Utilities ================================================ //
-
-function logTrackedPaths(paths: Set<PathEntry>): void {
-  const count = paths.size;
-  console.log(
-    `[📡 ${count} ${pluralize('Proxy Subscription', count)} 📡]:`,
-    JSON.stringify(
-      Array.from(paths).map(entry => {
-        const storeName = getStoreName(entry.store);
-        const pathKey = entry.path.join('.');
-        if (!entry.invocation) return pathKey ? `$(${storeName}).${pathKey}` : `$(${storeName})`;
-
-        const argsCount = entry.invocation.args?.length ?? 0;
-        const argsSuffix = argsCount ? `(${argsCount}_${pluralize('arg', argsCount)})` : '()';
-        return `$(${storeName}).${pathKey}${argsSuffix}`;
-      }),
-      null,
-      2
-    )
-  );
+function isCachedProxy<S>(cachedProxyState: unknown | undefined): cachedProxyState is S {
+  return cachedProxyState !== undefined;
 }

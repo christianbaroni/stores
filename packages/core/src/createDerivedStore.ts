@@ -1,8 +1,9 @@
 import { useSyncExternalStoreWithSelector } from 'use-sync-external-store/shim/with-selector';
 import { StoreApi } from 'zustand/vanilla';
 import { IS_DEV } from '@/env';
-import { PathFinder, createPathFinder, getOrCreateProxy } from './derivedStore/deriveProxy';
 import { activateCascade, enqueueDerive, getCurrentDeriveRank, isCascadeActive, joinCascade } from './derivedStore/cascadeScheduler';
+import { getOrCreateProxy, stripProxies } from './derivedStore/deriveProxy';
+import { PathFinder, createPathFinder } from './derivedStore/pathFinder';
 import {
   BaseStore,
   DebounceOptions,
@@ -17,6 +18,7 @@ import {
   WithFlushUpdates,
   WithGetSnapshot,
   InferStoreState,
+  SubscribeOptions,
 } from './types';
 import { identity } from './utils/core';
 import { debounce } from './utils/debounce';
@@ -98,8 +100,8 @@ export function createDerivedStore<Derived>(
 
 function attachStoreHook<S>(store: WithGetSnapshot<WithFlushUpdates<StoreApi<S>>>): DerivedStore<S> {
   function useDerivedStore(): S;
-  function useDerivedStore<T>(selector: (state: S) => T, equalityFn?: EqualityFn<T>): T;
-  function useDerivedStore<T>(selector: (state: S) => T = identity, equalityFn: EqualityFn<T> | undefined = undefined): S | T {
+  function useDerivedStore<Selected>(selector: Selector<S, Selected>, equalityFn?: EqualityFn<Selected>): Selected;
+  function useDerivedStore<Selected>(selector: Selector<S, Selected> = identity, equalityFn?: EqualityFn<Selected>): S | Selected {
     return useSyncExternalStoreWithSelector(store.subscribe, store.getSnapshot, undefined, selector, equalityFn);
   }
   return Object.assign(useDerivedStore, store);
@@ -139,6 +141,8 @@ type Watcher<DerivedState, Selected = unknown> =
 const UNINITIALIZED = Symbol();
 
 type UninitializedState = typeof UNINITIALIZED;
+
+const DERIVED_STORE_SUBSCRIBE_OPTIONS: SubscribeOptions<unknown> = Object.freeze({ equalityFn: Object.is, isDerivedStore: true });
 
 /**
  * Powers the internals of `createDerivedStore`.
@@ -183,6 +187,7 @@ function derive<DerivedState>(
   function $<S>(store: BaseStore<S>): S;
   function $<S, Selected>(store: BaseStore<S>, selector: Selector<S, Selected>, equalityFn?: EqualityFn<Selected>): Selected;
   function $<S, Selected = S>(store: BaseStore<S>, selector?: Selector<S, Selected>, equalityFn?: EqualityFn<Selected>): Selected | S {
+    // -- Direct derivation, no subscription
     if (!shouldRebuildSubscriptions || !watchers.size) {
       return (selector ?? identity)(hasGetSnapshot(store) ? store.getSnapshot() : store.getState());
     }
@@ -195,11 +200,9 @@ function derive<DerivedState>(
     }
     // -- Overload #2: $(store, selector, equalityFn?)
     // No proxy, just a direct subscription to the store
-    const unsubscribe = store.subscribe(selector, invalidate, {
-      equalityFn: equalityFn ?? Object.is,
-      isDerivedStore: true,
-    });
-    unsubscribes.add(unsubscribe);
+    unsubscribes.add(
+      store.subscribe(selector, invalidate, equalityFn ? { equalityFn, isDerivedStore: true } : DERIVED_STORE_SUBSCRIBE_OPTIONS)
+    );
     return selector(hasGetSnapshot(store) ? store.getSnapshot() : store.getState());
   }
 
@@ -234,12 +237,13 @@ function derive<DerivedState>(
     if (pathFinder && shouldRebuildSubscriptions) {
       // Create subscriptions for each proxy-generated dependency path
       pathFinder.buildProxySubscriptions((store, selector) => {
-        const unsubscribe = store.subscribe(selector, invalidate, { equalityFn: Object.is, isDerivedStore: true });
-        unsubscribes.add(unsubscribe);
+        unsubscribes.add(store.subscribe(selector, invalidate, DERIVED_STORE_SUBSCRIBE_OPTIONS));
       }, shouldLogSubscriptions);
-      // Reset proxy state for the next derivation
+
+      // Reset proxy tracking state
       rootProxyCache = undefined;
-      pathFinder = undefined;
+      pathFinder.reset();
+      if (lockDependencies) pathFinder = undefined;
     }
 
     if (didProduceNewState && hasPreviousState) notifyWatchers(derivedState, prevState);
@@ -251,7 +255,8 @@ function derive<DerivedState>(
   function produceNextState($: DeriveGetter): DerivedState {
     didProduceNewState = true;
     const prevState = derivedState;
-    const newState = deriveFunction($);
+    const newState = pathFinder ? stripProxies(deriveFunction($)) : deriveFunction($);
+
     if (!isInitialized(prevState)) return newState;
 
     if (equalityFn(prevState, newState)) {
@@ -443,7 +448,7 @@ function derive<DerivedState>(
 
   function getState(): DerivedState {
     if (invalidated || !isInitialized(derivedState)) {
-      // If there are watchers, we should build subscriptions, otherwise compute directly
+      // If there are watchers, build subscriptions, otherwise compute directly
       return watchers.size > 0 ? runDerive() : deriveFunction($);
     }
     return derivedState;

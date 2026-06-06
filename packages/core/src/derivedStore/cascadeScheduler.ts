@@ -1,23 +1,23 @@
 import { unstable_batchedUpdates } from '@/env';
 
+/**
+ * Cascade Scheduler
+ *
+ * - Coalesces derivations into a single microtask.
+ * - Tasks run once at their maximum rank via a ranked dirty queue.
+ * - Doesn't retain snapshots or dependency graphs.
+ * - Component listeners get notified after all derivations have settled.
+ */
+
 type Rank = number;
 type StoreId = string;
 type Task = () => void;
 
-/**
- * Global cascade scheduler
- *
- * - Coalesces derivations into a single microtask.
- * - Uses a ranked dirty-queue: tasks run once at their maximum rank.
- * - Delivers component notifications after the graph settles.
- *
- * No retained snapshots, no dependency graphs; two small Sets/Maps per wave.
- */
 let active = false;
 let scheduled = false;
 
-// Component flushes (per-store, idempotent)
-const flushQueue: Map<StoreId, Task> = new Map();
+// Component flushes (per store, idempotent)
+const flushQueue = new Map<StoreId, Task>();
 
 // Ranked dirty tasks (per cascade)
 const taskRank = new Map<Task, Rank>();
