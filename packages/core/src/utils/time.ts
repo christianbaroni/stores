@@ -40,24 +40,25 @@ export const time: TimeUtils = {
   },
   seconds: seconds => {
     'worklet';
-    return seconds * 1000;
+    return seconds * 1_000;
   },
   minutes: minutes => {
     'worklet';
-    return time.seconds(minutes * 60);
+    return minutes * 60_000;
   },
   hours: hours => {
     'worklet';
-    return time.minutes(hours * 60);
+    return hours * 3_600_000;
   },
   days: days => {
     'worklet';
-    return time.hours(days * 24);
+    return days * 86_400_000;
   },
   weeks: weeks => {
     'worklet';
-    return time.days(weeks * 7);
+    return weeks * 604_800_000;
   },
+
   infinity: Infinity,
   zero: 0,
 };
@@ -67,9 +68,6 @@ export const time: TimeUtils = {
  * Uses setTimeout(0) to allow microtasks scheduled via queueMicrotask to execute.
  *
  * Useful in tests when waiting for async operations scheduled via microtasks.
- *
- * @example
- * await waitForMicrotask();
  */
 export async function waitForMicrotask(): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, 0));
