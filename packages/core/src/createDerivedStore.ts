@@ -255,7 +255,8 @@ function derive<DerivedState>(
   function produceNextState($: DeriveGetter): DerivedState {
     didProduceNewState = true;
     const prevState = derivedState;
-    const newState = pathFinder ? stripProxies(deriveFunction($)) : deriveFunction($);
+    const derived = deriveFunction($);
+    const newState = pathFinder ? stripProxies(derived) : derived;
 
     if (!isInitialized(prevState)) return newState;
 
