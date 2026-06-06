@@ -370,16 +370,19 @@ function derive<DerivedState>(
     });
 
   function runScheduledDerive(): void {
-    if (!watchers.size) return;
     deriveScheduled = false;
-    if (!invalidated) return;
-    runDerive();
+    if (!watchers.size) {
+      destroy();
+      return;
+    }
+    if (invalidated) runDerive();
   }
 
   // ========== Lifecycle Helpers ==========
 
   function handleDestroy(isDerivedWatcher: boolean): void {
-    if (!isDerivedWatcher) {
+    const shouldDefer = isDerivedWatcher || (!!debouncedDerive && invalidated);
+    if (!shouldDefer) {
       destroy();
       return;
     }

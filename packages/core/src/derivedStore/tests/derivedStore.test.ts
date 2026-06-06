@@ -818,6 +818,56 @@ describe('createDerivedStore', () => {
       unsubscribe();
     });
 
+    it('should reset when a debounced derive fires without watchers', async () => {
+      const baseStore = createBaseStore(() => ({ val: 0 }));
+
+      let deriveCount = 0;
+      const useDerived = createDerivedStore(
+        $ => {
+          deriveCount += 1;
+          return $(baseStore).val;
+        },
+        { debounce: 50 }
+      );
+
+      if (!hasGetSnapshot(useDerived)) throw new Error('derived store test requires getSnapshot');
+
+      expect(useDerived.getSnapshot()).toBe(0);
+      expect(deriveCount).toBe(1);
+
+      baseStore.setState({ val: 1 });
+      jest.advanceTimersByTime(50);
+      await flushMicrotasks();
+
+      expect(deriveCount).toBe(1);
+      expect(useDerived.getSnapshot()).toBe(1);
+      expect(deriveCount).toBe(2);
+    });
+
+    it('should keep pending debounced invalidation alive across a same-turn resubscribe', async () => {
+      const baseStore = createBaseStore(() => ({ val: 0 }));
+
+      const useDerived = createDerivedStore($ => $(baseStore).val, { debounce: 50 });
+
+      const unsubscribeFirst = useDerived.subscribe(() => {});
+      await flushMicrotasks();
+
+      baseStore.setState({ val: 1 });
+      unsubscribeFirst();
+
+      const watcher = jest.fn();
+      const unsubscribeSecond = useDerived.subscribe(watcher);
+      await flushMicrotasks();
+
+      jest.advanceTimersByTime(50);
+      await flushMicrotasks();
+
+      expect(watcher).toHaveBeenCalledTimes(1);
+      expect(watcher).toHaveBeenLastCalledWith(1, 0);
+
+      unsubscribeSecond();
+    });
+
     it('should flush pending updates immediately when flushUpdates() is called', async () => {
       const baseStore = createBaseStore(() => ({ val: 10 }));
 
