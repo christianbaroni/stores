@@ -9,7 +9,7 @@ import { pluralize } from '../utils/stringUtils';
  *  - `1`: Never consolidate at root — top-level fields get individual subscriptions.
  *  - `2`: Never consolidate at root or depth 1, etc.
  */
-const DEFAULT_MIN_CONSOLIDATION_DEPTH = 1;
+const DEFAULT_MIN_CONSOLIDATION_DEPTH = 2;
 
 // ============ Constants ====================================================== //
 
