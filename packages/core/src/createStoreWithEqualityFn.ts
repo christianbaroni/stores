@@ -40,7 +40,7 @@ function createStoreHook<State, Mutators extends StoreMutators>(
   function useStore(): State;
   function useStore<Selected>(selector: Selector<State, Selected>, equalityFn?: EqualityFn<Selected>): Selected;
   function useStore<Selected>(selector?: Selector<State, Selected>, equalityFn?: EqualityFn<Selected>): State | Selected {
-    return useSyncExternalStoreWithSelector(api.subscribe, api.getState, api.getInitialState, selector, equalityFn, defaultEqualityFn);
+    return useSyncExternalStoreWithSelector(api.subscribe, api.getState, api.getInitialState, selector, equalityFn ?? defaultEqualityFn);
   }
 
   return Object.assign(useStore, api);

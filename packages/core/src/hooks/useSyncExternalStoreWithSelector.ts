@@ -1,6 +1,6 @@
 import { useDebugValue, useRef, useSyncExternalStore } from 'react';
 import type { EqualityFn, Selector, SubscribeOverloads, UnsubscribeFn } from '../types';
-import { identity, noop } from '../utils/core';
+import { noop } from '../utils/core';
 
 // ============ Constants ====================================================== //
 
@@ -41,8 +41,7 @@ export function useSyncExternalStoreWithSelector<State>(
   getSnapshot: () => State,
   getServerSnapshot?: (() => State) | undefined,
   selector?: undefined,
-  equalityFn?: undefined,
-  defaultEqualityFn?: EqualityFn
+  equalityFn?: undefined
 ): State;
 
 export function useSyncExternalStoreWithSelector<State, Selected>(
@@ -50,8 +49,7 @@ export function useSyncExternalStoreWithSelector<State, Selected>(
   getSnapshot: () => State,
   getServerSnapshot: (() => State) | undefined,
   selector: Selector<State, Selected>,
-  equalityFn?: EqualityFn<Selected>,
-  defaultEqualityFn?: EqualityFn
+  equalityFn?: EqualityFn<Selected>
 ): Selected;
 
 export function useSyncExternalStoreWithSelector<State, Selected>(
@@ -59,8 +57,7 @@ export function useSyncExternalStoreWithSelector<State, Selected>(
   getSnapshot: () => State,
   getServerSnapshot: (() => State) | undefined,
   selector: Selector<State, Selected> | undefined,
-  equalityFn?: EqualityFn<Selected>,
-  defaultEqualityFn?: EqualityFn
+  equalityFn?: EqualityFn<Selected>
 ): State | Selected;
 
 export function useSyncExternalStoreWithSelector<State, Selected>(
@@ -68,27 +65,22 @@ export function useSyncExternalStoreWithSelector<State, Selected>(
   getSnapshot: () => State,
   getServerSnapshot?: (() => State) | undefined,
   selector?: Selector<State, Selected>,
-  equalityFn?: EqualityFn,
-  defaultEqualityFn?: EqualityFn
+  equalityFn: EqualityFn<Selected> = objectIs
 ): State | Selected {
-  const usesSelection = selector !== undefined || (defaultEqualityFn !== undefined && defaultEqualityFn !== objectIs);
-  const cellRef = useRef<SelectionCell<State, State | Selected> | null>(null);
+  const cellRef = useRef<SelectionCell<State, Selected> | null>(null);
 
   let subscribeToStore: (onStoreChange: () => void) => UnsubscribeFn = subscribe;
   let readSnapshot: () => State | Selected = getSnapshot;
   let readServerSnapshot: (() => State | Selected) | undefined = getServerSnapshot;
 
-  if (usesSelection) {
-    const selectedSelector: Selector<State, State | Selected> = selector ?? identity;
-    const selectedEqualityFn: EqualityFn<State | Selected> = equalityFn ?? defaultEqualityFn ?? objectIs;
-
+  if (selector) {
     let cell = cellRef.current;
     if (cell === null) {
-      cell = createSelectionCell(subscribe, getSnapshot, getServerSnapshot, selectedSelector, selectedEqualityFn);
+      cell = createSelectionCell(subscribe, getSnapshot, getServerSnapshot, selector, equalityFn);
       cellRef.current = cell;
     }
 
-    updateSelectionCell(cell, subscribe, getSnapshot, getServerSnapshot, selectedSelector, selectedEqualityFn);
+    updateSelectionCell(cell, subscribe, getSnapshot, getServerSnapshot, selector, equalityFn);
 
     subscribeToStore = cell.selectedSubscribe;
     readSnapshot = cell.getSelectedSnapshot;

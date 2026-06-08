@@ -219,39 +219,6 @@ describe('useSyncExternalStoreWithSelector', () => {
     }
   });
 
-  it('uses default equality with the identity selector when no selector is provided', () => {
-    type State = { revision: number; value: number };
-
-    const store = createExternalStore<State>({ revision: 0, value: 1 });
-    const renders: State[] = [];
-
-    function View(): null {
-      const state = useSyncExternalStoreWithSelector(
-        store.subscribe,
-        store.getSnapshot,
-        store.getServerSnapshot,
-        undefined,
-        undefined,
-        equalStateValue
-      );
-
-      renders.push(state);
-      return null;
-    }
-
-    const root = createMountedRoot();
-
-    try {
-      root.render(createElement(View));
-      act(() => store.publish({ revision: 1, value: 1 }));
-      act(() => store.publish({ revision: 2, value: 2 }));
-
-      expect(renders.map(state => state.value)).toEqual([1, 2]);
-    } finally {
-      root.unmount();
-    }
-  });
-
   it('rebinds exactly once when the source subscribe identity changes', () => {
     type State = { value: string };
 
@@ -357,7 +324,7 @@ describe('useSyncExternalStoreWithSelector', () => {
     } finally {
       consoleError.mockRestore();
       if (root !== null) {
-        const hydratedRoot = root;
+        const hydratedRoot: Root = root;
         act(() => hydratedRoot.unmount());
       }
       container.remove();
@@ -455,10 +422,6 @@ function shallowEqualArray<T>(a: readonly T[], b: readonly T[]): boolean {
 }
 
 function equalSelection(a: { value: number }, b: { value: number }): boolean {
-  return Object.is(a.value, b.value);
-}
-
-function equalStateValue(a: { value: number }, b: { value: number }): boolean {
   return Object.is(a.value, b.value);
 }
 
