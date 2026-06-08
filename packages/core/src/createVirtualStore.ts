@@ -59,14 +59,13 @@ type VirtualStoreOptions = {
 export function createVirtualStore<Store extends BaseStore<InferStoreState<Store>>>(
   createStore: ($: DeriveGetter) => Store,
   options?: VirtualStoreOptions
-): OptionallyPersistedStore<InferStoreState<Store>, InferPersistedState<Store, InferStoreState<Store>>, InferSetStateReturn<Store>>;
+): OptionallyPersistedStore<InferStoreState<Store>, InferPersistedState<Store>, InferSetStateReturn<Store>>;
 
 export function createVirtualStore<Store extends BaseStore<InferStoreState<Store>>, Overrides extends MethodOverrides<Store>>(
   createStore: ($: DeriveGetter) => Store,
   overrides: (getStore: () => Store) => Overrides,
   options?: VirtualStoreOptions
-): OptionallyPersistedStore<InferStoreState<Store>, InferPersistedState<Store, InferStoreState<Store>>, InferSetStateReturn<Store>> &
-  Overrides;
+): OptionallyPersistedStore<InferStoreState<Store>, InferPersistedState<Store>, InferSetStateReturn<Store>> & Overrides;
 
 export function createVirtualStore<
   Store extends BaseStore<InferStoreState<Store>>,
@@ -76,8 +75,8 @@ export function createVirtualStore<
   overridesOrOptions?: VirtualStoreOptions | ((getStore: () => Store) => Overrides),
   options?: VirtualStoreOptions
 ):
-  | StoreType<InferStoreState<Store>, InferPersistedState<Store, InferStoreState<Store>>, InferSetStateReturn<Store>, false>
-  | (BaseStore<InferStoreState<Store>, false> & Overrides) {
+  | StoreType<InferStoreState<Store>, InferPersistedState<Store>, InferSetStateReturn<Store>, false>
+  | (BaseStore<InferStoreState<Store>> & Overrides) {
   type State = InferStoreState<Store>;
   type Subscription = PortableSubscription<Store, State>;
 

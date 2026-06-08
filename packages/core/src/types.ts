@@ -94,21 +94,17 @@ export type InferStoreState<Store extends StoreApi<unknown>> = Store extends {
   : never;
 
 /**
- * Extracts the return type of setState from a store.
- * Returns `void` for non-persisted or sync-persisted stores.
- * Returns `Promise<void>` for async-persisted stores.
+ * Extracts a store's `setState` return type.
+ *  - `void` for non-persisted or synchronous persisted stores.
+ *  - `Promise<void>` for async persisted stores.
  */
 export type InferSetStateReturn<Store> = Store extends { setState(...args: SetStateArgs<infer S>): infer R } ? R : void;
 
 /**
- * Extracts the PersistedState type from a store's persist property.
- * Returns `Partial<State>` if the store doesn't have persistence.
+ * Extracts a store's `PersistedState` type.
+ * Returns `never` if the store doesn't use persistence.
  */
-export type InferPersistedState<Store, State> = Store extends { persist: { getOptions: () => infer Options } }
-  ? Options extends { name?: string }
-    ? Partial<State>
-    : Partial<State>
-  : Partial<State>;
+export type InferPersistedState<PersistedStore> = PersistedStore extends Store<infer _, infer PersistedState> ? PersistedState : never;
 
 // ============ Set State Types ================================================ //
 
