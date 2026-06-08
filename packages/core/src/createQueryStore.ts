@@ -705,7 +705,7 @@ export function createQueryStore<
               if (options.skipStoreUpdates === 'withCache') {
                 set(state => {
                   if (!setData) {
-                    if (!disableCache) return state;
+                    if (disableCache) return state;
                     return {
                       queryCache: {
                         ...state.queryCache,
@@ -741,7 +741,7 @@ export function createQueryStore<
                         ...newState.queryCache,
                         [fetchQueryKey]: {
                           cacheTime: effectiveCacheTime,
-                          data: transformedData,
+                          data: null,
                           errorInfo: null,
                           lastFetchedAt,
                         } satisfies CacheEntry<TData>,
@@ -752,6 +752,7 @@ export function createQueryStore<
                   return newState;
                 });
               }
+
               return transformedData;
             }
 
