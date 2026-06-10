@@ -37,3 +37,10 @@ export function buildNullObject<A extends object, B>(a: object, b?: object): [un
 export function buildNullObject<A extends object, B>(a: A, b?: B): A & B {
   return b === undefined ? Object.assign(nullObject<A & B>(), a) : Object.assign(nullObject<A & B>(), a, b);
 }
+
+/**
+ * Does nothing.
+ */
+export function noop(): void {
+  return;
+}
