@@ -5,7 +5,7 @@ import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { promisify } from 'util';
 import { bold, formatSize, handleError, spinner, summary, timedRow, write } from '@/cli';
-import { plugins } from '../build/plugins';
+import { disabledPluginTypeRoots, pluginBuildEntries, type Platform } from '../build/plugins';
 
 const execAsync = promisify(exec);
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -35,8 +35,8 @@ async function build(): Promise<void> {
   write(
     timedRow('exports', exports.time),
     timedRow('types', types.time),
-    timedRow('web', web.time, bundleSummary('dist/web')),
-    timedRow('native', native.time, bundleSummary('dist/native')),
+    timedRow('web', web.time, bundleSummary('web')),
+    timedRow('native', native.time, bundleSummary('native')),
     summary('build', { time: performance.now() - start })
   );
 }
@@ -48,7 +48,7 @@ async function buildTypes(): Promise<{ time: number }> {
   return { time: performance.now() - start };
 }
 
-async function buildPlatform(platform: 'web' | 'native'): Promise<{ time: number }> {
+async function buildPlatform(platform: Platform): Promise<{ time: number }> {
   const start = performance.now();
   const env = { ...process.env, NODE_ENV: 'production', ...(platform === 'native' && { BUILD_TARGET: 'native' }) };
   await execAsync(`tsup --config tsup.config.ts --out-dir dist/${platform}`, { cwd: root, env });
@@ -61,16 +61,32 @@ async function timed<T>(fn: () => Promise<T>): Promise<{ time: number; result: T
   return { time: performance.now() - start, result };
 }
 
-function bundleSummary(dir: string): string {
-  const fullPath = join(root, dir);
-  const files = readdirSync(fullPath);
-  const fileSize = (name: string) => (files.includes(`${name}.mjs`) ? statSync(join(fullPath, `${name}.mjs`)).size : 0);
+function bundleSummary(platform: Platform): string {
+  const dir = join(root, 'dist', platform);
+  const totalSize = mjsSize(dir);
+  const entries = pluginBuildEntries(platform);
+  let pluginsSize = 0;
 
-  const totalSize = files.filter(f => f.endsWith('.mjs')).reduce((sum, f) => sum + statSync(join(fullPath, f)).size, 0);
-  const pluginsSize = Object.keys(plugins).reduce((sum, name) => sum + fileSize(name), 0);
+  for (const output in entries) {
+    pluginsSize += statSync(join(dir, `${output}.mjs`)).size;
+  }
+
   const coreSize = totalSize - pluginsSize;
-
   return `${formatSize(totalSize)} · core ${formatSize(coreSize)} · plugins ${formatSize(pluginsSize)}`;
+}
+
+function mjsSize(path: string): number {
+  const stat = statSync(path);
+  if (!stat.isDirectory()) return path.endsWith('.mjs') ? stat.size : 0;
+
+  const entries = readdirSync(path);
+  let size = 0;
+
+  for (let i = 0; i < entries.length; i++) {
+    size += mjsSize(join(path, entries[i]));
+  }
+
+  return size;
 }
 
 function copyFilesFromRoot(files: string[]): void {
@@ -80,14 +96,7 @@ function copyFilesFromRoot(files: string[]): void {
 }
 
 function removeDisabledPluginTypes(): void {
-  const srcPlugins = join(root, 'src/plugins');
-  const distPlugins = join(root, 'dist/plugins');
-
-  const allPluginDirs = readdirSync(srcPlugins).filter(name => statSync(join(srcPlugins, name)).isDirectory());
-
-  for (const name of allPluginDirs) {
-    if (!(name in plugins)) {
-      rmSync(join(distPlugins, name), { recursive: true, force: true });
-    }
+  for (let i = 0; i < disabledPluginTypeRoots.length; i++) {
+    rmSync(join(root, disabledPluginTypeRoots[i]), { recursive: true, force: true });
   }
 }

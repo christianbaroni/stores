@@ -1,21 +1,15 @@
 import path from 'path';
 import { defineConfig } from 'tsup';
-import { Platform, plugins, sourcePath } from './build/plugins';
+import { pluginBuildEntries, type Platform } from './build/plugins';
 
 const isProduction = process.env.NODE_ENV === 'production';
 const platform: Platform = process.env.BUILD_TARGET === 'native' ? 'native' : 'web';
 
-const pluginEntries = Object.fromEntries(
-  Object.entries<Platform[]>(plugins)
-    .filter(([, platforms]) => platforms.includes(platform))
-    .map(([name]) => [name, sourcePath(name)])
-);
-
 export default defineConfig({
   clean: true,
   dts: false,
-  entry: { index: 'src/index.ts', ...pluginEntries },
   external: ['react', 'react-native', 'react-native-mmkv'],
+  entry: { index: 'src/index.ts', ...pluginBuildEntries(platform) },
   format: ['esm', 'cjs'],
   minify: isProduction ? 'terser' : false,
   silent: true,

@@ -6,7 +6,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   test: {
-    include: ['src/plugins/**/*.test.ts'],
+    globals: true,
+    include: ['src/hooks/**/*.test.ts', 'src/hooks/**/*.test.tsx', 'src/plugins/**/*.test.ts', 'src/queryStore/vitest/**/*.test.ts'],
     environment: 'node',
     testTimeout: 30_000,
   },
