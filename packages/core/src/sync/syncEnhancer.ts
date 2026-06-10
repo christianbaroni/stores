@@ -253,7 +253,6 @@ export function createSyncedStateCreator<T extends Record<string, unknown>>(
         }
         scheduleProcessUpdate(update);
       },
-      delta: config.delta,
       fields: syncKeys,
       getState: get,
       key: config.key,

@@ -1,4 +1,3 @@
-import { SyncDeltaDescriptor, SyncDeltaPayload } from '../plugins/delta/types';
 import { UnknownFunction } from '../types/functions';
 
 // ============ Field Metadata ================================================= //
@@ -19,19 +18,9 @@ export type SyncValues<T extends Record<string, unknown>> = Partial<T> & {
   [K in SyncStateKey<T>]?: T[K];
 };
 
-// ============ Delta Types =================================================== //
-
-/**
- * Per-field delta configuration. Use `true` to enable with defaults, or provide thresholds.
- */
-export type SyncDeltaConfig<T extends Record<string, unknown>> = Partial<Record<SyncStateKey<T>, SyncDeltaDescriptor | true>>;
-
-export type SyncDeltaMap<T extends Record<string, unknown>> = Partial<Record<SyncStateKey<T>, SyncDeltaPayload<T[SyncStateKey<T>]>>>;
-
 // ============ Sync Update =================================================== //
 
 export type SyncUpdate<T extends Record<string, unknown>> = {
-  deltas?: SyncDeltaMap<T>;
   replace: boolean;
   sessionId: string;
   timestamp: number;
@@ -46,8 +35,6 @@ export type SyncUpdate<T extends Record<string, unknown>> = {
 export type SyncRegistration<T extends Record<string, unknown>> = {
   /** Callback invoked by the engine to apply incoming remote updates to the store. */
   apply: (update: SyncUpdate<T>) => void;
-  /** Per-field delta configuration. Only used by delta-capable engines. */
-  delta?: SyncDeltaConfig<T>;
   /** The state keys to sync. Non-function properties only. */
   fields: ReadonlyArray<SyncStateKey<T>>;
   /** Returns the store's current state. Used by engines that need to read state (e.g., for diffing). */
@@ -122,14 +109,6 @@ export type SyncMergeFn<T, TState = unknown> = (incoming: T, current: T, current
 // ============ Sync Config =================================================== //
 
 export type SyncConfig<T extends Record<string, unknown>> = {
-  /**
-   * The delta configuration for the sync engine.
-   *
-   * Only takes effect when used with delta-enabled engines like `NetworkSyncEngine`.
-   * @default undefined
-   */
-  delta?: SyncDeltaConfig<T>;
-
   /**
    * The sync engine implementation to use.
    *
