@@ -82,6 +82,7 @@
     "build:web": "pnpm run -s prebuild:web && tsup --config tsup.config.ts --out-dir dist/web && pnpm run -s postbuild:web",
     "generate:exports": "tsx --tsconfig scripts/tsconfig.json scripts/generate-exports.ts",
     "lint": "pnpm -w run lint",
+    "lint:circular": "madge --circular --extensions ts,tsx src",
     "lint:eslint": "pnpm -w run lint:eslint",
     "lint:format": "prettier --write --log-level warn --ignore-path ../../.prettierignore .",
     "lint:prettier": "pnpm -w run lint:prettier",

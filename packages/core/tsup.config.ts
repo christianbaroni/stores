@@ -8,8 +8,8 @@ const platform: Platform = process.env.BUILD_TARGET === 'native' ? 'native' : 'w
 export default defineConfig({
   clean: true,
   dts: false,
-  external: ['react', 'react-native', 'react-native-mmkv'],
   entry: { index: 'src/index.ts', ...pluginBuildEntries(platform) },
+  external: ['react', 'react-native', 'react-native-mmkv'],
   format: ['esm', 'cjs'],
   minify: isProduction ? 'terser' : false,
   silent: true,

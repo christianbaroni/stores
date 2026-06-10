@@ -20,7 +20,7 @@ write(`${bold('treeshake:test')}\n\n`);
 
 for (const entry of mjsEntries) {
   const file = join(root, `dist/web/${entry}.mjs`);
-  const cmd = `echo "import '${file}'" | npx esbuild --bundle ${externals} --minify 2>/dev/null`;
+  const cmd = `echo "import '${file}'" | npx esbuild --bundle --platform=node --format=esm ${externals} --minify 2>/dev/null`;
 
   try {
     const output = execSync(cmd, { encoding: 'utf-8' }).trim();
