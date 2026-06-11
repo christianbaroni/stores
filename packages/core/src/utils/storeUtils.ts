@@ -99,10 +99,11 @@ export function isDerivedStore<T extends BaseStore<unknown> | StoreApi<unknown>>
 /**
  * Checks if a store is persisted.
  */
-export function isPersistedStore<T extends BaseStore<unknown>>(
+export function isPersistedStore<T extends BaseStore<unknown> | PersistedStore<unknown>>(
   store: T
 ): store is T & { persist: PersistedStore<InferStoreState<T>>['persist'] } {
-  return 'persist' in store;
+  if (!('persist' in store) || !store.persist) return false;
+  return typeof store.persist.getOptions().name === 'string';
 }
 
 /**

@@ -7,17 +7,22 @@ import {
   InferSetStateReturn,
   InferStoreState,
   OptionallyPersistedStore,
-  PersistedStore,
   Selector,
-  Store as StoreType,
   SubscribeArgs,
   UnsubscribeFn,
 } from './types';
+import { noop } from './utils/core';
 import { StoreTags, destroyStore } from './utils/storeUtils';
 
-type MethodOverrides<Store extends BaseStore<State>, State = InferStoreState<Store>> = Partial<Pick<Store, 'getState' | 'setState'>>;
+type MethodOverrides<Store extends BaseStore<unknown>> = Partial<Pick<Store, 'getState' | 'setState'>>;
 
-type PortableSubscription<Store extends BaseStore<State>, State = InferStoreState<Store>> = {
+type VirtualStore<Store extends BaseStore<unknown>> = OptionallyPersistedStore<
+  InferStoreState<Store>,
+  InferPersistedState<Store>,
+  InferSetStateReturn<Store>
+>;
+
+type PortableSubscription<Store extends BaseStore<unknown>, State = InferStoreState<Store>> = {
   args: SubscribeArgs<State>;
   unsubscribe: UnsubscribeFn;
 };
@@ -59,13 +64,13 @@ type VirtualStoreOptions = {
 export function createVirtualStore<Store extends BaseStore<InferStoreState<Store>>>(
   createStore: ($: DeriveGetter) => Store,
   options?: VirtualStoreOptions
-): OptionallyPersistedStore<InferStoreState<Store>, InferPersistedState<Store>, InferSetStateReturn<Store>>;
+): VirtualStore<Store>;
 
 export function createVirtualStore<Store extends BaseStore<InferStoreState<Store>>, Overrides extends MethodOverrides<Store>>(
   createStore: ($: DeriveGetter) => Store,
   overrides: (getStore: () => Store) => Overrides,
   options?: VirtualStoreOptions
-): OptionallyPersistedStore<InferStoreState<Store>, InferPersistedState<Store>, InferSetStateReturn<Store>> & Overrides;
+): VirtualStore<Store> & Overrides;
 
 export function createVirtualStore<
   Store extends BaseStore<InferStoreState<Store>>,
@@ -74,9 +79,7 @@ export function createVirtualStore<
   createStore: ($: DeriveGetter) => Store,
   overridesOrOptions?: VirtualStoreOptions | ((getStore: () => Store) => Overrides),
   options?: VirtualStoreOptions
-):
-  | StoreType<InferStoreState<Store>, InferPersistedState<Store>, InferSetStateReturn<Store>, false>
-  | (BaseStore<InferStoreState<Store>> & Overrides) {
+): OptionallyPersistedStore<InferStoreState<Store>, InferPersistedState<Store>, void | Promise<void>> & Overrides {
   type State = InferStoreState<Store>;
   type Subscription = PortableSubscription<Store, State>;
 
@@ -93,7 +96,7 @@ export function createVirtualStore<
 
       const args = sub.args;
 
-      /* ────────── Listener-only overload ────────── */
+      // -- Overload #1: single argument (listener)
       if (args.length === 1) {
         const listener = args[0];
         const prev = oldStore.getState();
@@ -102,12 +105,12 @@ export function createVirtualStore<
         // Re-subscribe to the new store
         const newUnsubscribe = newStore.subscribe(listener);
         sub.unsubscribe = newUnsubscribe;
-        // Trigger the listener to handle the store change
+
         if (!Object.is(next, prev)) listener(next, prev);
         continue;
       }
 
-      /* ────────── Selector overload ────────── */
+      // -- Overload #2: (selector, listener, options?)
       const selector = args[0];
       const listener = args[1];
 
@@ -145,11 +148,10 @@ export function createVirtualStore<
   function portableSubscribe(...args: SubscribeArgs<State>): UnsubscribeFn {
     const unsubscribe =
       args.length === 1 ? useCachedStore.getState().subscribe(args[0]) : useCachedStore.getState().subscribe(args[0], args[1], args[2]);
-    const sub: Subscription = {
-      args,
-      unsubscribe,
-    };
+
+    const sub: Subscription = { args, unsubscribe };
     subscriptions.add(sub);
+
     return () => {
       sub.unsubscribe();
       subscriptions.delete(sub);
@@ -163,33 +165,37 @@ export function createVirtualStore<
     return selector ? store(selector, equalityFn) : store();
   }
 
-  const persist = createPersist(() => useCachedStore.getState());
-  const setStateProxy = createSetState(useCachedStore.getState);
-
-  const base = Object.assign(
+  return Object.assign(
     useVirtualStore,
     {
       [StoreTags.VirtualStore]: true,
-      destroy: () => useCachedStore.destroy(),
+      destroy: useCachedStore.destroy,
       getInitialState: () => useCachedStore.getState().getInitialState(),
       getState: () => useCachedStore.getState().getState(),
-      persist,
-      setState: setStateProxy,
+      persist: createPersist<State, InferPersistedState<Store>>(useCachedStore.getState),
+      setState: createSetState(useCachedStore.getState),
       subscribe: portableSubscribe,
     },
-    parsedOverrides ? parsedOverrides(useCachedStore.getState) : undefined
+    parsedOverrides?.(useCachedStore.getState)
   );
-
-  return base;
 }
 
-function createPersist<Store extends OptionallyPersistedStore<State, PersistedState>, PersistedState, State = InferStoreState<Store>>(
-  getStore: () => Store
-): PersistedStore<State, PersistedState>['persist'] | undefined {
-  return getStore().persist;
+function createPersist<State, PersistedState>(
+  getStore: () => OptionallyPersistedStore<State, PersistedState, void | Promise<void>>
+): OptionallyPersistedStore<State, PersistedState, void | Promise<void>>['persist'] {
+  return {
+    clearStorage: () => getStore().persist?.clearStorage(),
+    getOptions: () => getStore().persist?.getOptions() ?? {},
+    hasHydrated: () => getStore().persist?.hasHydrated() ?? true,
+    hydrationPromise: () => getStore().persist?.hydrationPromise?.() ?? Promise.resolve(),
+    onFinishHydration: fn => getStore().persist?.onFinishHydration(fn) ?? noop,
+    onHydrate: fn => getStore().persist?.onHydrate(fn) ?? noop,
+    rehydrate: () => getStore().persist?.rehydrate(),
+    setOptions: options => getStore().persist?.setOptions(options),
+  };
 }
 
-function createSetState<Store extends BaseStore<State>, State = InferStoreState<Store>>(getStore: () => Store): Store['setState'] {
+function createSetState<Store extends BaseStore<unknown>>(getStore: () => Store): Store['setState'] {
   return function setState(update: Parameters<Store['setState']>[0], replace?: boolean): void | Promise<void> {
     if (!replace) return getStore().setState(update);
     return getStore().setState(update, replace);
