@@ -1,9 +1,5 @@
-/**
- * @jest-environment node
- */
-
 import { createHydrationGate } from '../createHydrationGate';
-import { createMockSyncContext } from '../../sync/tests/testUtils';
+import { createSyncContextMock } from '../../tests/syncContext';
 import { SetStateOverloads, StateCreator } from '../../types';
 
 type TestState = { value: number; label?: string };
@@ -29,7 +25,7 @@ describe('createHydrationGate', () => {
         setState,
         getState,
         getInitialState: getState,
-        subscribe: jest.fn(() => jest.fn()),
+        subscribe: vi.fn(() => vi.fn()),
       };
 
       const initialState = stateCreator(setState, getState, api);
@@ -72,17 +68,17 @@ describe('createHydrationGate', () => {
         setState,
         getState,
         getInitialState: getState,
-        subscribe: jest.fn(() => jest.fn()),
+        subscribe: vi.fn(() => vi.fn()),
       };
 
       const initialState = stateCreator(setState, getState, api);
       gatedSet?.({ value: 2 });
 
-      const preFlush = jest.fn();
-      const postFlush = jest.fn();
-      const userCallback = jest.fn();
+      const preFlush = vi.fn();
+      const postFlush = vi.fn();
+      const userCallback = vi.fn();
 
-      const syncContext = createMockSyncContext();
+      const syncContext = createSyncContextMock();
       syncContext.context.onHydrationComplete = preFlush;
       syncContext.context.onHydrationFlushEnd = postFlush;
 
@@ -122,7 +118,7 @@ describe('createHydrationGate', () => {
         setState,
         getState,
         getInitialState: getState,
-        subscribe: jest.fn(() => jest.fn()),
+        subscribe: vi.fn(() => vi.fn()),
       };
 
       const initialState = stateCreator(setState, getState, api);

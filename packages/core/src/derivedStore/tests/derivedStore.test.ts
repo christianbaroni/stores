@@ -1,22 +1,11 @@
-/**
- * @jest-environment node
- */
-
 import { createDerivedStore } from '../../createDerivedStore';
 import { createQueryStore } from '../../createQueryStore';
 import { createBaseStore } from '../../createBaseStore';
 import { QueryStatuses } from '../../queryStore/types';
+import { flushMicrotasks } from '../../tests/async';
 import { SubscribeArgs, SubscribeOverloads } from '../../types';
 import { deepEqual } from '../../utils/equality';
 import { hasGetSnapshot } from '../../utils/storeUtils';
-
-/**
- * `createDerivedStore` uses `queueMicrotask` to batch updates, so we use
- * this to flush any pending operations before checking for state changes.
- */
-async function flushMicrotasks(): Promise<void> {
-  await Promise.resolve();
-}
 
 describe('createDerivedStore', () => {
   // ──────────────────────────────────────────────
@@ -38,7 +27,7 @@ describe('createDerivedStore', () => {
       // Initially no watchers => no derivation
       expect(deriveCount).toBe(0);
 
-      const watcher = jest.fn();
+      const watcher = vi.fn();
       const unsubscribe = useDerived.subscribe(watcher);
       await flushMicrotasks();
 
@@ -83,7 +72,7 @@ describe('createDerivedStore', () => {
         return count % 2 === 0 ? 'even' : 'odd';
       });
 
-      const watcher = jest.fn();
+      const watcher = vi.fn();
       const unsubscribe = useDerived.subscribe(watcher);
       await flushMicrotasks();
 
@@ -138,9 +127,9 @@ describe('createDerivedStore', () => {
         };
       });
 
-      const rowsWatcher = jest.fn();
-      const nestedRowsWatcher = jest.fn();
-      const profileWatcher = jest.fn();
+      const rowsWatcher = vi.fn();
+      const nestedRowsWatcher = vi.fn();
+      const profileWatcher = vi.fn();
       const unsubscribe = useDerived.subscribe(state => state.rows, rowsWatcher);
       const unsubscribeNestedRows = useDerived.subscribe(state => state.nested.rows, nestedRowsWatcher);
       const unsubscribeProfile = useDerived.subscribe(state => state.profiles[0], profileWatcher);
@@ -202,7 +191,7 @@ describe('createDerivedStore', () => {
         return output;
       });
 
-      const rowsWatcher = jest.fn();
+      const rowsWatcher = vi.fn();
       const unsubscribe = useDerived.subscribe(state => state.nested.rows, rowsWatcher);
       await flushMicrotasks();
 
@@ -252,7 +241,7 @@ describe('createDerivedStore', () => {
         return { nested: { state } };
       });
 
-      const watcher = jest.fn();
+      const watcher = vi.fn();
       const unsubscribe = useDerived.subscribe(state => state.nested.state.count, watcher);
       await flushMicrotasks();
 
@@ -329,7 +318,7 @@ describe('createDerivedStore', () => {
         return { list: [state] };
       });
 
-      const watcher = jest.fn();
+      const watcher = vi.fn();
       const unsubscribe = useDerived.subscribe(state => state.list[0].count, watcher);
       await flushMicrotasks();
 
@@ -384,7 +373,7 @@ describe('createDerivedStore', () => {
         return { list: [{ state }] };
       });
 
-      const watcher = jest.fn();
+      const watcher = vi.fn();
       const unsubscribe = useDerived.subscribe(state => state.list[0].state.count, watcher);
       await flushMicrotasks();
 
@@ -418,7 +407,7 @@ describe('createDerivedStore', () => {
         return [state, state.rows];
       });
 
-      const watcher = jest.fn();
+      const watcher = vi.fn();
       const unsubscribe = useDerived.subscribe(state => state[0].count, watcher);
       await flushMicrotasks();
 
@@ -450,7 +439,7 @@ describe('createDerivedStore', () => {
         };
       });
 
-      const watcher = jest.fn();
+      const watcher = vi.fn();
       const unsubscribe = useDerived.subscribe(state => state.list[0].state.count, watcher);
       await flushMicrotasks();
 
@@ -528,7 +517,7 @@ describe('createDerivedStore', () => {
         return $(baseStore).user.profile.email;
       });
 
-      const watcher = jest.fn();
+      const watcher = vi.fn();
       const unsubscribe = useDerived.subscribe(watcher);
       await flushMicrotasks();
 
@@ -577,7 +566,7 @@ describe('createDerivedStore', () => {
         return $(baseStore, s => s.data.key1);
       });
 
-      const watcher = jest.fn();
+      const watcher = vi.fn();
       const unsubscribe = useDerived.subscribe(watcher);
       await flushMicrotasks();
 
@@ -681,7 +670,7 @@ describe('createDerivedStore', () => {
         return value;
       });
 
-      const watcher = jest.fn();
+      const watcher = vi.fn();
       const unsubscribe = useDerived.subscribe(watcher);
 
       // First derivation => watchers=0
@@ -774,10 +763,10 @@ describe('createDerivedStore', () => {
   // ──────────────────────────────────────────────
   describe('Debounce Option', () => {
     beforeEach(() => {
-      jest.useFakeTimers();
+      vi.useFakeTimers();
     });
     afterEach(() => {
-      jest.useRealTimers();
+      vi.useRealTimers();
     });
 
     it('should batch multiple updates within a debounce window and notify watchers with the final derived value', async () => {
@@ -792,7 +781,7 @@ describe('createDerivedStore', () => {
         { debounce: 50 }
       );
 
-      const watcher = jest.fn();
+      const watcher = vi.fn();
       const unsubscribe = useDerived.subscribe(watcher);
 
       // First derivation => watchers=0
@@ -807,8 +796,7 @@ describe('createDerivedStore', () => {
       await flushMicrotasks();
 
       // No immediate re-derive, still within debounce
-      jest.advanceTimersByTime(50);
-      await flushMicrotasks();
+      await vi.advanceTimersByTimeAsync(50);
 
       // Single final re-derive => watchers=1
       expect(deriveCount).toBe(2);
@@ -836,8 +824,7 @@ describe('createDerivedStore', () => {
       expect(deriveCount).toBe(1);
 
       baseStore.setState({ val: 1 });
-      jest.advanceTimersByTime(50);
-      await flushMicrotasks();
+      await vi.advanceTimersByTimeAsync(50);
 
       expect(deriveCount).toBe(1);
       expect(useDerived.getSnapshot()).toBe(1);
@@ -855,12 +842,11 @@ describe('createDerivedStore', () => {
       baseStore.setState({ val: 1 });
       unsubscribeFirst();
 
-      const watcher = jest.fn();
+      const watcher = vi.fn();
       const unsubscribeSecond = useDerived.subscribe(watcher);
       await flushMicrotasks();
 
-      jest.advanceTimersByTime(50);
-      await flushMicrotasks();
+      await vi.advanceTimersByTimeAsync(50);
 
       expect(watcher).toHaveBeenCalledTimes(1);
       expect(watcher).toHaveBeenLastCalledWith(1, 0);
@@ -1143,7 +1129,7 @@ describe('createDerivedStore', () => {
   // ──────────────────────────────────────────────
   describe('Usage with createQueryStore', () => {
     it('should derive from the query store and only notify watchers if the final derived output changes', async () => {
-      const fetcher = jest.fn(async () => 'some-data');
+      const fetcher = vi.fn(async () => 'some-data');
       const queryStore = createQueryStore<string>({ fetcher });
 
       let deriveCount = 0;
@@ -1153,7 +1139,7 @@ describe('createDerivedStore', () => {
         return { data: getData(), status };
       });
 
-      const watcher = jest.fn();
+      const watcher = vi.fn();
       const unsubscribe = useDerived.subscribe(watcher);
 
       // First derive => watchers=0
@@ -1196,7 +1182,7 @@ describe('createDerivedStore', () => {
         });
 
         // Simulate React component subscription via useSyncExternalStore (selector-based)
-        const watcher = jest.fn();
+        const watcher = vi.fn();
         const unsubscribe = useDerived.subscribe(s => s, watcher);
         if (hasGetSnapshot(useDerived)) {
           useDerived.getSnapshot(); // Trigger initial derivation like React does
@@ -1256,7 +1242,7 @@ describe('createDerivedStore', () => {
         });
 
         // Subscribe to grandchild to activate the chain (component watcher only at the end)
-        const watcher = jest.fn();
+        const watcher = vi.fn();
         const unsubscribe = useGrandchild.subscribe(s => s, watcher);
         if (hasGetSnapshot(useGrandchild)) {
           useGrandchild.getSnapshot();
@@ -1316,7 +1302,7 @@ describe('createDerivedStore', () => {
           return value;
         });
 
-        const childWatcher = jest.fn();
+        const childWatcher = vi.fn();
         const unsubChild = useChild.subscribe(s => s, childWatcher);
         if (hasGetSnapshot(useChild)) {
           useChild.getSnapshot();
@@ -1324,7 +1310,7 @@ describe('createDerivedStore', () => {
 
         // Add a component watcher (selector-based, non-derived) - simulates React
         const componentValues: number[] = [];
-        const componentWatcher = jest.fn((val: number) => {
+        const componentWatcher = vi.fn((val: number) => {
           componentValues.push(val);
         });
         const unsubComponent = useParent.subscribe(s => s, componentWatcher);
@@ -1383,7 +1369,7 @@ describe('createDerivedStore', () => {
         });
 
         // Start with component watcher only (batched mode) - selector-based like React
-        const componentWatcher = jest.fn();
+        const componentWatcher = vi.fn();
         const unsubComponent = useDerived.subscribe(s => s, componentWatcher);
         if (hasGetSnapshot(useDerived)) {
           useDerived.getSnapshot();
@@ -1408,7 +1394,7 @@ describe('createDerivedStore', () => {
           return $(useDerived) + 100;
         });
 
-        const childWatcher = jest.fn();
+        const childWatcher = vi.fn();
         const unsubChild = useChild.subscribe(s => s, childWatcher);
         if (hasGetSnapshot(useChild)) {
           useChild.getSnapshot();
@@ -1545,8 +1531,8 @@ describe('createDerivedStore', () => {
       });
 
       const watchers = {
-        left: jest.fn(),
-        final: jest.fn(),
+        left: vi.fn(),
+        final: vi.fn(),
       };
 
       const unsubLeft = useLeft.subscribe(s => s, watchers.left);

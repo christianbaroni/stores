@@ -1,13 +1,6 @@
-/**
- * @jest-environment node
- */
-
 import { createBaseStore } from '../../createBaseStore';
 import { createDerivedStore } from '../../createDerivedStore';
-
-async function flushMicrotasks(): Promise<void> {
-  await Promise.resolve();
-}
+import { flushMicrotasks } from '../../tests/async';
 
 function expectDefined<T>(value: T | undefined): T {
   if (value === undefined) throw new Error('Expected value to be defined');

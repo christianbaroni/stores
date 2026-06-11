@@ -1,15 +1,10 @@
-/**
- * @jest-environment node
- */
-
 import { createBaseStore } from '../../createBaseStore';
 import { createQueryStore, getQueryKey } from '../../createQueryStore';
 import { QueryStatuses } from '../../queryStore/types';
 import { createAsyncStorageMock } from '../../storage/tests/storageCreators.test';
-import { flushMacrotask } from '../../sync/tests/testUtils';
+import { flushMacrotask } from '../../tests/async';
 import { time } from '../../utils/time';
 
-// For these tests we use a simple type for the fetched data and query parameters.
 type TestData = string;
 type TestParams = { id: number };
 
@@ -19,7 +14,7 @@ describe('createQueryStore', () => {
   // ──────────────────────────────────────────────
   describe('Initialization', () => {
     it('should initialize the current query key before activation', () => {
-      const fetcher = jest.fn(async (params: TestParams) => {
+      const fetcher = vi.fn(async (params: TestParams) => {
         return `data-${params.id}`;
       });
       const store = createQueryStore<TestData, TestParams>({
@@ -40,7 +35,7 @@ describe('createQueryStore', () => {
   // ──────────────────────────────────────────────
   describe('Successful Fetch', () => {
     it('should fetch data successfully and update store state', async () => {
-      const fetcher = jest.fn(async (params: TestParams) => {
+      const fetcher = vi.fn(async (params: TestParams) => {
         return `data-${params.id}`;
       });
       const store = createQueryStore<TestData, TestParams>({
@@ -69,10 +64,10 @@ describe('createQueryStore', () => {
   // ──────────────────────────────────────────────
   describe('Error Handling and Retry', () => {
     it('should handle fetch errors and update state with error and retry count', async () => {
-      const fetcher = jest.fn(async () => {
+      const fetcher = vi.fn(async () => {
         throw new Error('Fetch failed');
       });
-      const onError = jest.fn();
+      const onError = vi.fn();
       const maxRetries = 2;
       const store = createQueryStore<TestData, TestParams>({
         fetcher,
@@ -83,21 +78,21 @@ describe('createQueryStore', () => {
       });
 
       // Use fake timers because retries are scheduled via setTimeout.
-      jest.useFakeTimers();
+      vi.useFakeTimers();
 
       const fetchPromise = store.getState().fetch();
       // Fast-forward timers so that any scheduled retry happens.
-      jest.runAllTimers();
+      vi.runAllTimers();
       const result = await fetchPromise;
       expect(result).toBeNull();
 
       const fetchPromise2 = store.getState().fetch();
-      jest.runAllTimers();
+      vi.runAllTimers();
       const result2 = await fetchPromise2;
       expect(result2).toBeNull();
 
       const fetchPromise3 = store.getState().fetch();
-      jest.runAllTimers();
+      vi.runAllTimers();
       const result3 = await fetchPromise3;
       expect(result3).toBeNull();
 
@@ -112,7 +107,7 @@ describe('createQueryStore', () => {
       const cacheEntry = state.queryCache[queryKey];
       expect(cacheEntry).toBeDefined();
       expect(cacheEntry?.errorInfo?.retryCount).toBe(maxRetries);
-      jest.useRealTimers();
+      vi.useRealTimers();
     });
   });
 
@@ -127,7 +122,7 @@ describe('createQueryStore', () => {
       }));
 
       let firstFetchAborted = false;
-      const fetcher = jest.fn((params: TestParams, controller: AbortController | null) => {
+      const fetcher = vi.fn((params: TestParams, controller: AbortController | null) => {
         if (params.id !== 1) return Promise.resolve(`data-${params.id}`);
 
         const firstAbortSignal = controller?.signal;
@@ -176,7 +171,7 @@ describe('createQueryStore', () => {
   // ──────────────────────────────────────────────
   describe('Skip Store Updates Option', () => {
     it('should perform fetch without updating store state when skipStoreUpdates is true', async () => {
-      const fetcher = jest.fn(async (params: TestParams) => {
+      const fetcher = vi.fn(async (params: TestParams) => {
         return `data-${params.id}`;
       });
       const store = createQueryStore<TestData, TestParams>({
@@ -199,7 +194,7 @@ describe('createQueryStore', () => {
   // ──────────────────────────────────────────────
   describe('Cache and Staleness', () => {
     it('should return cached data when not stale', async () => {
-      const fetcher = jest.fn(async (params: TestParams) => {
+      const fetcher = vi.fn(async (params: TestParams) => {
         return `data-${params.id}`;
       });
       const staleTime = time.minutes(5);
@@ -222,8 +217,8 @@ describe('createQueryStore', () => {
     });
 
     it('should refetch data when stale', async () => {
-      jest.useFakeTimers();
-      const fetcher = jest.fn(async (params: TestParams) => {
+      vi.useFakeTimers();
+      const fetcher = vi.fn(async (params: TestParams) => {
         return `data-${params.id}`;
       });
       const staleTime = time.seconds(1);
@@ -239,13 +234,13 @@ describe('createQueryStore', () => {
       expect(fetcher).toHaveBeenCalledTimes(1);
 
       // Advance time past the stale threshold.
-      jest.advanceTimersByTime(1100);
+      vi.advanceTimersByTime(1100);
 
       // Next fetch should trigger a new fetch because the cached data is stale.
       const result2 = await store.getState().fetch();
       expect(result2).toBe('data-5');
       expect(fetcher).toHaveBeenCalledTimes(2);
-      jest.useRealTimers();
+      vi.useRealTimers();
     });
   });
 
@@ -254,7 +249,7 @@ describe('createQueryStore', () => {
   // ──────────────────────────────────────────────
   describe('Manual Fetch with Force Option', () => {
     it('should override cache when force is true', async () => {
-      const fetcher = jest.fn(async (params: TestParams) => {
+      const fetcher = vi.fn(async (params: TestParams) => {
         return `data-${params.id}-${Math.random()}`;
       });
       const store = createQueryStore<TestData, TestParams>({
@@ -281,7 +276,7 @@ describe('createQueryStore', () => {
   // ──────────────────────────────────────────────
   describe('Reset Functionality and Param-Less Query Keys', () => {
     it('should reset store state to initial values', async () => {
-      const fetcher = jest.fn(async (params?: { id?: number }) => {
+      const fetcher = vi.fn(async (params?: { id?: number }) => {
         return `data-${params?.id ?? 0}`;
       });
       const store = createQueryStore<TestData, { id?: number }>({
@@ -310,10 +305,10 @@ describe('createQueryStore', () => {
   // ──────────────────────────────────────────────
   describe('onFetched Callback', () => {
     it('should call onFetched callback on successful fetch', async () => {
-      const fetcher = jest.fn(async (params: TestParams) => {
+      const fetcher = vi.fn(async (params: TestParams) => {
         return `data-${params.id}`;
       });
-      const onFetched = jest.fn();
+      const onFetched = vi.fn();
       const store = createQueryStore<TestData, TestParams>({
         fetcher,
         onFetched,
@@ -323,7 +318,6 @@ describe('createQueryStore', () => {
       const result = await store.getState().fetch();
       expect(result).toBe('data-8');
       expect(onFetched).toHaveBeenCalled();
-      // Verify that the callback receives the expected properties.
       const callbackArg = onFetched.mock.calls[0][0];
       expect(callbackArg.data).toBe('data-8');
       expect(typeof callbackArg.fetch).toBe('function');
@@ -339,7 +333,7 @@ describe('createQueryStore', () => {
     it('should use custom setData callback to update store state', async () => {
       // Here we define a custom store state type that includes a custom field.
       type CustomState = { customData: TestData | null };
-      const fetcher = jest.fn(async (params: TestParams) => {
+      const fetcher = vi.fn(async (params: TestParams) => {
         return `data-${params.id}`;
       });
       const store = createQueryStore<TestData, TestParams, CustomState>(
@@ -379,7 +373,7 @@ describe('createQueryStore', () => {
       let resolveFn: (value: { data: string }) => void = () => {
         return;
       };
-      const fetcher = jest.fn(async () => {
+      const fetcher = vi.fn(async () => {
         return new Promise<{ data: string }>(resolve => {
           resolveFn = resolve;
         });
@@ -412,13 +406,13 @@ describe('createQueryStore', () => {
   // ──────────────────────────────────────────────
   describe('Automatic Refetch Scheduling', () => {
     beforeEach(() => {
-      jest.useFakeTimers();
+      vi.useFakeTimers();
     });
     afterEach(() => {
-      jest.useRealTimers();
+      vi.useRealTimers();
     });
     it('should schedule a refetch when data becomes stale', async () => {
-      const fetcher = jest.fn(async (params: TestParams) => {
+      const fetcher = vi.fn(async (params: TestParams) => {
         return `data-${params.id}`;
       });
       const staleTime = time.seconds(1);
@@ -436,7 +430,7 @@ describe('createQueryStore', () => {
         return;
       });
       // Advance timers past the stale threshold.
-      jest.advanceTimersByTime(1100);
+      vi.advanceTimersByTime(1100);
       // Allow any scheduled promise resolution.
       await Promise.resolve();
       expect(fetcher).toHaveBeenCalledTimes(2);
@@ -449,7 +443,7 @@ describe('createQueryStore', () => {
   // ──────────────────────────────────────────────
   describe('Manual Fetch Parameters', () => {
     it('should not move the current query key when fetching custom params', async () => {
-      const fetcher = jest.fn(async (params: TestParams) => {
+      const fetcher = vi.fn(async (params: TestParams) => {
         return `data-${params.id}`;
       });
       const store = createQueryStore<TestData, TestParams>({
@@ -480,7 +474,7 @@ describe('createQueryStore', () => {
         setEnabled: value => set({ enabled: value }),
       }));
 
-      const fetcher = jest.fn(async (params: TestParams) => {
+      const fetcher = vi.fn(async (params: TestParams) => {
         return `data-${params.id}`;
       });
 
@@ -522,7 +516,7 @@ describe('createQueryStore', () => {
       let abortSignal: AbortSignal | null = null;
       // Create a fetcher that never resolves (simulating a long-running request)
       // and listens for an abort event.
-      const fetcher = jest.fn((params: TestParams, controller: AbortController | null) => {
+      const fetcher = vi.fn((params: TestParams, controller: AbortController | null) => {
         abortSignal = controller ? controller.signal : null;
         return new Promise<TestData>((_resolve, reject) => {
           if (abortSignal) {
@@ -545,7 +539,7 @@ describe('createQueryStore', () => {
     // Enabled Toggling
     // ──────────────────────────────────────────────
     it('should trigger a fetch when enabled toggles from false to true', async () => {
-      const fetcher = jest.fn(async (params: TestParams) => {
+      const fetcher = vi.fn(async (params: TestParams) => {
         return `data-${params.id}`;
       });
       // Start with the store disabled.
@@ -575,8 +569,8 @@ describe('createQueryStore', () => {
     // Auto-Refetch Cancellation on Unsubscribe
     // ──────────────────────────────────────────────
     it('should cancel scheduled refetch when all subscriptions are removed', async () => {
-      jest.useFakeTimers();
-      const fetcher = jest.fn(async (params: TestParams) => {
+      vi.useFakeTimers();
+      const fetcher = vi.fn(async (params: TestParams) => {
         return `data-${params.id}`;
       });
       // Set a very short staleTime so that a refetch is scheduled.
@@ -594,19 +588,19 @@ describe('createQueryStore', () => {
 
       expect(fetcher).toHaveBeenCalledTimes(1);
 
-      await jest.advanceTimersByTimeAsync(time.seconds(0.25));
+      await vi.advanceTimersByTimeAsync(time.seconds(0.25));
 
       expect(fetcher).toHaveBeenCalledTimes(2);
 
       // Now remove all subscriptions.
       unsubscribe();
       // Advance timers past the staleTime.
-      await jest.advanceTimersByTimeAsync(time.seconds(0.5));
+      await vi.advanceTimersByTimeAsync(time.seconds(0.5));
       // Allow any scheduled promise to resolve.
       await Promise.resolve();
       // Since there are no subscribers, the scheduled refetch should not occur.
       expect(fetcher).toHaveBeenCalledTimes(2);
-      jest.useRealTimers();
+      vi.useRealTimers();
     });
   });
 
@@ -630,7 +624,7 @@ describe('createQueryStore', () => {
     it('should support async storage with Promise<void> return type for setState', async () => {
       const mockAsyncStorage = createAsyncStorageMock();
 
-      const fetcher = jest.fn(async (params: TestParams) => {
+      const fetcher = vi.fn(async (params: TestParams) => {
         return `data-${params.id}`;
       });
 

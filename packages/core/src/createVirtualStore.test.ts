@@ -1,7 +1,3 @@
-/**
- * @jest-environment node
- */
-
 import { createBaseStore } from './createBaseStore';
 import { createVirtualStore } from './createVirtualStore';
 import { createAsyncStorageMock, createSyncStorageMock } from './storage/tests/storageCreators.test';

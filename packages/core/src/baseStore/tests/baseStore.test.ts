@@ -1,22 +1,18 @@
-/**
- * @jest-environment node
- */
-
 import { createBaseStore } from '../../createBaseStore';
 import { StoresError } from '../../errors';
-import { flushMacrotask } from '../../sync/tests/testUtils';
+import { flushMacrotask } from '../../tests/async';
 import { AsyncStorageInterface, OptionallyPersistedStore, PersistedStore } from '../../types';
 import { isPlainObject } from '../../types/utils';
 
 const storage: AsyncStorageInterface & { map: Map<string, string> } = {
   async: true,
   map: new Map<string, string>(),
-  clearAll: jest.fn(() => Promise.resolve(storage.map.clear())),
-  contains: jest.fn((key: string) => Promise.resolve(storage.map.has(key))),
-  delete: jest.fn((key: string) => Promise.resolve(void storage.map.delete(key))),
-  get: jest.fn((key: string) => Promise.resolve(storage.map.get(key))),
-  getAllKeys: jest.fn(() => Promise.resolve(Array.from(storage.map.keys()))),
-  set: jest.fn((key: string, value: string) => Promise.resolve(void storage.map.set(key, value))),
+  clearAll: vi.fn(() => Promise.resolve(storage.map.clear())),
+  contains: vi.fn((key: string) => Promise.resolve(storage.map.has(key))),
+  delete: vi.fn((key: string) => Promise.resolve(void storage.map.delete(key))),
+  get: vi.fn((key: string) => Promise.resolve(storage.map.get(key))),
+  getAllKeys: vi.fn(() => Promise.resolve(Array.from(storage.map.keys()))),
+  set: vi.fn((key: string, value: string) => Promise.resolve(void storage.map.set(key, value))),
 };
 
 type CounterState = { count: number; nested: { value: string; items?: string[] } };
@@ -25,7 +21,7 @@ type PersistEnvelope<T> = Readonly<{ state: T; version: number }>;
 describe('createBaseStore / persistence + hydration', () => {
   beforeEach(() => {
     storage.map.clear();
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   test('hydrates with custom merge (called with persisted->current) and uses merge result', async () => {
@@ -40,7 +36,7 @@ describe('createBaseStore / persistence + hydration', () => {
       );
     }
 
-    const merge = jest.fn((persisted: unknown, current: CounterState): CounterState => {
+    const merge = vi.fn((persisted: unknown, current: CounterState): CounterState => {
       if (!isCounterState(persisted)) throw new Error('Invalid persisted state');
       const p = persisted;
       return {
@@ -57,7 +53,7 @@ describe('createBaseStore / persistence + hydration', () => {
     await store.persist.hydrationPromise();
 
     expect(merge).toHaveBeenCalledTimes(1);
-    const [argPersisted, argCurrent] = merge.mock.calls[0]!;
+    const [argPersisted, argCurrent] = merge.mock.calls[0];
     expect(argPersisted).toEqual({ count: 5, nested: { value: 'persisted', items: ['a', 'b'] } });
     expect(argCurrent).toEqual(initial);
 
@@ -98,14 +94,14 @@ describe('createBaseStore / persistence + hydration', () => {
       );
     }
 
-    const migrate = jest.fn((persisted: unknown, targetVersion: number): V2 => {
+    const migrate = vi.fn((persisted: unknown, targetVersion: number): V2 => {
       if (!isV1(persisted)) throw new Error('Invalid persisted state');
       const v1 = persisted;
       // Upgrade: bump version, keep count
       return { count: v1.count, version: targetVersion };
     });
 
-    const merge = jest.fn((persisted: unknown, current: V2): V2 => {
+    const merge = vi.fn((persisted: unknown, current: V2): V2 => {
       if (!isV1(persisted)) throw new Error('Invalid persisted state');
       const p = persisted;
       return { count: current.count + p.count, version: current.version };
@@ -121,7 +117,6 @@ describe('createBaseStore / persistence + hydration', () => {
 
     await store.persist.hydrationPromise();
 
-    // Call order: migrate then merge
     expect(migrate).toHaveBeenCalledTimes(1);
     expect(merge).toHaveBeenCalledTimes(1);
     expect(migrate.mock.invocationCallOrder[0]).toBeLessThan(merge.mock.invocationCallOrder[0]);
@@ -132,7 +127,7 @@ describe('createBaseStore / persistence + hydration', () => {
 
   test('partialize shapes the write-path only (persisted envelope minimal); hydration preserves non-persisted fields from initial', async () => {
     type S = { count: number; temp: string };
-    const partialize = jest.fn((s: S) => ({ count: s.count })); // only persist count
+    const partialize = vi.fn((s: S) => ({ count: s.count }));
 
     const storageKey = 'test-partialize';
     const store = createBaseStore<S>(() => ({ count: 0, temp: 'init' }), {
@@ -147,7 +142,7 @@ describe('createBaseStore / persistence + hydration', () => {
 
     const written = readPersisted<Partial<S>>(storageKey);
     expect(written).toBeDefined();
-    expect(written!.state).toEqual({ count: 7 });
+    expect(written?.state).toEqual({ count: 7 });
     expect(partialize).toHaveBeenCalled();
 
     // Now simulate a fresh process: reset store state, seed only the persisted part, then rehydrate

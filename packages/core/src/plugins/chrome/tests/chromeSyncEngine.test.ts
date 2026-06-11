@@ -1,13 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createBaseStore } from '../../../createBaseStore';
+import { flushMacrotask } from '../../../tests/async';
 import { ChromeExtensionSyncEngine } from '../chromeExtensionSyncEngine';
 import { ChromeStorageAdapter } from '../chromeStorageAdapter';
 import { MockChromeStorage, setupMockChrome, cleanupMockChrome } from './mockChromeStorage';
-
-// Wait for pending microtasks to complete (for storage events to propagate)
-const waitForMicrotasks = async (): Promise<void> => {
-  await new Promise(resolve => setTimeout(resolve, 0));
-};
 
 describe('ChromeExtensionSyncEngine', () => {
   let mockStorage: MockChromeStorage;
@@ -84,7 +80,7 @@ describe('ChromeExtensionSyncEngine', () => {
     expect(store1.getState().count).toBe(1);
 
     // Wait for sync to propagate
-    await waitForMicrotasks();
+    await flushMacrotask();
 
     // store2 should receive the update
     expect(store2.getState().count).toBe(1);
@@ -95,7 +91,7 @@ describe('ChromeExtensionSyncEngine', () => {
     expect(store2.getState().count).toBe(3);
 
     // Wait for sync to propagate
-    await waitForMicrotasks();
+    await flushMacrotask();
 
     // store1 should receive the updates
     expect(store1.getState().count).toBe(3);
@@ -142,7 +138,7 @@ describe('ChromeExtensionSyncEngine', () => {
     expect(todostore1.getState().todos).toHaveLength(1);
     expect(todostore1.getState().todos[0].text).toBe('Buy groceries');
 
-    await waitForMicrotasks();
+    await flushMacrotask();
 
     // store2 should receive the new todo
     expect(todostore2.getState().todos).toHaveLength(1);
@@ -153,7 +149,7 @@ describe('ChromeExtensionSyncEngine', () => {
     todostore2.getState().addTodo('Walk the dog');
     expect(todostore2.getState().todos).toHaveLength(2);
 
-    await waitForMicrotasks();
+    await flushMacrotask();
 
     // store1 should receive the update
     expect(todostore1.getState().todos).toHaveLength(2);
@@ -166,7 +162,7 @@ describe('ChromeExtensionSyncEngine', () => {
       todostore1.getState().toggleTodo(todo2.id);
       expect(todostore1.getState().todos.find(t => t.id === todo2.id)?.completed).toBe(true);
 
-      await waitForMicrotasks();
+      await flushMacrotask();
 
       // store2 should receive the toggle
       expect(todostore2.getState().todos.find(t => t.id === todo2.id)?.completed).toBe(true);
@@ -176,7 +172,7 @@ describe('ChromeExtensionSyncEngine', () => {
     todostore2.getState().setFilter('completed');
     expect(todostore2.getState().filter).toBe('completed');
 
-    await waitForMicrotasks();
+    await flushMacrotask();
 
     // store1 should receive the filter change
     expect(todostore1.getState().filter).toBe('completed');
@@ -222,7 +218,7 @@ describe('ChromeExtensionSyncEngine', () => {
     expect(store1.getState().count).toBe(5);
 
     // Wait for all updates to propagate
-    await waitForMicrotasks();
+    await flushMacrotask();
 
     // store2 should eventually have the final count
     expect(store2.getState().count).toBe(5);
@@ -270,7 +266,7 @@ describe('ChromeExtensionSyncEngine', () => {
     store1.getState().updateSynced('synced-value');
     expect(store1.getState().syncedField).toBe('synced-value');
 
-    await waitForMicrotasks();
+    await flushMacrotask();
 
     // store2 should receive the synced field update
     expect(store2.getState().syncedField).toBe('synced-value');
@@ -279,7 +275,7 @@ describe('ChromeExtensionSyncEngine', () => {
     store1.getState().updateLocal('local1-updated');
     expect(store1.getState().localField).toBe('local1-updated');
 
-    await waitForMicrotasks();
+    await flushMacrotask();
 
     // store2's local field should NOT change
     expect(store2.getState().localField).toBe('local2');
@@ -288,7 +284,7 @@ describe('ChromeExtensionSyncEngine', () => {
     store2.getState().updateLocal('local2-updated');
     expect(store2.getState().localField).toBe('local2-updated');
 
-    await waitForMicrotasks();
+    await flushMacrotask();
 
     // store1's local field should NOT change
     expect(store1.getState().localField).toBe('local1-updated');
@@ -365,7 +361,7 @@ describe('ChromeExtensionSyncEngine', () => {
     storeA1.getState().updateA(42);
     expect(storeA1.getState().valueA).toBe(42);
 
-    await waitForMicrotasks();
+    await flushMacrotask();
 
     // Only storeA2 should receive the update, not storeB2
     expect(storeA2.getState().valueA).toBe(42);
@@ -375,7 +371,7 @@ describe('ChromeExtensionSyncEngine', () => {
     storeB2.getState().updateB('updated');
     expect(storeB2.getState().valueB).toBe('updated');
 
-    await waitForMicrotasks();
+    await flushMacrotask();
 
     // Only storeB1 should receive the update, not storeA1
     expect(storeB1.getState().valueB).toBe('updated');
@@ -434,7 +430,7 @@ describe('ChromeExtensionSyncEngine', () => {
     expect(store1.getState().message).toBe('from store1');
 
     // Wait for sync
-    await waitForMicrotasks();
+    await flushMacrotask();
 
     // store2 should receive the updates
     expect(store2.getState().counter).toBe(2);
@@ -448,7 +444,7 @@ describe('ChromeExtensionSyncEngine', () => {
     expect(store2.getState().message).toBe('from store2');
 
     // Wait for sync
-    await waitForMicrotasks();
+    await flushMacrotask();
 
     // store1 should receive the updates
     expect(store1.getState().counter).toBe(3);
@@ -494,7 +490,7 @@ describe('ChromeExtensionSyncEngine', () => {
     // Update store1
     store1.getState().setValue(100);
 
-    await waitForMicrotasks();
+    await flushMacrotask();
 
     // Subscriber should be called when store2 receives the update
     expect(subscriber).toHaveBeenCalled();
@@ -506,7 +502,7 @@ describe('ChromeExtensionSyncEngine', () => {
     // Update again
     store1.getState().setValue(200);
 
-    await waitForMicrotasks();
+    await flushMacrotask();
 
     // store2 should still be synced (sync is independent of subscriptions)
     expect(store2.getState().value).toBe(200);

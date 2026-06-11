@@ -5,7 +5,7 @@
     "moduleResolution": "node",
     "jsx": "react-jsx",
     "lib": ["ES2021", "DOM", "DOM.Iterable"],
-    "types": ["node", "jest"],
+    "types": ["node", "vitest/globals"],
     "outDir": "dist",
     "declaration": true,
     "declarationDir": "dist",

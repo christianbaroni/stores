@@ -1,51 +1,54 @@
-/**
- * @jest-environment node
- */
-
+import { type Mock } from 'vitest';
 import { createPersistStorage } from '../../storage/storageCreators';
 import { SyncContext } from '../../sync/syncEnhancer';
-import { createMockSyncContext } from '../../sync/tests/testUtils';
+import { createSyncContextMock } from '../../tests/syncContext';
 
 type SyncStorageMock = {
-  get: jest.Mock<string | undefined, [string]>;
-  set: jest.Mock<void, [string, string]>;
-  delete: jest.Mock<void, [string]>;
-  clearAll: jest.Mock<void, []>;
-  contains: jest.Mock<boolean, [string]>;
-  getAllKeys: jest.Mock<string[], []>;
+  get: Mock<(key: string) => string | undefined>;
+  set: Mock<(key: string, value: string) => void>;
+  delete: Mock<(key: string) => void>;
+  clearAll: Mock<() => void>;
+  contains: Mock<(key: string) => boolean>;
+  getAllKeys: Mock<() => string[]>;
   async: false;
 };
 
 type AsyncStorageMock = {
-  get: jest.Mock<Promise<string | undefined>, [string]>;
-  set: jest.Mock<Promise<void>, [string, string]>;
-  delete: jest.Mock<Promise<void>, [string]>;
-  clearAll: jest.Mock<Promise<void>, []>;
-  contains: jest.Mock<Promise<boolean>, [string]>;
-  getAllKeys: jest.Mock<Promise<string[]>, []>;
+  get: Mock<(key: string) => Promise<string | undefined>>;
+  set: Mock<(key: string, value: string) => Promise<void>>;
+  delete: Mock<(key: string) => Promise<void>>;
+  clearAll: Mock<() => Promise<void>>;
+  contains: Mock<(key: string) => Promise<boolean>>;
+  getAllKeys: Mock<() => Promise<string[]>>;
   async: true;
 };
 
+/**
+ * Creates a synchronous storage mock with `vi.fn()` methods.
+ */
 export function createSyncStorageMock(): SyncStorageMock {
   return {
-    get: jest.fn<string | undefined, [string]>(),
-    set: jest.fn<void, [string, string]>(),
-    delete: jest.fn<void, [string]>(),
-    clearAll: jest.fn<void, []>(),
-    contains: jest.fn<boolean, [string]>(),
-    getAllKeys: jest.fn<string[], []>(),
+    get: vi.fn<(key: string) => string | undefined>(),
+    set: vi.fn<(key: string, value: string) => void>(),
+    delete: vi.fn<(key: string) => void>(),
+    clearAll: vi.fn<() => void>(),
+    contains: vi.fn<(key: string) => boolean>(),
+    getAllKeys: vi.fn<() => string[]>(),
     async: false,
   };
 }
 
+/**
+ * Creates an asynchronous storage mock with `vi.fn()` methods.
+ */
 export function createAsyncStorageMock(): AsyncStorageMock {
   return {
-    get: jest.fn<Promise<string | undefined>, [string]>(async () => undefined),
-    set: jest.fn<Promise<void>, [string, string]>(async () => {}),
-    delete: jest.fn<Promise<void>, [string]>(async () => {}),
-    clearAll: jest.fn<Promise<void>, []>(async () => {}),
-    contains: jest.fn<Promise<boolean>, [string]>(async () => false),
-    getAllKeys: jest.fn<Promise<string[]>, []>(async () => []),
+    get: vi.fn<(key: string) => Promise<string | undefined>>(async () => undefined),
+    set: vi.fn<(key: string, value: string) => Promise<void>>(async () => {}),
+    delete: vi.fn<(key: string) => Promise<void>>(async () => {}),
+    clearAll: vi.fn<() => Promise<void>>(async () => {}),
+    contains: vi.fn<(key: string) => Promise<boolean>>(async () => false),
+    getAllKeys: vi.fn<() => Promise<string[]>>(async () => []),
     async: true,
   };
 }
@@ -53,9 +56,9 @@ export function createAsyncStorageMock(): AsyncStorageMock {
 function createContext(overrides: Partial<SyncContext> = {}): {
   context: SyncContext;
   fields: Record<string, number>;
-  clearSpy: jest.Mock<void, [Record<string, number> | undefined]>;
+  clearSpy: Mock<(snapshot: Record<string, number> | undefined) => void>;
 } {
-  const { context, fieldTimestamps } = createMockSyncContext({
+  const { context, fieldTimestamps } = createSyncContextMock({
     isAsync: overrides.isAsync ?? false,
     getIsApplyingRemote: overrides.getIsApplyingRemote,
     getSessionId: overrides.getSessionId ?? (() => 'session-id'),
@@ -65,7 +68,7 @@ function createContext(overrides: Partial<SyncContext> = {}): {
   });
 
   const originalClear = context.clearFieldTimestamps;
-  const clearSpy = jest.fn((snapshot: Record<string, number> | undefined) => {
+  const clearSpy = vi.fn((snapshot: Record<string, number> | undefined) => {
     originalClear?.(snapshot);
   });
   context.clearFieldTimestamps = clearSpy;

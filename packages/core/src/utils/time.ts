@@ -62,13 +62,3 @@ export const time: TimeUtils = {
   infinity: Infinity,
   zero: 0,
 };
-
-/**
- * Waits for microtasks to complete.
- * Uses setTimeout(0) to allow microtasks scheduled via queueMicrotask to execute.
- *
- * Useful in tests when waiting for async operations scheduled via microtasks.
- */
-export async function waitForMicrotask(): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, 0));
-}

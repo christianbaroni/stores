@@ -7,8 +7,11 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 export default defineConfig({
   test: {
     globals: true,
-    include: ['src/hooks/**/*.test.ts', 'src/hooks/**/*.test.tsx', 'src/plugins/**/*.test.ts', 'src/queryStore/vitest/**/*.test.ts'],
+    include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
     environment: 'node',
+    fakeTimers: {
+      toFake: ['setTimeout', 'clearTimeout', 'setImmediate', 'clearImmediate', 'setInterval', 'clearInterval', 'Date', 'performance'],
+    },
     testTimeout: 30_000,
   },
   resolve: {

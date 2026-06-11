@@ -1,23 +1,12 @@
-/**
- * @jest-environment node
- */
-
 import { createBaseStore } from '../../createBaseStore';
 import { StorageValue } from '../../storage/storageTypes';
+import { flushMicrotasks } from '../../tests/async';
 import { AsyncStorageInterface } from '../../types';
 
 type TestState = {
   a: number;
   b: number;
 };
-
-// ============ Test Helpers ================================================== //
-
-async function flushMicrotasks(times: number = 1): Promise<void> {
-  for (let index = 0; index < times; index += 1) {
-    await Promise.resolve();
-  }
-}
 
 // ============ Tests ========================================================= //
 
@@ -27,14 +16,14 @@ describe('createBaseStore sync metadata', () => {
 
     const mockStorage: AsyncStorageInterface = {
       async: true,
-      clearAll: jest.fn(async () => {}),
-      contains: jest.fn(async () => false),
-      delete: jest.fn(async () => {}),
-      getAllKeys: jest.fn(async () => []),
-      get: jest.fn(async () => JSON.stringify({ state: { a: 0, b: 0 }, version: 0 })),
-      set: jest.fn(async (key: string, value: string) => {
+      clearAll: async () => {},
+      contains: async () => false,
+      delete: async () => {},
+      getAllKeys: async () => [],
+      get: async () => JSON.stringify({ state: { a: 0, b: 0 }, version: 0 }),
+      set: async (key: string, value: string) => {
         storageWrites.push({ key, value });
-      }),
+      },
     };
 
     const store = createBaseStore<TestState, Partial<TestState>, Promise<void>>(() => ({ a: 0, b: 0 }), {

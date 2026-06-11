@@ -1,13 +1,26 @@
-/**
- * @jest-environment node
- */
-
+import { StoreApi } from 'zustand';
+import { flushMicrotasks } from '../../tests/async';
 import { SetStateArgs, StateCreator } from '../../types';
+import { applyStateUpdate } from '../../utils/storeUtils';
 import { SyncContext, createSyncedStateCreator } from '../syncEnhancer';
-import { NormalizedSyncConfig, SyncRegistration, SyncUpdate } from '../types';
-import { MockStoreApi, capturePublishedUpdates, createMockEngine, createMockStore, flushMicrotasks, triggerOnHydrated } from './testUtils';
+import { NormalizedSyncConfig, SyncEngine, SyncHandle, SyncRegistration, SyncUpdate } from '../types';
 
 type CounterState = { count: number };
+type HydratableSyncHandle = SyncHandle<Record<string, unknown>> & {
+  triggerHydrated: () => void;
+};
+
+type StoreApiHarness<S> = {
+  api: StoreApi<S>;
+  state: { current: S };
+};
+
+type SyncEngineHarness = {
+  engine: SyncEngine;
+  getRegistration: () => SyncRegistration<Record<string, unknown>>;
+  handle: HydratableSyncHandle;
+  publishedUpdates: SyncUpdate<Record<string, unknown>>[];
+};
 
 function registerStore<T extends Record<string, unknown>>(
   config: NormalizedSyncConfig<T>,
@@ -17,15 +30,15 @@ function registerStore<T extends Record<string, unknown>>(
     isAsync?: boolean;
   } = {}
 ): {
-  registration: SyncRegistration<T>;
-  store: MockStoreApi<T>;
-  publishLog: SyncUpdate<T>[];
+  registration: SyncRegistration<Record<string, unknown>>;
+  store: StoreApiHarness<T>;
+  publishedUpdates: SyncUpdate<Record<string, unknown>>[];
   context: SyncContext;
-  handle: ReturnType<typeof createMockEngine<T>>['handle'];
+  handle: HydratableSyncHandle;
 } {
-  const { engine, handle, onRegister } = createMockEngine<T>();
+  const { engine, getRegistration, handle, publishedUpdates } = createSyncEngineHarness();
   const middleware = createSyncedStateCreator(stateCreator, { ...config, engine }, overrides.isAsync ?? false);
-  const store = createMockStore<T>(initialState);
+  const store = createStoreApiHarness<T>(initialState);
   const resolvedState = middleware.stateCreator(store.api.setState, store.api.getState, store.api);
   store.state.current = resolvedState;
 
@@ -33,10 +46,75 @@ function registerStore<T extends Record<string, unknown>>(
     middleware.syncContext.setWithoutPersist = store.api.setState;
   }
 
-  const registration: SyncRegistration<T> = onRegister.mock.calls[0][0];
-  const publishLog = capturePublishedUpdates(handle);
+  const registration = getRegistration();
 
-  return { registration, store, publishLog, context: middleware.syncContext, handle };
+  return { registration, store, publishedUpdates, context: middleware.syncContext, handle };
+}
+
+function createStoreApiHarness<S>(initialState: S): StoreApiHarness<S> {
+  const state = { current: initialState };
+
+  function get(): S {
+    return state.current;
+  }
+
+  function set(...args: SetStateArgs<S>): void {
+    state.current = applyStateUpdate(state.current, ...args);
+  }
+
+  const api: StoreApi<S> = {
+    setState: set,
+    getState: get,
+    getInitialState: get,
+    subscribe: () => () => {},
+  };
+
+  return { api, state };
+}
+
+function createSyncEngineHarness(): SyncEngineHarness {
+  const handle = createHydratableSyncHandle();
+  const publishedUpdates: SyncUpdate<Record<string, unknown>>[] = [];
+  let registration: SyncRegistration<Record<string, unknown>> | undefined;
+
+  handle.publish = update => {
+    publishedUpdates.push(update);
+  };
+
+  const engine: SyncEngine = {
+    sessionId: 'mock-session',
+    register<T extends Record<string, unknown>>(nextRegistration: SyncRegistration<T>): SyncHandle<T> {
+      setRegistration(nextRegistration);
+      return handle;
+    },
+  };
+
+  function getRegistration(): SyncRegistration<Record<string, unknown>> {
+    if (!registration) throw new Error('Expected sync engine to register a store.');
+    return registration;
+  }
+
+  return { engine, getRegistration, handle, publishedUpdates };
+
+  function setRegistration<T extends Record<string, unknown>>(nextRegistration: SyncRegistration<T>): void;
+  function setRegistration(nextRegistration: SyncRegistration<Record<string, unknown>>): void {
+    registration = nextRegistration;
+  }
+}
+
+function createHydratableSyncHandle(): HydratableSyncHandle {
+  let hydrationCallback: (() => void) | undefined;
+
+  return {
+    destroy: () => {},
+    publish: () => {},
+    onHydrated: callback => {
+      hydrationCallback = callback;
+    },
+    triggerHydrated: () => {
+      hydrationCallback?.();
+    },
+  };
 }
 
 describe('createSyncedStateCreator', () => {
@@ -49,19 +127,19 @@ describe('createSyncedStateCreator', () => {
       };
 
       const config: NormalizedSyncConfig<CounterState> = { key: 'counter' };
-      const { publishLog, handle } = registerStore(config, baseCreator, { count: 0 });
+      const { publishedUpdates, handle } = registerStore(config, baseCreator, { count: 0 });
 
       expect(enhancedSet).toBeDefined();
       enhancedSet?.({ count: 1 });
 
       await flushMicrotasks();
-      expect(publishLog).toHaveLength(0);
+      expect(publishedUpdates).toHaveLength(0);
 
-      triggerOnHydrated(handle);
+      handle.triggerHydrated();
       await flushMicrotasks();
 
-      expect(publishLog).toHaveLength(1);
-      expect(publishLog[0].values).toEqual({ count: 1 });
+      expect(publishedUpdates).toHaveLength(1);
+      expect(publishedUpdates[0].values).toEqual({ count: 1 });
     });
 
     it('records field timestamps for modified keys', () => {
@@ -74,7 +152,7 @@ describe('createSyncedStateCreator', () => {
       const config: NormalizedSyncConfig<{ count: number; label: string }> = { key: 'metadata-test' };
       const { context, handle } = registerStore(config, baseCreator, { count: 0, label: 'initial' });
 
-      triggerOnHydrated(handle);
+      handle.triggerHydrated();
       setFn?.({ count: 5 });
       setFn?.({ label: 'updated' });
 
@@ -90,22 +168,22 @@ describe('createSyncedStateCreator', () => {
       };
 
       const config: NormalizedSyncConfig<{ count: number; note: string }> = { key: 'no-op', fields: ['count'] };
-      const { publishLog, handle, context } = registerStore(config, baseCreator, { count: 0, note: 'start' });
+      const { publishedUpdates, handle, context } = registerStore(config, baseCreator, { count: 0, note: 'start' });
 
-      triggerOnHydrated(handle);
+      handle.triggerHydrated();
       setFn?.({ note: 'updated' });
       setFn?.({ count: 0 });
       await flushMicrotasks();
 
-      expect(publishLog).toHaveLength(0);
+      expect(publishedUpdates).toHaveLength(0);
       expect(context.getFieldTimestampSnapshot()).toBeUndefined();
 
       setFn?.({ count: 1 });
       await flushMicrotasks();
       const timestampSnapshot = context.getFieldTimestampSnapshot();
       expect(timestampSnapshot?.count).toBeDefined();
-      expect(publishLog).toHaveLength(1);
-      expect(publishLog[0].values).toEqual({ count: 1 });
+      expect(publishedUpdates).toHaveLength(1);
+      expect(publishedUpdates[0].values).toEqual({ count: 1 });
     });
   });
 
@@ -187,7 +265,7 @@ describe('createSyncedStateCreator', () => {
       const config: NormalizedSyncConfig<CounterState> = { key: 'stale-filter' };
       const { registration, store, handle, context } = registerStore(config, baseCreator, { count: 0 });
 
-      triggerOnHydrated(handle);
+      handle.triggerHydrated();
       localSet?.({ count: 2 });
       await flushMicrotasks();
       const localTimestamp = context.getFieldTimestampSnapshot()?.count ?? 0;
@@ -215,7 +293,7 @@ describe('createSyncedStateCreator', () => {
       };
 
       const { registration, store, handle } = registerStore(config, baseCreator, { items: [1, 2] });
-      triggerOnHydrated(handle);
+      handle.triggerHydrated();
 
       const apply = registration.apply;
       apply({ replace: false, sessionId: 'remote', timestamp: 1, values: { items: [2, 3] } });
@@ -230,7 +308,7 @@ describe('createSyncedStateCreator', () => {
       const config: NormalizedSyncConfig<State> = { key: 'replace-no-clear' };
 
       const { registration, store, handle } = registerStore(config, baseCreator, { title: 'Draft', count: 1 });
-      triggerOnHydrated(handle);
+      handle.triggerHydrated();
 
       const apply = registration.apply;
       apply({
@@ -249,7 +327,7 @@ describe('createSyncedStateCreator', () => {
       const baseCreator: StateCreator<State> = () => ({ present: 'yes', other: 'keep' });
       const config: NormalizedSyncConfig<State> = { key: 'replace-test' };
       const { registration, store, handle } = registerStore(config, baseCreator, { present: 'yes', other: 'keep' });
-      triggerOnHydrated(handle);
+      handle.triggerHydrated();
 
       const apply = registration.apply;
       apply({
