@@ -1,14 +1,11 @@
-import type { Mutate, StateCreator as ZustandStateCreator, StoreApi, StoreMutatorIdentifier } from 'zustand';
-import type { PersistOptions } from 'zustand/middleware';
 import type { StorageValue } from './storage/storageTypes';
+import type { Mutate, PersistOptions, StateCreator as StoreStateCreator, StoreApi, StoreMutatorIdentifier } from './store/types';
 import type { SyncConfig } from './sync/types';
 
-// ============ Middleware Helpers ============================================= //
-
-type SubscribeWithSelector = ['zustand/subscribeWithSelector', never];
+// ============ Store Mutators ================================================= //
 
 export type StoreMutators = [StoreMutatorIdentifier, unknown][];
-export type StoreMutatorsWithSelector<Mutators extends StoreMutators = StoreMutators> = [SubscribeWithSelector, ...Mutators];
+export type StoreMutatorsWithSelector<Mutators extends StoreMutators = StoreMutators> = Mutators;
 
 type HydrationPromise<PersistReturn> =
   PersistReturn extends Promise<void>
@@ -42,14 +39,14 @@ type WithPersist<Store, PersistedState, PersistReturn> = Store extends {
 
 // ============ Core Store Types =============================================== //
 
-export type StateCreator<S, U = S> = ZustandStateCreator<S, [SubscribeWithSelector], [SubscribeWithSelector], U>;
+export type StateCreator<S, U = S> = StoreStateCreator<S, [], [], U>;
 
-export type UseBoundStoreWithEqualityFn<Store extends StoreApi<unknown>, State = InferStoreState<Store>> = UseStoreCallSignatures<State> &
-  Store;
+export type UseBoundStoreWithEqualityFn<
+  Store extends { getState: () => unknown },
+  State = InferStoreState<Store>,
+> = UseStoreCallSignatures<State> & Store;
 
-export type BaseStore<S, ExtraSubscribeOptions extends boolean = false> = UseBoundStoreWithEqualityFn<
-  Mutate<StoreApi<S>, [SubscribeWithSelector]>
-> & {
+export type BaseStore<S, ExtraSubscribeOptions extends boolean = false> = UseBoundStoreWithEqualityFn<Mutate<StoreApi<S>, []>> & {
   subscribe: SubscribeOverloads<S, ExtraSubscribeOptions>;
 };
 
@@ -68,9 +65,11 @@ export type Store<S, PersistedState extends Partial<S> = never, PersistReturn = 
   ? BaseStore<S, ExtraSubscribeOptions>
   : PersistedStore<S, PersistedState, PersistReturn, ExtraSubscribeOptions>;
 
-export type OptionallyPersistedStore<S, PersistedState, PersistReturn = void> = WithAsyncSet<Store<S>, S, PersistedState, PersistReturn> &
-  UseStoreCallSignatures<S> & {
+export type OptionallyPersistedStore<S, PersistedState, PersistReturn = void> = UseStoreCallSignatures<S> &
+  Omit<BaseStore<S>, 'setState'> & {
     persist?: PersistedStore<S, PersistedState, PersistReturn, false>['persist'];
+    setState(update: SetPartial<S>, replace?: false): PersistReturn;
+    setState(update: SetFull<S>, replace: true): PersistReturn;
   };
 
 // ============ Common Utility Types =========================================== //
@@ -87,11 +86,7 @@ export type UseStoreCallSignatures<S> = {
   <Selected>(selector: Selector<S, Selected>, equalityFn?: EqualityFn<Selected>): Selected;
 };
 
-export type InferStoreState<Store extends StoreApi<unknown>> = Store extends {
-  getState: () => infer T;
-}
-  ? T
-  : never;
+export type InferStoreState<Store> = Store extends { getState: () => infer T } ? T : never;
 
 /**
  * Extracts a store's `setState` return type.
@@ -122,12 +117,6 @@ export type SetState<S, ExtraArgs extends unknown[] = [], PersistReturn extends 
 export type SetStateOverloads<S, PersistReturn extends Promise<void> | void = void> = {
   (update: SetPartial<S>, replace?: false): PersistReturn;
   (update: SetFull<S>, replace: true): PersistReturn;
-};
-
-export type WithAsyncSet<Store extends StoreApi<unknown>, S, PersistedState, PersistReturn> = Omit<Store, 'persist' | 'setState'> & {
-  persist?: PersistedStore<S, PersistedState, PersistReturn, false>['persist'];
-  setState(update: SetPartial<InferStoreState<Store>>, replace?: false): PersistReturn;
-  setState(update: SetFull<InferStoreState<Store>>, replace: true): PersistReturn;
 };
 
 // ============ Subscribe Types ================================================ //
@@ -167,9 +156,9 @@ export type SubscribeFn<S, Selected = S> = (...args: SubscribeArgs<S, Selected>)
 
 // ============ Derived Store Types ============================================ //
 
-export type DerivedStore<S> = WithFlushUpdates<ReadOnlyDerivedStore<BaseStore<S>>>;
+export type DerivedStore<S> = WithFlushUpdates<ReadOnlyDerivedStore<S>>;
 
-export type WithFlushUpdates<Store extends StoreApi<unknown>> = Store & {
+export type WithFlushUpdates<Store extends { getState: () => unknown }> = Store & {
   /**
    * Destroy the derived store and its subscriptions.
    *
@@ -184,7 +173,7 @@ export type WithFlushUpdates<Store extends StoreApi<unknown>> = Store & {
   flushUpdates: () => void;
 };
 
-export type WithGetSnapshot<Store extends StoreApi<unknown>> = Store & {
+export type WithGetSnapshot<Store extends { getState: () => unknown }> = Store & {
   /**
    * Provided to `useSyncExternalStoreWithSelector` to ensure it activates the derived
    * store when it gets the initial state before subscribing to the store.
@@ -192,16 +181,16 @@ export type WithGetSnapshot<Store extends StoreApi<unknown>> = Store & {
   getSnapshot: () => InferStoreState<Store>;
 };
 
-type ReadOnlyDerivedStore<Store extends BaseStore<unknown>> = Omit<Store, 'getInitialState' | 'setState'> &
-  UseStoreCallSignatures<InferStoreState<Store>> & {
+type ReadOnlyDerivedStore<S> = Omit<BaseStore<S>, 'getInitialState' | 'setState'> &
+  UseStoreCallSignatures<S> & {
     /**
      * @deprecated **Not applicable to derived stores.** Will throw an error.
      */
-    getInitialState: Store['getInitialState'];
+    getInitialState: () => S;
     /**
      * @deprecated **Not applicable to derived stores.** Will throw an error.
      */
-    setState: Store['setState'];
+    setState: BaseStore<S>['setState'];
   };
 
 /**
@@ -275,7 +264,7 @@ export type Serializer<SerializedState> = <PersistedState>(storageValue: Storage
  * Synchronous storage interface.
  * Used for localStorage and MMKV implementations.
  */
-export interface SyncStorageInterface<SerializedState = unknown> {
+export type SyncStorageInterface<SerializedState = unknown> = {
   readonly async?: false;
   /**
    * Adapter-level deserializer used when a store does not supply its own.
@@ -293,7 +282,7 @@ export interface SyncStorageInterface<SerializedState = unknown> {
   get(key: string): SerializedState | undefined;
   getAllKeys(): string[];
   set(key: string, value: SerializedState): void;
-}
+};
 
 /**
  * Asynchronous storage interface.
@@ -322,7 +311,7 @@ export type AsyncStorageInterface<SerializedState = unknown> = {
 /**
  * Configuration options for creating a persistable store.
  */
-export type PersistConfig<S, PersistedState = Partial<S>, PersistReturn = void> = {
+export type PersistConfig<S, PersistedState extends Partial<S> = Partial<S>, PersistReturn = void> = {
   /**
    * A function to convert the serialized value back into the state object.
    * If not provided, the storage adapter's `deserializer` is used before falling back to the default implementation.
@@ -331,7 +320,7 @@ export type PersistConfig<S, PersistedState = Partial<S>, PersistReturn = void> 
 
   /**
    * A function to merge persisted state with current state during hydration.
-   * By default, zustand does a shallow merge, but this allows custom logic for deep merging nested objects.
+   * By default, persisted state is shallow-merged into the current state.
    */
   merge?: PersistOptions<S, PersistedState>['merge'];
 
@@ -352,7 +341,7 @@ export type PersistConfig<S, PersistedState = Partial<S>, PersistReturn = void> 
    * A function that determines which parts of the state should be persisted.
    * By default, the entire state is persisted.
    */
-  partialize?: (state: S) => PersistedState;
+  partialize?: (state: Readonly<S>) => PersistedState;
 
   /**
    * The throttle rate for the persist operation in milliseconds.
@@ -389,7 +378,7 @@ export type EnforceStorageKey<Options> = { storageKey: string } extends Options 
 
 // ============ Store Options ================================================== //
 
-export type BaseStoreOptions<S, PersistedState = Partial<S>, PersistReturn = void> =
+export type BaseStoreOptions<S, PersistedState extends Partial<S> = Partial<S>, PersistReturn = void> =
   | (PersistConfig<S, PersistedState, PersistReturn> & { sync?: S extends Record<string, unknown> ? SyncOption<S> : undefined })
   | ({
       sync: S extends Record<string, unknown> ? SyncWithoutStorageOption<NoInfer<S>> : undefined;
@@ -408,7 +397,6 @@ type SyncWithoutStorageOption<S extends Record<string, unknown>> =
   | (Omit<SyncConfig<S>, 'injectStorageMetadata' | 'key'> & {
       injectStorageMetadata?: never;
       key: SyncWithoutStorageKey<SyncConfig<S>>;
-      readonly __syncStateBrand?: (state: S) => S;
     });
 
 type SyncWithoutStorageKey<Config> = Config extends { key?: infer Key }
@@ -417,7 +405,7 @@ type SyncWithoutStorageKey<Config> = Config extends { key?: infer Key }
     : Extract<Key, string>
   : string;
 
-type UndefinedPersistKeys<S, PersistedState, PersistReturn> = {
+type UndefinedPersistKeys<S, PersistedState extends Partial<S>, PersistReturn> = {
   [K in keyof PersistConfig<S, PersistedState, PersistReturn>]?: undefined;
 };
 

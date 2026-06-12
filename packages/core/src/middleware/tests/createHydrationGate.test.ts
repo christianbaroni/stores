@@ -1,6 +1,6 @@
 import { createHydrationGate } from '../createHydrationGate';
 import { createSyncContextMock } from '../../tests/syncContext';
-import { SetStateOverloads, StateCreator } from '../../types';
+import type { SetStateOverloads, StateCreator } from '../../types';
 
 type TestState = { value: number; label?: string };
 
@@ -45,6 +45,32 @@ describe('createHydrationGate', () => {
 
       gatedSet?.({ value: 10 });
       expect(calls).toEqual([{ update: { value: 10 }, replace: undefined }]);
+    });
+
+    it('returns the wrapped set result after hydration completes', () => {
+      let gatedSet: SetStateOverloads<TestState> | undefined;
+      const baseCreator: StateCreator<TestState> = set => {
+        gatedSet = set;
+        return { value: 0 };
+      };
+
+      const { stateCreator, wrapOnRehydrateStorage } = createHydrationGate(baseCreator);
+
+      const setResult = Promise.resolve();
+      const setState: SetStateOverloads<TestState, Promise<void>> = () => setResult;
+      const getState = () => ({ value: 0 });
+      const api = {
+        setState,
+        getState,
+        getInitialState: getState,
+        subscribe: vi.fn(() => vi.fn()),
+      };
+
+      const initialState = stateCreator(setState, getState, api);
+      wrapOnRehydrateStorage(undefined, undefined)(initialState)();
+      if (!gatedSet) throw new Error('Expected hydration gate to expose set.');
+
+      expect(gatedSet({ value: 10 })).toBe(setResult);
     });
   });
 

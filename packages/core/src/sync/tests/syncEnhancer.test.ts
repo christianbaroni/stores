@@ -1,7 +1,7 @@
-import { StoreApi } from 'zustand';
+import { applyStateUpdate } from '../../store/stateUpdate';
 import { flushMicrotasks } from '../../tests/async';
+import { StoreApi } from '../../store/types';
 import { SetStateArgs, StateCreator } from '../../types';
-import { applyStateUpdate } from '../../utils/storeUtils';
 import { SyncContext, createSyncedStateCreator } from '../syncEnhancer';
 import { NormalizedSyncConfig, SyncEngine, SyncHandle, SyncRegistration, SyncUpdate } from '../types';
 

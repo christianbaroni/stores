@@ -1,24 +1,23 @@
-import { StoreApi } from 'zustand/vanilla';
 import { IS_DEV } from '@/env';
 import { activateCascade, enqueueDerive, getCurrentDeriveRank, isCascadeActive, joinCascade } from './derivedStore/cascadeScheduler';
 import { getOrCreateProxy, stripProxies } from './derivedStore/deriveProxy';
 import { PathFinder, createPathFinder } from './derivedStore/pathFinder';
 import { useSyncExternalStoreWithSelector } from './hooks/useSyncExternalStoreWithSelector';
-import {
+import type { StoreApi } from './store/types';
+import type {
   BaseStore,
   DebounceOptions,
   DeriveOptions,
   DerivedStore,
   EqualityFn,
   Listener,
-  Store,
   Selector,
+  Store,
   SubscribeArgs,
+  SubscribeOptions,
   UnsubscribeFn,
   WithFlushUpdates,
   WithGetSnapshot,
-  InferStoreState,
-  SubscribeOptions,
 } from './types';
 import { identity } from './utils/core';
 import { debounce } from './utils/debounce';
@@ -30,7 +29,7 @@ import { pluralize } from './utils/stringUtils';
 /**
  * ### `createDerivedStore`
  *
- * Creates a **read-only** store derived from one or more underlying Zustand stores.
+ * Creates a **read-only** store derived from one or more source stores.
  *
  * ---
  * The `deriveFunction` is called whenever its dependencies change, producing a new derived state.
@@ -110,12 +109,8 @@ function attachStoreHook<S>(store: WithGetSnapshot<WithFlushUpdates<StoreApi<S>>
 // ============ Types ========================================================== //
 
 export type DeriveGetter = {
-  <S extends Store<unknown>>(store: S): InferStoreState<S>;
-  <S extends Store<unknown>, Selected>(
-    store: S,
-    selector: Selector<InferStoreState<S>, Selected>,
-    equalityFn?: EqualityFn<Selected>
-  ): Selected;
+  <S>(store: Store<S>): S;
+  <S, Selected>(store: Store<S>, selector: Selector<S, Selected>, equalityFn?: EqualityFn<Selected>): Selected;
 };
 
 /**
@@ -167,7 +162,7 @@ function derive<DerivedState>(
   const unsubscribes = new Set<UnsubscribeFn<true>>();
 
   // Lazily built proxy helpers
-  let rootProxyCache: WeakMap<StoreApi<unknown>, unknown> | undefined;
+  let rootProxyCache: WeakMap<object, unknown> | undefined;
   let pathFinder: PathFinder | undefined;
 
   // Core state

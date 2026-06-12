@@ -11,7 +11,7 @@ const mjsEntries = readdirSync(join(root, 'dist/web'))
   .filter(f => f.endsWith('.mjs') && !f.startsWith('chunk-'))
   .map(f => f.replace('.mjs', ''));
 
-const externals = ['react', 'react-native', 'zustand', 'use-sync-external-store'].map(e => `--external:${e}`).join(' ');
+const externals = ['react', 'react-native'].map(e => `--external:${e}`).join(' ');
 
 let passed = 0;
 let failed = 0;

@@ -1,29 +1,34 @@
-import { createStore, type Mutate, type StateCreator as ZustandStateCreator, type StoreApi } from 'zustand/vanilla';
 import { useSyncExternalStoreWithSelector } from './hooks/useSyncExternalStoreWithSelector';
-import type { EqualityFn, Selector, StoreMutators, StoreMutatorsWithSelector, UseBoundStoreWithEqualityFn } from './types';
+import { createStore } from './store/createStore';
+import type { Mutate, StateCreator, StoreApi, StoreMutatorIdentifier } from './store/types';
+import type { EqualityFn, Selector, UseBoundStoreWithEqualityFn } from './types';
 
 // ============ Store Creator ================================================== //
 
-export function createStoreWithEqualityFn<State, Mutators extends StoreMutators = []>(
-  initializer: ZustandStateCreator<State, [], StoreMutatorsWithSelector<Mutators>>,
+type StoreMutatorTuple = [StoreMutatorIdentifier, unknown];
+
+export function createStoreWithEqualityFn<State, StoreMutatorOutput extends StoreMutatorTuple[] = []>(
+  initializer: StateCreator<State, [], StoreMutatorOutput>,
   defaultEqualityFn?: EqualityFn
-): UseBoundStoreWithEqualityFn<Mutate<StoreApi<State>, StoreMutatorsWithSelector<Mutators>>, State>;
-export function createStoreWithEqualityFn<State>(): <Mutators extends StoreMutators = []>(
-  initializer: ZustandStateCreator<State, [], StoreMutatorsWithSelector<Mutators>>,
+): UseBoundStoreWithEqualityFn<Mutate<StoreApi<State>, StoreMutatorOutput>, State>;
+export function createStoreWithEqualityFn<State>(): <StoreMutatorOutput extends StoreMutatorTuple[] = []>(
+  initializer: StateCreator<State, [], StoreMutatorOutput>,
   defaultEqualityFn?: EqualityFn
-) => UseBoundStoreWithEqualityFn<Mutate<StoreApi<State>, StoreMutatorsWithSelector<Mutators>>, State>;
-export function createStoreWithEqualityFn<State, Mutators extends StoreMutators = []>(
-  initializer?: ZustandStateCreator<State, [], StoreMutatorsWithSelector<Mutators>>,
+) => UseBoundStoreWithEqualityFn<Mutate<StoreApi<State>, StoreMutatorOutput>, State>;
+export function createStoreWithEqualityFn<State, StoreMutatorOutput extends StoreMutatorTuple[] = []>(
+  initializer?: StateCreator<State, [], StoreMutatorOutput>,
   defaultEqualityFn?: EqualityFn
 ):
-  | UseBoundStoreWithEqualityFn<Mutate<StoreApi<State>, StoreMutatorsWithSelector<Mutators>>, State>
-  | ((
-      initializer: ZustandStateCreator<State, [], StoreMutatorsWithSelector<Mutators>>,
+  | UseBoundStoreWithEqualityFn<Mutate<StoreApi<State>, StoreMutatorOutput>, State>
+  | (<NextStoreMutatorOutput extends StoreMutatorTuple[] = []>(
+      initializer: StateCreator<State, [], NextStoreMutatorOutput>,
       equalityFn?: EqualityFn
-    ) => UseBoundStoreWithEqualityFn<Mutate<StoreApi<State>, StoreMutatorsWithSelector<Mutators>>, State>) {
+    ) => UseBoundStoreWithEqualityFn<Mutate<StoreApi<State>, NextStoreMutatorOutput>, State>) {
   if (initializer === undefined) {
-    return (stateCreator: ZustandStateCreator<State, [], StoreMutatorsWithSelector<Mutators>>, equalityFn?: EqualityFn) =>
-      createStoreHook(stateCreator, equalityFn);
+    return <NextStoreMutatorOutput extends StoreMutatorTuple[] = []>(
+      stateCreator: StateCreator<State, [], NextStoreMutatorOutput>,
+      equalityFn?: EqualityFn
+    ) => createStoreHook(stateCreator, equalityFn);
   }
 
   return createStoreHook(initializer, defaultEqualityFn);
@@ -31,10 +36,10 @@ export function createStoreWithEqualityFn<State, Mutators extends StoreMutators 
 
 // ============ Utilities ====================================================== //
 
-function createStoreHook<State, Mutators extends StoreMutators>(
-  initializer: ZustandStateCreator<State, [], StoreMutatorsWithSelector<Mutators>>,
+function createStoreHook<State, StoreMutatorOutput extends StoreMutatorTuple[] = []>(
+  initializer: StateCreator<State, [], StoreMutatorOutput>,
   defaultEqualityFn: EqualityFn | undefined
-): UseBoundStoreWithEqualityFn<Mutate<StoreApi<State>, StoreMutatorsWithSelector<Mutators>>, State> {
+): UseBoundStoreWithEqualityFn<Mutate<StoreApi<State>, StoreMutatorOutput>, State> {
   const api = createStore(initializer);
 
   function useStore(): State;

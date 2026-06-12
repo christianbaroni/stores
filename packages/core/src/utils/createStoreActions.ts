@@ -1,8 +1,8 @@
-import { StoreApi } from 'zustand';
 import { IS_DEV } from '@/env';
-import { InferStoreState } from '../types';
-import { NoOverlap } from '../types/objects';
-import { FunctionKeys, FunctionRecord, UnknownFunction } from '../types/functions';
+import type { StoreApi } from '../store/types';
+import type { InferStoreState } from '../types';
+import type { FunctionKeys, FunctionRecord, UnknownFunction } from '../types/functions';
+import type { NoOverlap } from '../types/objects';
 import { nullObject } from './core';
 import { isVirtualStore } from './storeUtils';
 

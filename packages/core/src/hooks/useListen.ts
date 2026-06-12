@@ -83,7 +83,7 @@ const DEFAULT_OPTIONS = Object.freeze({
 /**
  * ### `useListen`
  *
- * Subscribes to a slice of a Zustand store and runs a callback whenever that slice changes,
+ * Subscribes to a slice of a store and runs a callback whenever that slice changes,
  * **without triggering re-renders**.
  *
  * Useful for forwarding updates to non-React state (e.g. Reanimated shared values), scoped side
@@ -97,7 +97,7 @@ const DEFAULT_OPTIONS = Object.freeze({
  * They take effect only if a resubscription occurs.
  *
  * ---
- * @param store - Zustand store to listen to. Should be a stable reference.
+ * @param store - Store to listen to. Should be a stable reference.
  * @param selector - Selects the slice of the store state to listen to.
  * @param react - Triggered when the selected slice changes. Receives `(current, previous, unsubscribe)`.
  * @param optionsOrEqualityFn - Optional `equalityFn`, `fireImmediately` settings, forwarded to `store.subscribe`.

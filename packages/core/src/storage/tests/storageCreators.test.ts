@@ -89,7 +89,7 @@ describe('createPersistStorage', () => {
         context
       );
 
-      persistStorage.setItem('counter', { state: { count: 5 }, version: 0 });
+      persistStorage.setItem('counter', { count: 5 }, 0);
 
       expect(storage.set).toHaveBeenCalledTimes(1);
       const serialized = JSON.parse(storage.set.mock.calls[0][1]);
@@ -114,7 +114,7 @@ describe('createPersistStorage', () => {
         context
       );
 
-      persistStorage.setItem('test', { state: { value: 'ignore' }, version: 0 });
+      persistStorage.setItem('test', { value: 'ignore' }, 0);
       expect(storage.set).not.toHaveBeenCalled();
     });
 
@@ -132,7 +132,7 @@ describe('createPersistStorage', () => {
         context
       );
 
-      persistStorage.setItem('counter', { state: { count: 7 }, version: 0 });
+      persistStorage.setItem('counter', { count: 7 }, 0);
 
       expect(storage.set).toHaveBeenCalledTimes(1);
       const serialized = JSON.parse(storage.set.mock.calls[0][1]);
@@ -151,7 +151,7 @@ describe('createPersistStorage', () => {
         context
       );
 
-      persistStorage.setItem('counter', { state: { count: 1 }, version: 0 });
+      persistStorage.setItem('counter', { count: 1 }, 0);
 
       const serialized = JSON.parse(storage.set.mock.calls[0][1]);
       expect(serialized.syncMetadata).toEqual({ origin: 'session-id', timestamp: 1000 });
@@ -171,7 +171,7 @@ describe('createPersistStorage', () => {
         context
       );
 
-      await persistStorage.setItem('items', { state: { items: ['a'] }, version: 1 });
+      await persistStorage.setItem('items', { items: ['a'] }, 1);
 
       expect(storage.set).toHaveBeenCalledTimes(1);
       const serialized = JSON.parse(storage.set.mock.calls[0][1]);
@@ -194,7 +194,7 @@ describe('createPersistStorage', () => {
         context
       );
 
-      await persistStorage.setItem('async-skip', { state: { ok: true }, version: 0 });
+      await persistStorage.setItem('async-skip', { ok: true }, 0);
       expect(storage.set).not.toHaveBeenCalled();
     });
 
@@ -212,7 +212,7 @@ describe('createPersistStorage', () => {
         context
       );
 
-      await persistStorage.setItem('async-counter', { state: { count: 2 }, version: 0 });
+      await persistStorage.setItem('async-counter', { count: 2 }, 0);
 
       expect(storage.set).toHaveBeenCalledTimes(1);
       const serialized = JSON.parse(storage.set.mock.calls[0][1]);
@@ -231,7 +231,7 @@ describe('createPersistStorage', () => {
         context
       );
 
-      await persistStorage.setItem('no-fields', { state: { value: 1 }, version: 0 });
+      await persistStorage.setItem('no-fields', { value: 1 }, 0);
 
       const serialized = JSON.parse(storage.set.mock.calls[0][1]);
       expect(serialized.syncMetadata).toEqual({ origin: 'session-id', timestamp: 1000 });

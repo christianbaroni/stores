@@ -5,7 +5,7 @@ import { logger } from '../logger';
 import { StateCreator, SubscribeArgs, SubscribeOverloads } from '../types';
 import { nullObject } from '../utils/core';
 import { isPromiseLike } from '../utils/promiseUtils';
-import { applyStateUpdate } from '../utils/storeUtils';
+import { applyStateUpdate } from '../store/stateUpdate';
 import { FieldMetadata, NormalizedSyncConfig, SyncHandle, SyncStateKey, SyncUpdate, SyncValues } from './types';
 
 // ============ Sync Enhancer =================================================== //

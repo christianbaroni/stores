@@ -7,9 +7,9 @@ export * from './createVirtualStore';
 export { StoresError } from './errors';
 
 /* -- Helpers ------- */
+export { applyStateUpdate } from './store/stateUpdate';
 export { replacer, reviver } from './utils/serialization';
 export {
-  applyStateUpdate,
   destroyStore,
   destroyStores,
   getStoreName,

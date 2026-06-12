@@ -17,3 +17,10 @@ export function isPlainObject(value: unknown): value is Record<string, unknown> 
   const prototype = Object.getPrototypeOf(value);
   return prototype === null || prototype === Object.prototype;
 }
+
+/**
+ * Checks for non-null, non-array objects.
+ */
+export function isRecordLike(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}

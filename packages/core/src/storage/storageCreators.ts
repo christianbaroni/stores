@@ -1,11 +1,11 @@
-import { PersistStorage } from 'zustand/middleware';
 import { IS_BROWSER, IS_IOS, IS_TEST } from '@/env';
 import { getStorageConfig } from '../config';
 import { StoresError } from '../errors';
 import { logger } from '../logger';
-import { StorageValue } from './storageTypes';
-import { SyncContext } from '../sync/syncEnhancer';
-import { AsyncStorageInterface, BaseStoreOptions, EnforceStorageKey, SyncStorageInterface } from '../types';
+import type { StorageValue } from './storageTypes';
+import type { AsyncPersistStorage, SyncPersistStorage } from '../store/types';
+import type { SyncContext } from '../sync/syncEnhancer';
+import type { AsyncStorageInterface, BaseStoreOptions, EnforceStorageKey, SyncStorageInterface } from '../types';
 import { createAsyncMicrotaskScheduler } from '../utils/createAsyncMicrotaskScheduler';
 import { debounce } from '../utils/debounce';
 import { defaultDeserializeState, defaultSerializeState, omitStoreMethods } from '../utils/persistUtils';
@@ -16,11 +16,17 @@ type MetadataCapture = {
   shouldClear: boolean;
 };
 
-type SyncPersistStorage<S> = {
-  getItem: (name: string) => StorageValue<S> | null;
-  removeItem: (name: string) => void;
-  setItem: (name: string, value: StorageValue<S>) => void;
-};
+type PersistStorageConfig<S, PersistedState extends Partial<S>> =
+  | {
+      async: false;
+      persistStorage: SyncPersistStorage<S, PersistedState>;
+      version: number;
+    }
+  | {
+      async: true;
+      persistStorage: AsyncPersistStorage<S, PersistedState>;
+      version: number;
+    };
 
 const DEFAULT_PERSIST_THROTTLE_MS = IS_TEST ? 0 : IS_BROWSER ? time.ms(200) : IS_IOS ? time.seconds(3) : time.seconds(5);
 
@@ -31,30 +37,35 @@ export function createPersistStorage<S, PersistedState extends Partial<S>, Persi
   options: EnforceStorageKey<BaseStoreOptions<S, PersistedState, PersistReturn>>,
   storage: AsyncStorageInterface | SyncStorageInterface | undefined,
   syncContext: SyncContext | undefined
-): {
-  persistStorage: SyncPersistStorage<PersistedState> | PersistStorage<PersistedState, Promise<void>>;
-  version: number;
-} {
+): PersistStorageConfig<S, PersistedState> {
   const parsedStorage = storage ?? options.storage ?? getStorageConfig().storage;
   const persistThrottleMs = (options.sync ? undefined : (options.persistThrottleMs ?? DEFAULT_PERSIST_THROTTLE_MS)) || undefined;
   const version = options.version ?? 0;
 
-  const persistStorage = parsedStorage.async
-    ? createAsyncPersistStorage(parsedStorage, options, persistThrottleMs, syncContext)
-    : createSyncPersistStorage(parsedStorage, options, persistThrottleMs, syncContext);
+  if (parsedStorage.async) {
+    return {
+      async: true,
+      persistStorage: createAsyncPersistStorage(parsedStorage, options, persistThrottleMs, syncContext),
+      version,
+    };
+  }
 
-  return { persistStorage, version };
+  return {
+    async: false,
+    persistStorage: createSyncPersistStorage(parsedStorage, options, persistThrottleMs, syncContext),
+    version,
+  };
 }
 
 /**
- * Creates a synchronous persist storage adapter for Zustand.
+ * Creates a synchronous persist storage adapter.
  */
 function createSyncPersistStorage<S, PersistedState extends Partial<S>, PersistReturn>(
   storage: SyncStorageInterface,
   options: EnforceStorageKey<BaseStoreOptions<S, PersistedState, PersistReturn>>,
   persistThrottleMs: number | undefined,
   syncContext?: SyncContext
-): SyncPersistStorage<PersistedState> {
+): SyncPersistStorage<S, PersistedState> {
   const enableMapSetHandling = !options.deserializer && !options.serializer && !storage.deserializer && !storage.serializer;
   const injectMetadata =
     typeof options.sync === 'object' && (options.sync.injectStorageMetadata ?? options.sync.engine?.injectStorageMetadata) === true;
@@ -63,14 +74,13 @@ function createSyncPersistStorage<S, PersistedState extends Partial<S>, PersistR
   const deserializer = options.deserializer ?? storage.deserializer ?? createDefaultDeserializer<PersistedState>(enableMapSetHandling);
   const serializer = options.serializer ?? storage.serializer ?? createDefaultSerializer<PersistedState>(enableMapSetHandling);
 
-  function persist(name: string, storageValue: StorageValue<PersistedState>): void {
+  function persist(name: string, state: S, version: number | undefined): void {
     try {
       if (shouldSkipPersistence(syncContext)) return;
 
-      assertStateType<S, PersistedState>(storageValue.state);
-      storageValue.state = partialize(storageValue.state);
-      const metadataCapture = attachMetadata(syncContext, injectMetadata, storageValue);
-      const serializedValue = serializer(storageValue);
+      const persistedValue: StorageValue<PersistedState> = { state: partialize(state), version };
+      const metadataCapture = attachMetadata(syncContext, injectMetadata, persistedValue);
+      const serializedValue = serializer(persistedValue);
 
       try {
         storage.set(name, serializedValue);
@@ -94,9 +104,9 @@ function createSyncPersistStorage<S, PersistedState extends Partial<S>, PersistR
       if (serializedValue === undefined) return null;
       return deserializer(serializedValue);
     },
-    setItem: (name, value) => {
+    setItem: (name, state, version) => {
       if (syncContext?.getIsApplyingRemote()) return;
-      lazyPersist(name, value);
+      lazyPersist(name, state, version);
     },
     removeItem: name => {
       try {
@@ -109,14 +119,14 @@ function createSyncPersistStorage<S, PersistedState extends Partial<S>, PersistR
 }
 
 /**
- * Creates an asynchronous persist storage adapter for Zustand.
+ * Creates an asynchronous persist storage adapter.
  */
 export function createAsyncPersistStorage<S, PersistedState extends Partial<S>, PersistReturn>(
   storage: AsyncStorageInterface,
   options: EnforceStorageKey<BaseStoreOptions<S, PersistedState, PersistReturn>>,
   persistThrottleMs: number | undefined,
   syncContext?: SyncContext
-): PersistStorage<PersistedState, Promise<void>> {
+): AsyncPersistStorage<S, PersistedState> {
   const enableMapSetHandling = !options.deserializer && !options.serializer && !storage.deserializer && !storage.serializer;
   const injectMetadata =
     typeof options.sync === 'object' && (options.sync.injectStorageMetadata ?? options.sync.engine?.injectStorageMetadata) === true;
@@ -125,14 +135,13 @@ export function createAsyncPersistStorage<S, PersistedState extends Partial<S>, 
   const deserializer = options.deserializer ?? storage.deserializer ?? createDefaultDeserializer<PersistedState>(enableMapSetHandling);
   const serializer = options.serializer ?? storage.serializer ?? createDefaultSerializer<PersistedState>(enableMapSetHandling);
 
-  async function persist(name: string, storageValue: StorageValue<PersistedState>): Promise<void> {
+  async function persist(name: string, state: S, version: number | undefined): Promise<void> {
     try {
       if (shouldSkipPersistence(syncContext)) return;
 
-      assertStateType<S, PersistedState>(storageValue.state);
-      storageValue.state = partialize(storageValue.state);
-      const metadataCapture = attachMetadata(syncContext, injectMetadata, storageValue);
-      const serializedValue = serializer(storageValue);
+      const persistedValue: StorageValue<PersistedState> = { state: partialize(state), version };
+      const metadataCapture = attachMetadata(syncContext, injectMetadata, persistedValue);
+      const serializedValue = serializer(persistedValue);
 
       try {
         await storage.set(name, serializedValue);
@@ -160,9 +169,9 @@ export function createAsyncPersistStorage<S, PersistedState extends Partial<S>, 
       if (serializedValue === undefined) return null;
       return deserializer(serializedValue);
     },
-    setItem: async (name, value) => {
+    setItem: async (name, state, version) => {
       if (syncContext?.getIsApplyingRemote()) return;
-      return await lazyPersist(name, value);
+      return await lazyPersist(name, state, version);
     },
     removeItem: async name => {
       try {
@@ -172,10 +181,6 @@ export function createAsyncPersistStorage<S, PersistedState extends Partial<S>, 
       }
     },
   };
-}
-
-function assertStateType<S, PersistedState extends Partial<S>>(state: S | PersistedState): asserts state is S {
-  return;
 }
 
 function createDefaultDeserializer<PersistedState extends Partial<unknown>>(

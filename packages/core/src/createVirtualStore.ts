@@ -1,5 +1,6 @@
-import { createDerivedStore, DeriveGetter } from './createDerivedStore';
-import {
+import { createDerivedStore } from './createDerivedStore';
+import type { DeriveGetter } from './createDerivedStore';
+import type {
   BaseStore,
   DeriveOptions,
   EqualityFn,
@@ -8,6 +9,7 @@ import {
   InferStoreState,
   OptionallyPersistedStore,
   Selector,
+  SetStateArgs,
   SubscribeArgs,
   UnsubscribeFn,
 } from './types';
@@ -180,7 +182,7 @@ export function createVirtualStore<
   );
 }
 
-function createPersist<State, PersistedState>(
+function createPersist<State, PersistedState extends Partial<State>>(
   getStore: () => OptionallyPersistedStore<State, PersistedState, void | Promise<void>>
 ): OptionallyPersistedStore<State, PersistedState, void | Promise<void>>['persist'] {
   return {
@@ -195,9 +197,9 @@ function createPersist<State, PersistedState>(
   };
 }
 
-function createSetState<Store extends BaseStore<unknown>>(getStore: () => Store): Store['setState'] {
-  return function setState(update: Parameters<Store['setState']>[0], replace?: boolean): void | Promise<void> {
-    if (!replace) return getStore().setState(update);
-    return getStore().setState(update, replace);
+function createSetState<State, Store extends BaseStore<State>>(getStore: () => Store): Store['setState'] {
+  return function setState(...args: SetStateArgs<State>): void | Promise<void> {
+    if (args[1] === true) return getStore().setState(args[0], true);
+    return getStore().setState(args[0]);
   };
 }

@@ -1,17 +1,17 @@
-import { persist, PersistOptions, subscribeWithSelector } from 'zustand/middleware';
 import { getStorageConfig, markStoreCreated } from './config';
 import { createStoreWithEqualityFn } from './createStoreWithEqualityFn';
 import { StoresError } from './errors';
 import { createHydrationGate } from './middleware/createHydrationGate';
 import { createPersistStorage } from './storage/storageCreators';
+import { persist } from './store/persist';
 import { createSyncedStateCreator } from './sync/syncEnhancer';
-import { NormalizedSyncConfig } from './sync/types';
-import { BaseStoreOptions, OptionallyPersistedStore, Store, StateCreator, SyncOption } from './types';
+import type { NormalizedSyncConfig } from './sync/types';
+import type { BaseStoreOptions, OptionallyPersistedStore, Store, StateCreator, SyncOption } from './types';
 
 /**
  * Creates a base store without persistence.
  * @param createState - The state creator function for the base store.
- * @returns A Zustand store with the specified state.
+ * @returns A store with the specified state.
  */
 export function createBaseStore<S>(createState: StateCreator<S>): Store<S>;
 
@@ -19,7 +19,7 @@ export function createBaseStore<S>(createState: StateCreator<S>): Store<S>;
  * Creates a base store with persistence.
  * @param createState - The state creator function for the base store.
  * @param options - The configuration options for persistence and sync.
- * @returns A Zustand store with the specified state and persistence.
+ * @returns A store with the specified state and persistence.
  */
 export function createBaseStore<S, PersistedState extends Partial<S> = Partial<S>, PersistReturn extends void = void>(
   createState: StateCreator<S>,
@@ -30,7 +30,7 @@ export function createBaseStore<S, PersistedState extends Partial<S> = Partial<S
  * Creates a base store with async persistence.
  * @param createState - The state creator function for the base store.
  * @param options - The configuration options for persistence and sync.
- * @returns A Zustand store with the specified state and persistence.
+ * @returns A store with the specified state and persistence.
  */
 export function createBaseStore<S, PersistedState extends Partial<S> = Partial<S>, PersistReturn extends Promise<void> = Promise<void>>(
   createState: StateCreator<S>,
@@ -41,7 +41,7 @@ export function createBaseStore<S, PersistedState extends Partial<S> = Partial<S
  * Creates a base store with optional persistence.
  * @param createState - The state creator function for the base store.
  * @param options - The configuration options for persistence and sync.
- * @returns A Zustand store with the specified state and optional persistence.
+ * @returns A store with the specified state and optional persistence.
  */
 export function createBaseStore<S, PersistedState extends Partial<S> = Partial<S>, PersistReturn extends void = void>(
   createState: StateCreator<S>,
@@ -52,7 +52,7 @@ export function createBaseStore<S, PersistedState extends Partial<S> = Partial<S
  * Creates a base store with optional async persistence.
  * @param createState - The state creator function for the base store.
  * @param options - The configuration options for persistence and sync.
- * @returns A Zustand store with the specified state and optional persistence.
+ * @returns A store with the specified state and optional persistence.
  */
 export function createBaseStore<S, PersistedState extends Partial<S> = Partial<S>, PersistReturn extends Promise<void> = Promise<void>>(
   createState: StateCreator<S>,
@@ -63,29 +63,34 @@ export function createBaseStore<S, PersistedState extends Partial<S> = Partial<S
  * Creates a base store with optional persistence and sync.
  * @param createState - The state creator function for the base store.
  * @param options - The configuration options for persistence and sync.
- * @returns A Zustand store with the specified state and optional persistence.
+ * @returns A store with the specified state and optional persistence.
  */
-export function createBaseStore<S, PersistedState extends Partial<S>, PersistReturn>(
+export function createBaseStore<S, PersistedState extends Partial<S>, PersistReturn extends void | Promise<void>>(
   createState: StateCreator<S>,
   options?: BaseStoreOptions<S, PersistedState, PersistReturn>
 ): Store<S> | Store<S, PersistedState, PersistReturn, false> {
   markStoreCreated();
-  const isPersisted = options !== undefined && typeof options.storageKey === 'string';
-  const storageKey = isPersisted ? options.storageKey : undefined;
-  const normalizedSync = options?.sync ? normalizeSyncOption(options.sync, storageKey) : undefined;
-  const parsedStorage = isPersisted ? (options.storage ?? getStorageConfig().storage) : undefined;
 
-  const syncMiddleware = normalizedSync ? createSyncedStateCreator(createState, normalizedSync, parsedStorage?.async ?? false) : undefined;
+  if (!options) {
+    return createStoreWithEqualityFn<S>()(createState, Object.is);
+  }
+
+  const storageKey = options.storageKey;
+  const isPersisted = typeof storageKey === 'string';
+  const storage = isPersisted ? (options.storage ?? getStorageConfig().storage) : undefined;
+
+  const normalizedSync = normalizeSyncOption(options.sync, storageKey);
+  const syncMiddleware = normalizedSync ? createSyncedStateCreator(createState, normalizedSync, storage?.async ?? false) : undefined;
   const stateCreator = syncMiddleware?.stateCreator ?? createState;
 
   if (!isPersisted) {
-    return createStoreWithEqualityFn<S>()(subscribeWithSelector(stateCreator), Object.is);
+    return createStoreWithEqualityFn<S>()(stateCreator, Object.is);
   }
 
-  const hydrationGate = parsedStorage?.async ? createHydrationGate(stateCreator) : null;
-  const storageConfig = createPersistStorage<S, PersistedState, PersistReturn>(options, parsedStorage, syncMiddleware?.syncContext);
+  const storageConfig = createPersistStorage<S, PersistedState, PersistReturn>(options, storage, syncMiddleware?.syncContext);
+  const hydrationGate = storageConfig.async ? createHydrationGate(stateCreator) : undefined;
 
-  const wrappedOnRehydrateStorage = hydrationGate
+  const onRehydrateStorage = hydrationGate
     ? hydrationGate.wrapOnRehydrateStorage(options.onRehydrateStorage, syncMiddleware?.syncContext)
     : options.onRehydrateStorage;
 
@@ -97,7 +102,14 @@ export function createBaseStore<S, PersistedState extends Partial<S>, PersistRet
     : stateCreator;
 
   const store = createStoreWithEqualityFn<S>()(
-    subscribeWithSelector(persist(finalStateCreator, buildPersistOptions(options, storageConfig, wrappedOnRehydrateStorage))),
+    persist<S, PersistedState, PersistReturn>(finalStateCreator, {
+      merge: options.merge,
+      migrate: options.migrate,
+      name: storageKey,
+      onRehydrateStorage,
+      storage: storageConfig.persistStorage,
+      version: storageConfig.version,
+    }),
     Object.is
   );
 
@@ -108,53 +120,16 @@ export function createBaseStore<S, PersistedState extends Partial<S>, PersistRet
   });
 }
 
-function buildPersistOptions<S, PersistedState extends Partial<S>, PersistReturn>(
-  options: BaseStoreOptions<S, PersistedState, PersistReturn> & { storageKey: string },
-  storageConfig: ReturnType<typeof createPersistStorage<S, PersistedState, PersistReturn>>,
-  wrappedOnRehydrateStorage: BaseStoreOptions<S, PersistedState, PersistReturn>['onRehydrateStorage']
-): PersistOptions<S, PersistedState, unknown> {
-  const persistConfig: PersistOptions<S, PersistedState> = {
-    name: options.storageKey,
-    onRehydrateStorage: wrappedOnRehydrateStorage,
-    storage: storageConfig.persistStorage,
-    version: storageConfig.version,
-  };
-
-  if (options.merge !== undefined) persistConfig.merge = options.merge;
-  if (options.migrate !== undefined) persistConfig.migrate = options.migrate;
-
-  return persistConfig;
-}
-
-/**
- * Normalizes `SyncOption` into `NormalizedSyncConfig` with a required key.
- */
 function normalizeSyncOption<S extends Record<string, unknown>>(
   syncOption: SyncOption<S> | undefined,
   storageKey: string | undefined
 ): NormalizedSyncConfig<S> | null {
   if (!syncOption) return null;
 
-  // -- Case 1: sync: true (inherit from storageKey)
-  if (syncOption === true) {
-    if (!storageKey) {
-      throw new StoresError('[createBaseStore]: sync: true requires a storageKey to inherit the key from');
-    }
-    return { key: storageKey };
-  }
+  const isObject = typeof syncOption === 'object';
+  const key = isObject ? syncOption.key : syncOption === true ? storageKey : syncOption;
 
-  // -- Case 2: sync: 'sync-key' (string shorthand)
-  if (typeof syncOption === 'string') {
-    return { key: syncOption };
-  }
+  if (!key) throw new StoresError('[createBaseStore]: sync requires a key to be specified either directly or via storageKey');
 
-  // -- Case 3: sync: { ... } (options object)
-  const config = syncOption;
-  const key = config.key ?? storageKey;
-
-  if (!key) {
-    throw new StoresError('[createBaseStore]: sync requires either a key in the config or a storageKey to inherit from');
-  }
-
-  return { ...config, key };
+  return isObject ? { ...syncOption, key } : { key };
 }

@@ -1,6 +1,6 @@
-import { StoreApi } from 'zustand';
-import { QueryStore, QueryStoreState } from '../queryStore/types';
-import { BaseStore, InferStoreState, PersistedStore, SetFull, SetPartial, SetStateArgs } from '../types';
+import type { QueryStore, QueryStoreState } from '../queryStore/types';
+import type { StoreApi } from '../store/types';
+import type { BaseStore, InferStoreState, PersistedStore } from '../types';
 
 export const StoreTags = Object.freeze({
   QueryStore: Symbol('queryStore'),
@@ -11,23 +11,6 @@ type StoreTag = (typeof StoreTags)[keyof typeof StoreTags];
 
 export function assignStoreTag<S>(store: BaseStore<S>, tag: StoreTag): BaseStore<S> {
   return Object.assign(store, { [tag]: true });
-}
-
-/**
- * Helper that applies a `setState` update to the provided state.
- * Handles the `setState` discriminated union types internally.
- */
-export function applyStateUpdate<S>(state: S, ...setArgs: SetStateArgs<S>): S {
-  if (setArgs[1] === true) {
-    return isFunctionSetter(setArgs[0]) ? setArgs[0](state) : setArgs[0];
-  }
-  const partial = isFunctionSetter(setArgs[0]) ? setArgs[0](state) : setArgs[0];
-  if (isArrayReplacement(state, partial)) return partial;
-  return { ...state, ...partial };
-}
-
-function isArrayReplacement<S>(state: S, value: S | Partial<S>): value is S {
-  return Array.isArray(state);
 }
 
 /**
@@ -111,13 +94,4 @@ export function isPersistedStore<T extends BaseStore<unknown> | PersistedStore<u
  */
 export function isVirtualStore<T extends BaseStore<unknown> | StoreApi<unknown>>(store: T): store is T & BaseStore<InferStoreState<T>> {
   return StoreTags.VirtualStore in store;
-}
-
-/**
- * Checks if a `setState` payload is a function setter.
- */
-function isFunctionSetter<S>(update: SetPartial<S>): update is (state: S) => Partial<S>;
-function isFunctionSetter<S>(update: SetFull<S>): update is (state: S) => S;
-function isFunctionSetter<S>(update: SetPartial<S> | SetFull<S>): update is (state: S) => S | Partial<S> {
-  return typeof update === 'function';
 }

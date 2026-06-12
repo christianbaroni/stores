@@ -1,6 +1,7 @@
 import { ensureError } from '../errors';
+import { applySetState } from '../store/stateUpdate';
 import { SyncContext } from '../sync/syncEnhancer';
-import { StateCreator, SetStateArgs, SetState } from '../types';
+import { SetStateArgs, StateCreator } from '../types';
 import { HydrationCoordinator, createHydrationCoordinator } from '../utils/hydrationCoordinator';
 
 type WrappedOnRehydrateStorage<S> = (
@@ -31,7 +32,7 @@ export function createHydrationGate<S>(stateCreator: StateCreator<S>): {
   const wrappedStateCreator: StateCreator<S> = (set, get, api) => {
     let pendingSetCalls: Array<SetStateArgs<S>> | undefined = undefined;
 
-    const deferredSet: SetState<S> = (...args) => {
+    function deferredSet(...args: SetStateArgs<S>): Promise<void> | void {
       // -- Hydrating: defer set() calls to be flushed after hydration
       if (!isHydrated) {
         if (!coordinator) coordinator = createHydrationCoordinator();
@@ -40,14 +41,13 @@ export function createHydrationGate<S>(stateCreator: StateCreator<S>): {
         return coordinator.promise;
       }
       // -- Hydrated: let synchronous calls pass through
-      return args[1] === true ? set(args[0], args[1]) : set(args[0]);
-    };
+      return applySetState(set, args);
+    }
 
     flushPendingSetCalls = () => {
       if (!pendingSetCalls?.length) return;
       for (const args of pendingSetCalls) {
-        if (args[1]) api.setState(args[0], args[1]);
-        else api.setState(args[0]);
+        applySetState(api.setState, args);
       }
       pendingSetCalls = undefined;
     };

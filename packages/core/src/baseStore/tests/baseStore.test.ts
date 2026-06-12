@@ -77,6 +77,19 @@ describe('createBaseStore / persistence + hydration', () => {
     expect(store.getState()).toEqual({ count: 42, nested: { value: 'disk' } });
   });
 
+  test('clearStorage does not expose the storage adapter return value', () => {
+    const storageKey = 'test-clear-storage';
+    const store = createBaseStore<CounterState>(() => ({ count: 0, nested: { value: 'init' } }), {
+      storage,
+      storageKey,
+    });
+
+    const result = store.persist.clearStorage();
+
+    expect(result).toBeUndefined();
+    expect(storage.delete).toHaveBeenCalledWith(storageKey);
+  });
+
   test('migrate is invoked before merge; merge sees migrated snapshot; version recorded', async () => {
     type V1 = { count: number; version: number };
     type V2 = V1;
@@ -212,7 +225,7 @@ describe('createBaseStore / persistence + hydration', () => {
   });
 });
 
-function assertIsPersisted<S, PersistedState, PersistReturn>(
+function assertIsPersisted<S, PersistedState extends Partial<S>, PersistReturn>(
   store: OptionallyPersistedStore<S, PersistedState, PersistReturn>
 ): asserts store is PersistedStore<S, PersistedState, PersistReturn, false> {
   return;
