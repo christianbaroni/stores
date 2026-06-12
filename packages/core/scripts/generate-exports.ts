@@ -3,21 +3,26 @@ import { dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { type PluginConfig, pluginOutputPath, pluginSubpathName, pluginTypesPath, plugins, type PluginSubpath } from '../build/plugins';
 
+// ============ Script ========================================================= //
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkgPath = resolve(__dirname, '../package.json');
 const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
 
 pkg.exports = {
   '.': pkg.exports['.'],
+  './vanilla': pkg.exports['./vanilla'],
   ...buildPackageExports(),
 };
 
 writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
 
-// ============ Utilities ====================================================== //
+// ============ Types ========================================================== //
 
 type PackageCondition = string | { 'react-native': string; default: string };
 type PackageExport = { types: string; import: PackageCondition; require: PackageCondition };
+
+// ============ Utilities ====================================================== //
 
 function buildPackageExports(): Record<string, PackageExport> {
   const packageExports: Record<string, PackageExport> = {};

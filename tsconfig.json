@@ -21,6 +21,8 @@
       "@/hooks/*": ["packages/core/src/hooks/*"],
       "@/logger": ["packages/core/src/logger"],
       "@/queryStore/*": ["packages/core/src/queryStore/*"],
+      "@/store/batchStoreNotifications": ["packages/core/src/store/batchStoreNotifications.web.ts"],
+      "@/store/attachStoreHook": ["packages/core/src/store/attachStoreHook.react.ts"],
       "@/storage": ["packages/core/src/storesStorage"],
       "@/tests/*": ["packages/core/src/tests/*"],
       "@/utils/*": ["packages/core/src/utils/*"]

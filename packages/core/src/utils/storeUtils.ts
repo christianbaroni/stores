@@ -42,7 +42,12 @@ export function destroyStores(
  * Returns the name of the store, either from the `persist` options or the store itself.
  */
 export function getStoreName(store: BaseStore<unknown>): string {
-  return isPersistedStore(store) ? (store.persist.getOptions().name ?? store.name) : store.name;
+  const fallbackName = getCallableName(store);
+  return isPersistedStore(store) ? (store.persist.getOptions().name ?? fallbackName) : fallbackName;
+}
+
+function getCallableName(value: unknown): string {
+  return typeof value === 'function' ? value.name : '';
 }
 
 /**

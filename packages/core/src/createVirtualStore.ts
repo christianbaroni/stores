@@ -1,14 +1,13 @@
+import { attachStoreHook } from '@/store/attachStoreHook';
 import { createDerivedStore } from './createDerivedStore';
 import type { DeriveGetter } from './createDerivedStore';
 import type {
   BaseStore,
   DeriveOptions,
-  EqualityFn,
   InferPersistedState,
   InferSetStateReturn,
   InferStoreState,
   OptionallyPersistedStore,
-  Selector,
   SetStateArgs,
   SubscribeArgs,
   UnsubscribeFn,
@@ -160,15 +159,7 @@ export function createVirtualStore<
     };
   }
 
-  function useVirtualStore(): State;
-  function useVirtualStore<T>(selector: Selector<State, T>, equalityFn?: EqualityFn<T>): T;
-  function useVirtualStore<T>(selector?: Selector<State, T>, equalityFn?: EqualityFn<T>): State | T {
-    const store = useCachedStore();
-    return selector ? store(selector, equalityFn) : store();
-  }
-
-  return Object.assign(
-    useVirtualStore,
+  const virtualStore = Object.assign(
     {
       [StoreTags.VirtualStore]: true,
       destroy: useCachedStore.destroy,
@@ -180,6 +171,8 @@ export function createVirtualStore<
     },
     parsedOverrides?.(useCachedStore.getState)
   );
+
+  return attachStoreHook(virtualStore, virtualStore.getState, virtualStore.getInitialState);
 }
 
 function createPersist<State, PersistedState extends Partial<State>>(

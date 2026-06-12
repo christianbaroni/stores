@@ -1,4 +1,4 @@
-import { unstable_batchedUpdates } from '@/env';
+import { batchStoreNotifications } from '@/store/batchStoreNotifications';
 
 /**
  * Cascade Scheduler
@@ -51,7 +51,7 @@ export function activateCascade(): void {
   queueMicrotask(() => {
     scheduled = false;
 
-    unstable_batchedUpdates(() => {
+    batchStoreNotifications(() => {
       // 1) Settle all derivations in ascending-rank waves to a fixed point.
       // Tasks may enqueue/upgrade other tasks with higher ranks during execution.
       while (taskRank.size > 0) {

@@ -1,8 +1,8 @@
 import { IS_DEV } from '@/env';
+import { attachStoreHook } from '@/store/attachStoreHook';
 import { activateCascade, enqueueDerive, getCurrentDeriveRank, isCascadeActive, joinCascade } from './derivedStore/cascadeScheduler';
 import { getOrCreateProxy, stripProxies } from './derivedStore/deriveProxy';
 import { PathFinder, createPathFinder } from './derivedStore/pathFinder';
-import { useSyncExternalStoreWithSelector } from './hooks/useSyncExternalStoreWithSelector';
 import type { StoreApi } from './store/types';
 import type {
   BaseStore,
@@ -94,16 +94,8 @@ export function createDerivedStore<Derived>(
   deriveFunction: ($: DeriveGetter) => Derived,
   optionsOrEqualityFn: DeriveOptions<Derived> = Object.is
 ): DerivedStore<Derived> {
-  return attachStoreHook(derive(deriveFunction, optionsOrEqualityFn));
-}
-
-function attachStoreHook<S>(store: WithGetSnapshot<WithFlushUpdates<StoreApi<S>>>): DerivedStore<S> {
-  function useDerivedStore(): S;
-  function useDerivedStore<Selected>(selector: Selector<S, Selected>, equalityFn?: EqualityFn<Selected>): Selected;
-  function useDerivedStore<Selected>(selector: Selector<S, Selected> = identity, equalityFn?: EqualityFn<Selected>): S | Selected {
-    return useSyncExternalStoreWithSelector(store.subscribe, store.getSnapshot, undefined, selector, equalityFn);
-  }
-  return Object.assign(useDerivedStore, store);
+  const store = derive(deriveFunction, optionsOrEqualityFn);
+  return attachStoreHook(store, store.getSnapshot);
 }
 
 // ============ Types ========================================================== //

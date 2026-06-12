@@ -17,6 +17,8 @@ export default defineConfig({
   resolve: {
     alias: {
       '@/env': resolve(__dirname, 'src/env.web.ts'),
+      '@/store/batchStoreNotifications': resolve(__dirname, 'src/store/batchStoreNotifications.web.ts'),
+      '@/store/attachStoreHook': resolve(__dirname, 'src/store/attachStoreHook.react.ts'),
       '@/storage': resolve(__dirname, 'src/storesStorage.web.ts'),
     },
   },

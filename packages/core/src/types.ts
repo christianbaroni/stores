@@ -1,6 +1,11 @@
 import type { StorageValue } from './storage/storageTypes';
 import type { Mutate, PersistOptions, StateCreator as StoreStateCreator, StoreApi, StoreMutatorIdentifier } from './store/types';
 import type { SyncConfig } from './sync/types';
+import type { EqualityFn, Selector } from './types/selection';
+import type { UseStoreCallSignatures } from './types/useStoreCallSignatures';
+
+export type { EqualityFn, Selector } from './types/selection';
+export type { UseStoreCallSignatures } from './types/useStoreCallSignatures';
 
 // ============ Store Mutators ================================================= //
 
@@ -78,13 +83,6 @@ export type NoInfer<T> = [T][T extends unknown ? 0 : never];
 export type Timeout = ReturnType<typeof setTimeout>;
 
 export type Listener<S> = (state: S, prevState: S) => void;
-export type Selector<S, Selected> = (state: S) => Selected;
-export type EqualityFn<T = unknown> = (a: T, b: T) => boolean;
-
-export type UseStoreCallSignatures<S> = {
-  (): S;
-  <Selected>(selector: Selector<S, Selected>, equalityFn?: EqualityFn<Selected>): Selected;
-};
 
 export type InferStoreState<Store> = Store extends { getState: () => infer T } ? T : never;
 
@@ -175,8 +173,7 @@ export type WithFlushUpdates<Store extends { getState: () => unknown }> = Store 
 
 export type WithGetSnapshot<Store extends { getState: () => unknown }> = Store & {
   /**
-   * Provided to `useSyncExternalStoreWithSelector` to ensure it activates the derived
-   * store when it gets the initial state before subscribing to the store.
+   * Reads the current snapshot while activating lazy derived stores before subscription.
    */
   getSnapshot: () => InferStoreState<Store>;
 };

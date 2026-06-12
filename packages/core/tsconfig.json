@@ -18,6 +18,8 @@
     "baseUrl": ".",
     "paths": {
       "@/env": ["src/env.web.ts"],
+      "@/store/batchStoreNotifications": ["src/store/batchStoreNotifications.web.ts"],
+      "@/store/attachStoreHook": ["src/store/attachStoreHook.react.ts"],
       "@/storage": ["src/storesStorage.web.ts"]
     }
   },

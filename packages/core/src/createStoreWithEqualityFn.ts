@@ -1,7 +1,7 @@
-import { useSyncExternalStoreWithSelector } from './hooks/useSyncExternalStoreWithSelector';
+import { attachStoreHook } from '@/store/attachStoreHook';
 import { createStore } from './store/createStore';
 import type { Mutate, StateCreator, StoreApi, StoreMutatorIdentifier } from './store/types';
-import type { EqualityFn, Selector, UseBoundStoreWithEqualityFn } from './types';
+import type { EqualityFn, UseBoundStoreWithEqualityFn } from './types';
 
 // ============ Store Creator ================================================== //
 
@@ -42,11 +42,5 @@ function createStoreHook<State, StoreMutatorOutput extends StoreMutatorTuple[] =
 ): UseBoundStoreWithEqualityFn<Mutate<StoreApi<State>, StoreMutatorOutput>, State> {
   const api = createStore(initializer);
 
-  function useStore(): State;
-  function useStore<Selected>(selector: Selector<State, Selected>, equalityFn?: EqualityFn<Selected>): Selected;
-  function useStore<Selected>(selector?: Selector<State, Selected>, equalityFn?: EqualityFn<Selected>): State | Selected {
-    return useSyncExternalStoreWithSelector(api.subscribe, api.getState, api.getInitialState, selector, equalityFn ?? defaultEqualityFn);
-  }
-
-  return Object.assign(useStore, api);
+  return attachStoreHook(api, api.getState, api.getInitialState, defaultEqualityFn);
 }
