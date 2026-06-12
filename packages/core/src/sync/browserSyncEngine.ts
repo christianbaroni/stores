@@ -20,19 +20,6 @@ type SyncEnvelope = {
   values: Record<string, unknown>;
 };
 
-function generateSessionId(): string {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
-  return `${Math.random().toString(36).slice(2)}:${Date.now().toString(36)}`;
-}
-
-function getLocalStorage(): Storage | null {
-  try {
-    return typeof window !== 'undefined' ? window.localStorage : null;
-  } catch {
-    return null;
-  }
-}
-
 class BrowserSyncHandle<T extends Record<string, unknown>> implements SyncHandle<T> {
   private readonly broadcast: (envelope: SyncEnvelope) => void;
   private readonly origin: string;
@@ -175,4 +162,17 @@ let sharedEngine: BrowserSyncEngine | undefined;
 export function createBrowserSyncEngine(): SyncEngine {
   if (!sharedEngine) sharedEngine = new BrowserSyncEngine();
   return sharedEngine;
+}
+
+function generateSessionId(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
+  return `${Math.random().toString(36).slice(2)}:${Date.now().toString(36)}`;
+}
+
+function getLocalStorage(): Storage | null {
+  try {
+    return typeof window !== 'undefined' ? window.localStorage : null;
+  } catch {
+    return null;
+  }
 }
