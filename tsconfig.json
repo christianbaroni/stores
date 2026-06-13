@@ -15,17 +15,10 @@
     "baseUrl": ".",
     "paths": {
       "stores": ["packages/core/src"],
-      "@/cli": ["cli"],
-      "@/derivedStore/*": ["packages/core/src/derivedStore/*"],
-      "@/env": ["packages/core/src/env"],
-      "@/hooks/*": ["packages/core/src/hooks/*"],
-      "@/logger": ["packages/core/src/logger"],
-      "@/queryStore/*": ["packages/core/src/queryStore/*"],
+      "@/env": ["packages/core/src/env.web.ts"],
       "@/store/batchStoreNotifications": ["packages/core/src/store/batchStoreNotifications.web.ts"],
       "@/store/attachStoreHook": ["packages/core/src/store/attachStoreHook.react.ts"],
-      "@/storage": ["packages/core/src/storesStorage"],
-      "@/tests/*": ["packages/core/src/tests/*"],
-      "@/utils/*": ["packages/core/src/utils/*"]
+      "@/storage": ["packages/core/src/storesStorage.web.ts"]
     }
   },
   "include": ["packages/*/src/**/*"],

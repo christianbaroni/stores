@@ -2,6 +2,7 @@ import type { QueryStore, QueryStoreState } from '../queryStore/types';
 import type { StoreApi } from '../store/types';
 import type { BaseStore, InferStoreState, PersistedStore } from '../types';
 
+/** @internal */
 export const StoreTags = Object.freeze({
   QueryStore: Symbol('queryStore'),
   VirtualStore: Symbol('virtualStore'),
@@ -9,7 +10,8 @@ export const StoreTags = Object.freeze({
 
 type StoreTag = (typeof StoreTags)[keyof typeof StoreTags];
 
-export function assignStoreTag<S>(store: BaseStore<S>, tag: StoreTag): BaseStore<S> {
+/** @internal */
+export function assignStoreTag<Store extends object>(store: Store, tag: StoreTag): Store {
   return Object.assign(store, { [tag]: true });
 }
 
@@ -52,6 +54,8 @@ function getCallableName(value: unknown): string {
 
 /**
  * Checks if a store has a `destroy` method.
+ *
+ * @internal
  */
 export function hasDestroy<T extends StoreApi<unknown>>(store: T): store is T & { destroy: () => void } {
   return 'destroy' in store;

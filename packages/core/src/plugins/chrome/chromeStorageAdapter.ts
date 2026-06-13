@@ -1,4 +1,4 @@
-import { DEFAULT_STORAGE_KEY_PREFIX } from '../../config';
+import { DEFAULT_STORAGE_KEY_PREFIX } from '../../internal/runtime';
 import { StorageValue } from '../../storage/storageTypes';
 import { AsyncStorageInterface } from '../../types';
 import { isPlainObject } from '../../types/utils';

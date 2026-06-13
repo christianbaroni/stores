@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/consistent-type-assertions */
-import { AttachValue } from './queryStore/signalTypes';
-import { BaseStore, UnsubscribeFn } from './types';
+import type { AttachValue } from './queryStore/signalTypes';
+import type { StoreApi } from './store/types';
+import type { UnsubscribeFn } from './types';
 import { nullObject } from './utils/core';
 import { dequal } from './utils/equality';
 import { hasGetSnapshot } from './utils/storeUtils';
@@ -12,7 +13,7 @@ export const attachValueSubscriptionMap = new WeakMap<AttachValue<unknown>, Subs
 
 /* Global caching for top-level attachValues */
 const storeSignalCache = new WeakMap<
-  BaseStore<unknown>,
+  object,
   Map<(state: unknown) => unknown, Map<(a: unknown, b: unknown) => boolean, AttachValue<unknown>>>
 >();
 
@@ -20,10 +21,10 @@ export type Subscribe = (callback: () => void) => UnsubscribeFn;
 export type GetValue = () => unknown;
 export type SetValue = (path: unknown[], value: unknown) => void;
 
-export function $<T>(store: BaseStore<T>): AttachValue<T>;
-export function $<T, S>(store: BaseStore<T>, selector: (state: T) => S, equalityFn?: (a: S, b: S) => boolean): AttachValue<S>;
+export function $<T>(store: StoreApi<T>): AttachValue<T>;
+export function $<T, S>(store: StoreApi<T>, selector: (state: T) => S, equalityFn?: (a: S, b: S) => boolean): AttachValue<S>;
 export function $(
-  store: BaseStore<unknown>,
+  store: StoreApi<unknown>,
   selector: (state: unknown) => unknown = identity,
   equalityFn: (a: unknown, b: unknown) => boolean = dequal
 ) {
@@ -48,7 +49,7 @@ const updateValue = <T>(obj: T, path: unknown[], value: unknown): T => {
 };
 
 export const createSignal = <T, S>(
-  store: BaseStore<T>,
+  store: StoreApi<T>,
   selector: (state: T) => S,
   equalityFn: (a: S, b: S) => boolean
 ): [Subscribe, GetValue, SetValue] => {
@@ -98,7 +99,7 @@ export const createSignal = <T, S>(
   return [sub, get, set];
 };
 
-function getOrCreateAttachValue<T, S>(store: BaseStore<T>, selector: (state: T) => S, equalityFn: (a: S, b: S) => boolean): AttachValue<S> {
+function getOrCreateAttachValue<T, S>(store: StoreApi<T>, selector: (state: T) => S, equalityFn: (a: S, b: S) => boolean): AttachValue<S> {
   let bySelector = storeSignalCache.get(store);
   if (!bySelector) {
     bySelector = new Map();

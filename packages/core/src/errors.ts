@@ -21,6 +21,8 @@ export class StoresError extends Error {
 
 /**
  * Normalizes unknown thrown values for store state and promise rejection paths.
+ *
+ * @internal
  */
 export function ensureError(error: unknown): Error {
   if (error instanceof Error) return error;

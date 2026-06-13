@@ -11,7 +11,6 @@ const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
 
 pkg.exports = {
   '.': pkg.exports['.'],
-  './vanilla': pkg.exports['./vanilla'],
   ...buildPackageExports(),
 };
 

@@ -83,6 +83,17 @@ export type StorePersistApi<S, PersistedState = Partial<S>, PersistReturn = unkn
   setOptions: (options: Partial<PersistOptions<S, PersistedState, PersistReturn>>) => void;
 };
 
+/**
+ * Hydration promise API attached to stores backed by asynchronous persistence.
+ */
+export type HydrationPromise<PersistReturn> =
+  PersistReturn extends Promise<void>
+    ? {
+        /** Invoke to get a promise that resolves once hydration completes. */
+        hydrationPromise: () => Promise<void>;
+      }
+    : { hydrationPromise?: undefined };
+
 // ============ Mutators ======================================================= //
 
 type Get<T, K, Fallback> = K extends keyof T ? T[K] : Fallback;
@@ -119,6 +130,14 @@ export type Mutate<Store, Mutators> = number extends Mutators['length' & keyof M
           : StoreMutators<Store, Args>[Identifier]
         : Store
       : Store;
+
+/** @internal */
+export type PersistedStoreApi<S, PersistedState = Partial<S>, PersistReturn = unknown> = Omit<
+  Mutate<StoreApi<S>, [['stores/persist', [PersistedState, PersistReturn]]]>,
+  'persist'
+> & {
+  persist: StorePersistApi<S, PersistedState, PersistReturn> & HydrationPromise<PersistReturn>;
+};
 
 /**
  * Creates initial state with access to the store API.

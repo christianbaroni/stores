@@ -15,6 +15,7 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
+    "stripInternal": true,
     "forceConsistentCasingInFileNames": true,
     "baseUrl": ".",
     "paths": {

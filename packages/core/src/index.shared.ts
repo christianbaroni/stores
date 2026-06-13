@@ -1,14 +1,13 @@
 /* -- Core ---------- */
-export { configureStores } from './config';
+export { configureStores } from './internal/runtime';
 export { createBaseStore } from './createBaseStore';
 export * from './createDerivedStore';
 export * from './createQueryStore';
 export * from './createVirtualStore';
-export { StoresError } from './errors';
+export { StoresError } from './internal/runtime';
 
 /* -- Helpers ------- */
-export { applyStateUpdate } from './store/stateUpdate';
-export { replacer, reviver } from './utils/serialization';
+export { applyStateUpdate, replacer, reviver } from './internal/runtime';
 export {
   destroyStore,
   destroyStores,
@@ -18,18 +17,17 @@ export {
   isPersistedStore,
   isQueryStore,
   isVirtualStore,
-} from './utils/storeUtils';
+} from './internal/runtime';
 
 /* -- Sync ---------- */
-export * from './sync/types';
+export type * from './sync/types';
 
 /* -- Types --------- */
-export * from './queryStore/types';
-export * from './storage/storageTypes';
-export * from './types';
+export { QueryStatuses } from './internal/runtime';
+export type * from './queryStore/types';
+export type * from './storage/storageTypes';
+export type * from './types';
 
 /* -- Utilities ----- */
-export { identity, nullObject } from './utils/core';
-export * from './utils/createStoreActions';
-export { deepEqual, shallowEqual } from './utils/equality';
-export { time } from './utils/time';
+export { createStoreActions, deepEqual, identity, nullObject, shallowEqual, time } from './internal/runtime';
+export type { StoreActions } from './utils/createStoreActions';

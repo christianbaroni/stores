@@ -1,7 +1,7 @@
 #!/usr/bin/env tsx
 import { exec } from 'child_process';
-import { copyFileSync, readdirSync, rmSync, statSync } from 'fs';
-import { dirname, join } from 'path';
+import { copyFileSync, readFileSync, readdirSync, rmSync, statSync } from 'fs';
+import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { promisify } from 'util';
 import { bold, formatSize, handleError, spinner, summary, timedRow, write } from '@/cli';
@@ -94,24 +94,40 @@ function productionEnv(output: BuildOutput): NodeJS.ProcessEnv {
 
 function bundleSummary(output: BuildOutput): string {
   const dir = join(root, 'dist', output);
-  const totalSize = mjsSize(dir);
   const entries = output === 'vanilla' ? {} : pluginBuildEntries(output);
+  const coreFiles = moduleGraph(join(dir, 'index.mjs'));
+  const allFiles = new Set(coreFiles);
 
-  let pluginsSize = 0;
-  for (const entry of Object.keys(entries)) pluginsSize += statSync(join(dir, `${entry}.mjs`)).size;
+  for (const entry of Object.keys(entries)) {
+    for (const file of moduleGraph(join(dir, `${entry}.mjs`))) allFiles.add(file);
+  }
 
-  const coreSize = totalSize - pluginsSize;
+  const totalSize = filesSize(allFiles);
+  const coreSize = filesSize(coreFiles);
+  const pluginsSize = totalSize - coreSize;
   return `${formatSize(totalSize)} · core ${formatSize(coreSize)} · plugins ${formatSize(pluginsSize)}`;
 }
 
-function mjsSize(path: string): number {
-  const stat = statSync(path);
-  if (!stat.isDirectory()) return path.endsWith('.mjs') ? stat.size : 0;
+function moduleGraph(entry: string, files: Set<string> = new Set()): Set<string> {
+  const file = resolve(entry);
+  if (files.has(file)) return files;
 
-  const entries = readdirSync(path);
+  files.add(file);
+  const source = readFileSync(file, 'utf8');
+
+  for (const specifier of moduleSpecifiers(source)) {
+    if (specifier.startsWith('.')) moduleGraph(resolve(dirname(file), specifier), files);
+  }
+  return files;
+}
+
+function moduleSpecifiers(source: string): string[] {
+  return Array.from(source.matchAll(/\b(?:import|export)\b(?:[^'"]*?\bfrom\s*)?["']([^"']+)["']/g), match => match[1]);
+}
+
+function filesSize(files: Set<string>): number {
   let size = 0;
-
-  for (let i = 0; i < entries.length; i++) size += mjsSize(join(path, entries[i]));
+  for (const file of files) size += statSync(file).size;
   return size;
 }
 

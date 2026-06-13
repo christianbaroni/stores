@@ -1,5 +1,6 @@
-import { AttachValue, SignalFunction } from './signalTypes';
-import { BaseStore, DebounceOptions, SetPartial, Store } from '../types';
+import type { AttachValue, SignalFunction } from './signalTypes';
+import type { StoreApi } from '../store/types';
+import type { DebounceOptions, SetPartial, Store } from '../types';
 
 // ============ Query Store Type =============================================== //
 
@@ -210,7 +211,7 @@ export type QueryStoreInternalState<TData, TParams extends Record<string, unknow
    * Pass a status key to avoid building the full status object.
    * @example
    * ```ts
-   * const isInitialLoad = useMyQueryStore(state => state.getStatus('isInitialLoad'));
+   * const isInitialLoad = myQueryStore.getState().getStatus('isInitialLoad');
    * ```
    * @returns The requested status, or the full status object if no key is provided.
    */
@@ -425,7 +426,7 @@ export type QueryStoreParams<
  */
 export type ReactiveParam<T, TParams extends Record<string, unknown>, S extends QueryStoreState<TData, TParams>, TData> =
   | T
-  | (($: SignalFunction, store: BaseStore<S>) => AttachValue<T>);
+  | (($: SignalFunction, store: StoreApi<S>) => AttachValue<T>);
 
 export type AttachValueParams<TParams extends Record<string, unknown>> = Partial<
   Record<keyof TParams, AttachValue<TParams[Extract<keyof TParams, string>]>>

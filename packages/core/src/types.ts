@@ -1,5 +1,13 @@
 import type { StorageValue } from './storage/storageTypes';
-import type { Mutate, PersistOptions, StateCreator as StoreStateCreator, StoreApi, StoreMutatorIdentifier } from './store/types';
+import type {
+  HydrationPromise,
+  Mutate,
+  PersistOptions,
+  StateCreator as StoreStateCreator,
+  StoreApi,
+  StoreMutatorIdentifier,
+  StorePersistApi,
+} from './store/types';
 import type { SyncConfig } from './sync/types';
 import type { EqualityFn, Selector } from './types/selection';
 import type { UseStoreCallSignatures } from './types/useStoreCallSignatures';
@@ -12,14 +20,6 @@ export type { UseStoreCallSignatures } from './types/useStoreCallSignatures';
 export type StoreMutators = [StoreMutatorIdentifier, unknown][];
 export type StoreMutatorsWithSelector<Mutators extends StoreMutators = StoreMutators> = Mutators;
 
-type HydrationPromise<PersistReturn> =
-  PersistReturn extends Promise<void>
-    ? {
-        /** Invoke to get a promise that resolves once hydration completes. */
-        hydrationPromise: () => Promise<void>;
-      }
-    : { hydrationPromise?: undefined };
-
 type WithPersist<Store, PersistedState, PersistReturn> = Store extends {
   getState: () => infer S;
   setState: {
@@ -30,15 +30,7 @@ type WithPersist<Store, PersistedState, PersistReturn> = Store extends {
   ? {
       setState(...args: SetPartialArgs): PersistReturn;
       setState(...args: SetFullArgs): PersistReturn;
-      persist: {
-        clearStorage: () => void;
-        getOptions: () => Partial<PersistOptions<S, PersistedState>>;
-        hasHydrated: () => boolean;
-        onHydrate: (listener: (state: S) => void) => () => void;
-        onFinishHydration: (listener: (state: S) => void) => () => void;
-        rehydrate: () => Promise<void> | void;
-        setOptions: (options: Partial<PersistOptions<S, PersistedState, PersistReturn>>) => void;
-      } & HydrationPromise<PersistReturn>;
+      persist: StorePersistApi<S, PersistedState, PersistReturn> & HydrationPromise<PersistReturn>;
     }
   : never;
 
@@ -153,6 +145,16 @@ export type UnsubscribeFn<Options extends boolean = false> = Options extends tru
 export type SubscribeFn<S, Selected = S> = (...args: SubscribeArgs<S, Selected>) => UnsubscribeFn;
 
 // ============ Derived Store Types ============================================ //
+
+/**
+ * Reads store state and records the dependencies of a derived computation.
+ *  - `$(store, selector, equalityFn?)` depends on the selected state
+ *  - `$(store)` depends on accessed state paths
+ */
+export type DeriveGetter = {
+  <S>(store: Store<S>): S;
+  <S, Selected>(store: Store<S>, selector: Selector<S, Selected>, equalityFn?: EqualityFn<Selected>): Selected;
+};
 
 export type DerivedStore<S> = WithFlushUpdates<ReadOnlyDerivedStore<S>>;
 

@@ -25,24 +25,20 @@
   "exports": {
     ".": {
       "types": {
+        "react-native": "./dist/index.d.ts",
         "vanilla": "./dist/vanilla/index.vanilla.d.ts",
         "default": "./dist/index.d.ts"
       },
       "import": {
-        "vanilla": "./dist/vanilla/index.mjs",
         "react-native": "./dist/native/index.js",
+        "vanilla": "./dist/vanilla/index.mjs",
         "default": "./dist/web/index.mjs"
       },
       "require": {
-        "vanilla": "./dist/vanilla/index.js",
         "react-native": "./dist/native/index.js",
+        "vanilla": "./dist/vanilla/index.js",
         "default": "./dist/web/index.js"
       }
-    },
-    "./vanilla": {
-      "types": "./dist/vanilla/index.vanilla.d.ts",
-      "import": "./dist/vanilla/index.mjs",
-      "require": "./dist/vanilla/index.js"
     },
     "./chrome": {
       "types": "./dist/plugins/chrome/index.d.ts",
