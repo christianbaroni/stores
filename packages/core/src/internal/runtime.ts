@@ -1,12 +1,12 @@
 /* -- Config -------- */
-export { configureStores } from '../config';
+export { configureStores } from './config';
 
 /* -- Errors -------- */
-export { StoresError } from '../errors';
+export { StoresError } from './errors';
 
 /* -- Query --------- */
 export { QueryStatuses } from '../queryStore/types';
-export { defaultRetryDelay } from '../queryStore/queryStoreDefaults';
+export { defaultRetryDelay } from './queryStore/queryStoreDefaults';
 export { getQueryKey, parseQueryKey } from '../queryStore/queryKey';
 
 /* -- Helpers ------- */
@@ -21,11 +21,11 @@ export {
   isPersistedStore,
   isQueryStore,
   isVirtualStore,
-} from '../utils/storeUtils';
+} from './storeUtils';
 
 /* -- Utilities ----- */
 export { identity, nullObject } from '../utils/core';
-export { createStoreActions } from '../utils/createStoreActions';
+export { createStoreActions } from './createStoreActions';
 export { deepEqual, shallowEqual } from '../utils/equality';
 export { time } from '../utils/time';
 
@@ -39,10 +39,10 @@ export { queryStore } from './queryStore';
 /** @internal */
 export { virtualStore } from './virtualStore';
 /** @internal */
-export { DEFAULT_STORAGE_KEY_PREFIX, getOptions, getStorageConfig, markStoreCreated } from '../config';
+export { DEFAULT_STORAGE_KEY_PREFIX, getOptions, getStorageConfig, markStoreCreated } from './config';
 /** @internal */
-export { ensureError } from '../errors';
+export { ensureError } from './errors';
 /** @internal */
-export { logger, setLogger } from '../logger';
+export { logger, setLogger } from './logger';
 /** @internal */
-export { StoreTags, assignStoreTag, hasDestroy } from '../utils/storeUtils';
+export { StoreTags, assignStoreTag, hasDestroy } from './storeUtils';

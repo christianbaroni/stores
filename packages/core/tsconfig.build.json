@@ -8,9 +8,9 @@
     "types": ["node", "chrome"],
     "declaration": true,
     "emitDeclarationOnly": true,
+    "composite": true,
     "declarationDir": "dist",
     "declarationMap": true,
-    "tsBuildInfoFile": ".tsbuildinfo",
     "rootDir": "src",
     "strict": true,
     "esModuleInterop": true,
@@ -26,5 +26,5 @@
     }
   },
   "include": ["src/**/*"],
-  "exclude": ["**/*.test.ts", "**/*.spec.ts", "**/tests/**"]
+  "exclude": ["**/*.test.ts", "**/*.testUtils.ts"]
 }

@@ -1,6 +1,6 @@
 import { createBaseStore } from './createBaseStore';
 import { createVirtualStore } from './createVirtualStore';
-import { createAsyncStorageMock, createSyncStorageMock } from './storage/tests/storageCreators.test';
+import { createAsyncStorageMock, createSyncStorageMock } from './internal/storage/storageMocks.testUtils';
 
 describe('createVirtualStore', () => {
   describe('Async Storage Support', () => {

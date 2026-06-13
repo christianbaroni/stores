@@ -1,7 +1,4 @@
 import { IS_DEV } from '@/env';
-import { activateCascade, enqueueDerive, getCurrentDeriveRank, isCascadeActive, joinCascade } from '../derivedStore/cascadeScheduler';
-import { getOrCreateProxy, stripProxies } from '../derivedStore/deriveProxy';
-import { PathFinder, createPathFinder } from '../derivedStore/pathFinder';
 import type { StoreApi } from '../store/types';
 import type {
   BaseStore,
@@ -19,8 +16,11 @@ import type {
 } from '../types';
 import { identity } from '../utils/core';
 import { debounce } from '../utils/debounce';
-import { hasGetSnapshot } from '../utils/storeUtils';
 import { pluralize } from '../utils/stringUtils';
+import { activateCascade, enqueueDerive, getCurrentDeriveRank, isCascadeActive, joinCascade } from './derivedStore/cascadeScheduler';
+import { getOrCreateProxy, stripProxies } from './derivedStore/deriveProxy';
+import { PathFinder, createPathFinder } from './derivedStore/pathFinder';
+import { hasGetSnapshot } from './storeUtils';
 
 // ============ Types ========================================================== //
 

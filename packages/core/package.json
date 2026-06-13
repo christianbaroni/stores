@@ -81,7 +81,7 @@
     "build": "tsx --tsconfig scripts/tsconfig.json scripts/build.ts",
     "build:dev": "pnpm run build:types && NODE_ENV=development pnpm run build:web && NODE_ENV=development pnpm run build:native",
     "build:native": "pnpm run -s prebuild:native && BUILD_TARGET=native tsup --config tsup.config.ts --out-dir dist/native && pnpm run -s postbuild:native",
-    "build:types": "tsc -p tsconfig.build.json --emitDeclarationOnly",
+    "build:types": "tsc -b tsconfig.build.json --emitDeclarationOnly --force",
     "build:web": "pnpm run -s prebuild:web && tsup --config tsup.config.ts --out-dir dist/web && pnpm run -s postbuild:web",
     "generate:exports": "tsx --tsconfig scripts/tsconfig.json scripts/generate-exports.ts",
     "lint": "pnpm -w run lint",

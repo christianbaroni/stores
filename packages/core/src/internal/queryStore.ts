@@ -1,9 +1,7 @@
 import { IS_DEV, IS_TEST } from '@/env';
-import { markStoreCreated } from '../config';
-import { StoresError, ensureError } from '../errors';
-import { logger } from '../logger';
 import { SubscriptionManager } from '../queryStore/classes/SubscriptionManager';
-import { getQueryStoreDefaults } from '../queryStore/queryStoreDefaults';
+import { getQueryKey } from '../queryStore/queryKey';
+import type { AttachValue, SignalFunction } from '../queryStore/signalTypes';
 import { QueryStatuses } from '../queryStore/types';
 import type {
   AttachValueParams,
@@ -18,9 +16,6 @@ import type {
   ResolvedEnabledResult,
   ResolvedParamsResult,
 } from '../queryStore/types';
-import { getQueryKey } from '../queryStore/queryKey';
-import type { AttachValue, SignalFunction } from '../queryStore/signalTypes';
-import { $, getAttachValueSubscribeFn } from '../signal';
 import type { StoreApi } from '../store/types';
 import type {
   BaseStoreOptions,
@@ -38,9 +33,14 @@ import { buildNullObject, nullObject } from '../utils/core';
 import { createMicrotaskScheduler } from '../utils/createMicrotaskScheduler';
 import { debounce } from '../utils/debounce';
 import { dequal } from '../utils/equality';
-import { omitStoreMethods } from '../utils/persistUtils';
-import { assignStoreTag, StoreTags } from '../utils/storeUtils';
 import { baseStore } from './baseStore';
+import { markStoreCreated } from './config';
+import { StoresError, ensureError } from './errors';
+import { logger } from './logger';
+import { getQueryStoreDefaults } from './queryStore/queryStoreDefaults';
+import { $, getAttachValueSubscribeFn } from './signal';
+import { assignStoreTag, StoreTags } from './storeUtils';
+import { omitStoreMethods } from './utils/persistUtils';
 
 // ============ Constants ====================================================== //
 

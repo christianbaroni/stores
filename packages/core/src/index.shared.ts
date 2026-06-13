@@ -30,4 +30,3 @@ export type * from './types';
 
 /* -- Utilities ----- */
 export { createStoreActions, deepEqual, identity, nullObject, shallowEqual, time } from './internal/runtime';
-export type { StoreActions } from './utils/createStoreActions';

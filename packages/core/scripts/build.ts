@@ -56,7 +56,7 @@ async function build(): Promise<void> {
 async function buildTypes(): Promise<TimedResult> {
   return timed(async () => {
     await Promise.all([
-      runCommand('tsc -p tsconfig.build.json --emitDeclarationOnly', { after: removeDisabledPluginTypes }),
+      runCommand('tsc -b tsconfig.build.json --emitDeclarationOnly --force', { after: removeDisabledPluginTypes }),
       runCommand('tsc -p tsconfig.build.vanilla.json --emitDeclarationOnly', { after: normalizeVanillaDeclarations }),
     ]);
   });

@@ -9,6 +9,7 @@ import type {
   StorePersistApi,
 } from './store/types';
 import type { SyncConfig } from './sync/types';
+import type { FunctionKeys } from './types/functions';
 import type { EqualityFn, Selector } from './types/selection';
 import type { UseStoreCallSignatures } from './types/useStoreCallSignatures';
 
@@ -77,6 +78,11 @@ export type Timeout = ReturnType<typeof setTimeout>;
 export type Listener<S> = (state: S, prevState: S) => void;
 
 export type InferStoreState<Store> = Store extends { getState: () => infer T } ? T : never;
+
+/**
+ * Action methods returned by `createStoreActions(store)`.
+ */
+export type StoreActions<Store extends StoreApi<unknown>> = Pick<InferStoreState<Store>, FunctionKeys<InferStoreState<Store>>>;
 
 /**
  * Extracts a store's `setState` return type.

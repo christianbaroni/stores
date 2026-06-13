@@ -1,4 +1,3 @@
-import { derivedStore } from './derivedStore';
 import type { PersistedStoreApi, StoreApi } from '../store/types';
 import type {
   BaseStore,
@@ -13,7 +12,8 @@ import type {
   UnsubscribeFn,
 } from '../types';
 import { noop } from '../utils/core';
-import { StoreTags, destroyStore } from '../utils/storeUtils';
+import { derivedStore } from './derivedStore';
+import { StoreTags, destroyStore } from './storeUtils';
 
 type DeriveConfig = Exclude<DeriveOptions, EqualityFn<unknown>>;
 
