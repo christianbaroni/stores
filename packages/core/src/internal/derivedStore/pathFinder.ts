@@ -17,7 +17,7 @@ const EMPTY_INVOCATION_ARGS = Object.freeze<unknown[]>([]);
 
 // ============ Types ========================================================== //
 
-type TrackedInvocation = { args: unknown[] | undefined; method: string };
+type TrackedInvocation = { args: unknown[] | undefined };
 
 type PathEntry = {
   path: string[];
@@ -28,7 +28,7 @@ type PathEntry = {
 
 type SubscriptionBuilder = (store: SubscribableStore, selector: Selector<unknown, unknown>, path: string[]) => void;
 
-// ============ Public API ============================================ //
+// ============ Public API ===================================================== //
 
 export type PathFinder = {
   buildProxySubscriptions(
@@ -87,6 +87,7 @@ export function createPathFinder(): PathFinder {
 
 type TrieNode = {
   children?: Record<string, TrieNode>;
+  extraInvocations?: TrackedInvocation[];
   invocation?: TrackedInvocation;
   isLeaf?: boolean;
 };
@@ -106,7 +107,7 @@ function createTrieNode<T extends TrieNode | RootNode = TrieNode>(): T {
 function insertPath(node: TrieNode, path: string[], index: number, isLeaf?: boolean, invocation?: TrackedInvocation): void {
   if (index === path.length) {
     if (isLeaf) node.isLeaf = true;
-    if (invocation) node.invocation = invocation;
+    if (invocation) addInvocation(node, invocation);
     return;
   }
   if (!node.children) {
@@ -135,7 +136,7 @@ function collectMinimalPaths(
   const children = node.children;
   if (!children) {
     // Leaf node
-    results.add({ store, path, invocation: node.invocation, isLeaf: node.isLeaf ?? false });
+    collectPathEntries(node, store, path, results);
     return;
   }
   const childKeys = Object.keys(children);
@@ -143,13 +144,13 @@ function collectMinimalPaths(
 
   // -- 1) No children => leaf
   if (childCount === 0) {
-    results.add({ store, path, invocation: node.invocation, isLeaf: node.isLeaf ?? false });
+    collectPathEntries(node, store, path, results);
     return;
   }
 
   // -- 2) Is a leaf (or at/beyond min depth with multiple children) => subscribe here
   if (node.isLeaf || (depth >= minConsolidationDepth && childCount > 1)) {
-    results.add({ store, path, invocation: node.invocation, isLeaf: node.isLeaf ?? false });
+    collectPathEntries(node, store, path, results);
     // Only recurse into children that have an invocation
     for (const key of childKeys) {
       const child = children[key];
@@ -174,7 +175,56 @@ function collectMinimalPaths(
   }
 
   // If no prior conditions met, subscribe here
-  results.add({ store, path, invocation: node.invocation, isLeaf: node.isLeaf ?? false });
+  collectPathEntries(node, store, path, results);
+}
+
+// ============ Invocation Tracking Utilities ================================== //
+
+function addInvocation(node: TrieNode, invocation: TrackedInvocation): void {
+  const current = node.invocation;
+  if (!current) {
+    node.invocation = invocation;
+    return;
+  }
+
+  if (isSameInvocation(current, invocation)) return;
+
+  const extraInvocations = node.extraInvocations;
+  if (!extraInvocations) {
+    node.extraInvocations = [invocation];
+    return;
+  }
+
+  for (let i = 0; i < extraInvocations.length; i++) if (isSameInvocation(extraInvocations[i], invocation)) return;
+  extraInvocations.push(invocation);
+}
+
+function isSameInvocation(left: TrackedInvocation, right: TrackedInvocation): boolean {
+  const leftArgs = left.args;
+  const rightArgs = right.args;
+  const leftLength = leftArgs?.length ?? 0;
+
+  if (leftLength !== (rightArgs?.length ?? 0)) return false;
+  if (!leftArgs || !rightArgs) return true;
+
+  for (let i = 0; i < leftLength; i++) if (!Object.is(leftArgs[i], rightArgs[i])) return false;
+  return true;
+}
+
+function collectPathEntries(node: TrieNode, store: SubscribableStore, path: string[], results: Set<PathEntry>): void {
+  const isLeaf = node.isLeaf ?? false;
+  const invocation = node.invocation;
+  if (!invocation) {
+    results.add({ store, path, isLeaf });
+    return;
+  }
+
+  results.add({ store, path, invocation, isLeaf });
+
+  const extraInvocations = node.extraInvocations;
+  if (!extraInvocations) return;
+
+  for (let i = 0; i < extraInvocations.length; i++) results.add({ store, path, invocation: extraInvocations[i], isLeaf });
 }
 
 // ============ Proxy Subscription Utilities =================================== //
@@ -200,9 +250,10 @@ function buildPathSelector(path: string[]): Selector<unknown, unknown> {
  */
 function buildInvocationSelector(path: string[], invocation: TrackedInvocation): Selector<unknown, unknown> {
   const parentPath = path.slice(0, -1);
+  const method = path[path.length - 1];
   return state => {
     const parentObject = getValueAtPath(state, parentPath);
-    const fn = parentObject && typeof parentObject === 'object' ? Reflect.get(parentObject, invocation.method) : undefined;
+    const fn = parentObject && typeof parentObject === 'object' ? Reflect.get(parentObject, method) : undefined;
     return typeof fn === 'function' ? Reflect.apply(fn, parentObject, invocation.args ?? EMPTY_INVOCATION_ARGS) : undefined;
   };
 }

@@ -555,6 +555,87 @@ describe('createDerivedStore', () => {
       unsubscribe();
     });
 
+    it('tracks every invocation when the same store method is called with different arguments', async () => {
+      type LookupState = {
+        lookup(key: string): number;
+        values: Record<string, number>;
+      };
+
+      const sourceStore = createBaseStore<LookupState>(() => ({
+        values: { a: 1, b: 10 },
+        lookup(key) {
+          return this.values[key] ?? 0;
+        },
+      }));
+
+      let deriveCount = 0;
+      const useDerived = createDerivedStore($ => {
+        deriveCount += 1;
+        const source = $(sourceStore);
+        return source.lookup('a') + source.lookup('b');
+      });
+
+      const watcher = vi.fn();
+      const unsubscribe = useDerived.subscribe(watcher);
+      await flushMicrotasks();
+
+      expect(useDerived.getState()).toBe(11);
+      expect(deriveCount).toBe(1);
+
+      sourceStore.setState({ values: { a: 2, b: 10 } });
+      await flushMicrotasks();
+
+      expect(useDerived.getState()).toBe(12);
+      expect(deriveCount).toBe(2);
+      expect(watcher).toHaveBeenCalledTimes(1);
+      expect(watcher).toHaveBeenLastCalledWith(12, 11);
+
+      unsubscribe();
+    });
+
+    it('deduplicates repeated method invocations with no arguments or identical arguments', async () => {
+      type SourceState = {
+        count: number;
+        lookup(key: string): number;
+        total(): number;
+        values: Record<string, number>;
+      };
+
+      const sourceStore = createBaseStore<SourceState>(() => ({
+        count: 1,
+        values: { a: 10 },
+        lookup(key) {
+          return this.values[key] ?? 0;
+        },
+        total() {
+          return this.count;
+        },
+      }));
+
+      let subscriptionCount = 0;
+      const originalSubscribe: SubscribeOverloads<SourceState> = sourceStore.subscribe.bind(sourceStore);
+      sourceStore.subscribe = (...args: SubscribeArgs<SourceState>) => {
+        subscriptionCount += 1;
+        if (args.length === 1) return originalSubscribe(args[0]);
+
+        const [selector, listener, options] = args;
+        return originalSubscribe(selector, listener, options);
+      };
+
+      const useDerived = createDerivedStore($ => {
+        const source = $(sourceStore);
+        return source.total() + source.total() + source.lookup('a') + source.lookup('a');
+      });
+
+      const unsubscribe = useDerived.subscribe(() => {});
+      await flushMicrotasks();
+
+      expect(useDerived.getState()).toBe(22);
+      expect(subscriptionCount).toBe(2);
+
+      unsubscribe();
+    });
+
     it('[selectors] should only notify watchers when the directly tracked property changes, ignoring other property or object reference updates', async () => {
       const baseStore = createBaseStore(() => ({
         data: { key1: 10, key2: 20 },

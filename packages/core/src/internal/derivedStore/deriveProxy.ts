@@ -79,7 +79,7 @@ function buildProxy<T extends object, S>(
           // Return a wrapped function that tracks invocation when called. This allows
           // building a selector that points to the value *returned* by the method call.
           return function (...args: unknown[]) {
-            trackPath(store, newPath, true, { method: propKeyString, args: args.length ? args : undefined });
+            trackPath(store, newPath, true, { args: args.length ? args : undefined });
             return Reflect.apply(childValue, target, args);
           };
         }
