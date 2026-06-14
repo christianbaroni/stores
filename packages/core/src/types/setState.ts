@@ -1,9 +1,9 @@
 import type { BivariantMethod } from './functions';
 
-// ============ Set State ====================================================== //
+// ============ Set State Types ================================================= //
 
-export type SetPartial<S> = Partial<S> | ((state: S) => Partial<S>);
-export type SetFull<S> = S | ((state: S) => S);
+export type SetPartial<S> = S | Partial<S> | BivariantMethod<{ updater(state: S): S | Partial<S> }>;
+export type SetFull<S> = S | BivariantMethod<{ updater(state: S): S }>;
 
 export type SetStateReplaceArgs<S, ExtraArgs extends unknown[] = []> = [update: SetFull<S>, replace: true, ...extraArgs: ExtraArgs];
 export type SetStatePartialArgs<S, ExtraArgs extends unknown[] = []> = [update: SetPartial<S>, replace?: false, ...extraArgs: ExtraArgs];
