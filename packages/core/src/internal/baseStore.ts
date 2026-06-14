@@ -1,6 +1,6 @@
 import { createStore } from '../store/createStore';
 import { persist } from '../store/persist';
-import type { PersistedStoreApi, StoreApi } from '../store/types';
+import type { StoreApi, WithPersist } from '../store/types';
 import type { NormalizedSyncConfig } from '../sync/types';
 import type { BaseStoreOptions, StateCreator, SyncOption } from '../types';
 import { getStorageConfig, markStoreCreated } from './config';
@@ -15,7 +15,7 @@ import { createSyncedStateCreator } from './sync/syncEnhancer';
 export function baseStore<S, PersistedState extends Partial<S>, PersistReturn extends void | Promise<void>>(
   createState: StateCreator<S>,
   options?: BaseStoreOptions<S, PersistedState, PersistReturn>
-): StoreApi<S> | PersistedStoreApi<S, PersistedState, PersistReturn> {
+): StoreApi<S> | WithPersist<StoreApi<S>, PersistedState, PersistReturn> {
   markStoreCreated();
 
   if (!options) return createStore(createState);

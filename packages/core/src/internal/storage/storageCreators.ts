@@ -1,6 +1,6 @@
 import { IS_BROWSER, IS_IOS, IS_TEST } from '@/env';
 import type { StorageValue } from '../../storage/storageTypes';
-import type { AsyncPersistStorage, SyncPersistStorage } from '../../store/types';
+import type { AsyncPersistStorage, PersistStorageConfig, SyncPersistStorage } from '../../store/types';
 import type { AsyncStorageInterface, BaseStoreOptions, EnforceStorageKey, SyncStorageInterface } from '../../types';
 import { createAsyncMicrotaskScheduler } from '../../utils/createAsyncMicrotaskScheduler';
 import { debounce } from '../../utils/debounce';
@@ -15,18 +15,6 @@ type MetadataCapture = {
   fieldSnapshot?: Record<string, number>;
   shouldClear: boolean;
 };
-
-type PersistStorageConfig<S, PersistedState extends Partial<S>> =
-  | {
-      async: false;
-      persistStorage: SyncPersistStorage<S, PersistedState>;
-      version: number;
-    }
-  | {
-      async: true;
-      persistStorage: AsyncPersistStorage<S, PersistedState>;
-      version: number;
-    };
 
 const DEFAULT_PERSIST_THROTTLE_MS = IS_TEST ? 0 : IS_BROWSER ? time.ms(200) : IS_IOS ? time.seconds(3) : time.seconds(5);
 

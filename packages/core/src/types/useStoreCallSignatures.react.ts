@@ -1,4 +1,4 @@
-import type { EqualityFn, Selector } from './selection';
+import type { EqualityFn, Selector } from './subscribe';
 
 export type UseStoreCallSignatures<State> = {
   (): State;

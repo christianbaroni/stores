@@ -1,33 +1,15 @@
 import type { StorageValue } from '../storage/storageTypes';
 import type { SetStateArgs } from '../types';
-import type { PersistOptions, PersistStorage, StateCreator, StoreMutatorIdentifier, StorePersistApi } from './types';
 import { isPromiseLike } from '../utils/promiseUtils';
 import { applySetState } from './stateUpdate';
+import type { PersistMethods, PersistOptions, StateCreator, StoreMutators } from './types';
 
 // ============ Types ========================================================== //
 
-type StoreMutatorTuple = [StoreMutatorIdentifier, unknown];
-type PersistMutators<PersistedState, PersistReturn, StoreMutators extends StoreMutatorTuple[]> = [
+type PersistMutators<PersistedState, PersistReturn, Mutators extends StoreMutators> = [
   ['stores/persist', [PersistedState, PersistReturn]],
-  ...StoreMutators,
+  ...Mutators,
 ];
-
-type PersistOptionsWithStorage<State, PersistedState extends Partial<State>, PersistReturn> = Omit<
-  PersistOptions<State, PersistedState, PersistReturn>,
-  'storage'
-> & {
-  storage: PersistStorage<State, PersistedState>;
-};
-
-type ResolvedOptions<State, PersistedState extends Partial<State>, PersistReturn> = Omit<
-  PersistOptions<State, PersistedState, PersistReturn>,
-  'merge' | 'skipHydration' | 'storage' | 'version'
-> & {
-  merge: (persistedState: PersistedState | undefined, currentState: State) => State;
-  skipHydration: boolean;
-  storage: PersistStorage<State, PersistedState>;
-  version: number;
-};
 
 type HydrationRead<PersistedState> = {
   migrated: boolean;
@@ -45,11 +27,11 @@ export function persist<
   State,
   PersistedState extends Partial<State>,
   PersistReturn extends void | Promise<void> = void,
-  StoreMutators extends StoreMutatorTuple[] = [],
+  Mutators extends StoreMutators = [],
 >(
-  createState: StateCreator<State, [], StoreMutators>,
-  initialOptions: PersistOptionsWithStorage<State, PersistedState, PersistReturn>
-): StateCreator<State, [], PersistMutators<PersistedState, PersistReturn, StoreMutators>> {
+  createState: StateCreator<State, [], Mutators>,
+  initialOptions: PersistOptions<State, PersistedState>
+): StateCreator<State, [], PersistMutators<PersistedState, PersistReturn, Mutators>> {
   return (set, get, api) => {
     let options = resolveOptions(initialOptions);
     let hasHydrated = false;
@@ -97,7 +79,7 @@ export function persist<
       }
     }
 
-    Object.assign(api, { persist: createPersistApi() });
+    Object.assign(api, { persist: createPersistMethods() });
 
     if (!options.skipHydration) hydrate();
     return stateFromStorage ?? configState;
@@ -140,7 +122,7 @@ export function persist<
       if (value.migrated) return persistState();
     }
 
-    function createPersistApi(): StorePersistApi<State, PersistedState, PersistReturn> {
+    function createPersistMethods(): PersistMethods<State, PersistedState> {
       return {
         clearStorage: () => {
           void options.storage.removeItem(options.name);
@@ -219,14 +201,11 @@ function readStoredValue<PersistedState>(
 
 // ============ Options ======================================================== //
 
-function resolveOptions<State, PersistedState extends Partial<State>, PersistReturn>(
-  options: PersistOptionsWithStorage<State, PersistedState, PersistReturn>
-): ResolvedOptions<State, PersistedState, PersistReturn> {
+function resolveOptions<State, PersistedState extends Partial<State>>(options: PersistOptions<State, PersistedState>) {
   return {
     ...options,
     merge: options.merge ?? mergePersistedState,
     skipHydration: options.skipHydration ?? false,
-    version: options.version ?? 0,
   };
 }
 

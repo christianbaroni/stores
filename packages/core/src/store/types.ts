@@ -1,33 +1,28 @@
 import type { StorageValue } from '../storage/storageTypes';
-
-// ============ Updates ======================================================== //
-
-type SetPartial<S> = Partial<S> | ((state: S) => Partial<S>);
-type SetFull<S> = S | ((state: S) => S);
-
-// ============ Subscriptions ================================================== //
-
-type Listener<S> = (state: S, prevState: S) => void;
-type Selector<S, Selected> = (state: S) => Selected;
-type SubscribeOptions<Selected> = {
-  equalityFn?: (a: Selected, b: Selected) => boolean;
-  fireImmediately?: boolean;
-  isDerivedStore?: boolean;
-};
-type UnsubscribeFn = () => void;
+import type { SetStateOverloads } from '../types/setState';
+import type { SubscribeOverloads } from '../types/subscribe';
 
 // ============ Store API ====================================================== //
 
 /**
- * Store API used by the local runtime.
+ * Store object contract shared by creators, middleware, and internal store utilities.
  */
 export type StoreApi<S> = {
   getInitialState: () => S;
   getState: () => S;
-  setState(update: SetPartial<S>, replace?: false): void;
-  setState(update: SetFull<S>, replace: true): void;
-  subscribe(listener: Listener<S>): UnsubscribeFn;
-  subscribe<Selected>(selector: Selector<S, Selected>, listener: Listener<Selected>, options?: SubscribeOptions<Selected>): UnsubscribeFn;
+  setState: SetStateOverloads<S>;
+  subscribe: SubscribeOverloads<S>;
+};
+
+/**
+ * Callback that builds store state from the set/get/store API supplied during construction.
+ */
+export type StateCreator<S, Mutators extends StoreMutators = [], StoreMutatorOutput extends StoreMutators = [], U = S> = ((
+  setState: Get<Mutate<StoreApi<S>, Mutators>, 'setState', never>,
+  getState: Get<Mutate<StoreApi<S>, Mutators>, 'getState', never>,
+  store: Mutate<StoreApi<S>, Mutators>
+) => U) & {
+  $$storeMutators?: StoreMutatorOutput;
 };
 
 // ============ Persistence ==================================================== //
@@ -50,43 +45,62 @@ export type AsyncPersistStorage<State, PersistedState = Partial<State>> = {
   setItem: (name: string, state: State, version: number | undefined) => Promise<void>;
 };
 
-export type PersistStorage<State, PersistedState = Partial<State>, PersistReturn = unknown> =
-  PersistReturn extends Promise<void>
-    ? AsyncPersistStorage<State, PersistedState>
-    : PersistReturn extends void
-      ? SyncPersistStorage<State, PersistedState>
-      : SyncPersistStorage<State, PersistedState> | AsyncPersistStorage<State, PersistedState>;
+/**
+ * Accepted storage adapter types for sync or async persistence.
+ */
+export type PersistStorage<State, PersistedState = Partial<State>> =
+  | AsyncPersistStorage<State, PersistedState>
+  | SyncPersistStorage<State, PersistedState>;
+
+/**
+ * Resolved storage config for persisted stores.
+ */
+export type PersistStorageConfig<State, PersistedState extends Partial<State>> =
+  | { async: false; persistStorage: SyncPersistStorage<State, PersistedState>; version: number }
+  | { async: true; persistStorage: AsyncPersistStorage<State, PersistedState>; version: number };
 
 /**
  * Persistence options consumed by the persistence wrapper.
  */
-export type PersistOptions<S, PersistedState = Partial<S>, PersistReturn = unknown> = {
+export type PersistOptions<S, PersistedState = Partial<S>> = {
   merge?: (persistedState: PersistedState | undefined, currentState: S) => S;
   migrate?: (persistedState: PersistedState, version: number) => PersistedState | Promise<PersistedState>;
   name: string;
   onRehydrateStorage?: (state: S) => ((state?: S, error?: unknown) => void) | void;
   skipHydration?: boolean;
-  storage?: PersistStorage<S, PersistedState, PersistReturn>;
-  version?: number;
+  storage: PersistStorage<S, PersistedState>;
+  version: number;
 };
 
 /**
- * Methods attached to persisted stores.
+ * Methods attached by the persistence wrapper before async hydration state is added.
  */
-export type StorePersistApi<S, PersistedState = Partial<S>, PersistReturn = unknown> = {
+export type PersistMethods<S, PersistedState> = {
   clearStorage: () => void;
   getOptions: () => Partial<PersistOptions<S, PersistedState>>;
   hasHydrated: () => boolean;
   onHydrate: (listener: (state: S) => void) => () => void;
   onFinishHydration: (listener: (state: S) => void) => () => void;
   rehydrate: () => Promise<void> | void;
-  setOptions: (options: Partial<PersistOptions<S, PersistedState, PersistReturn>>) => void;
+  setOptions: (options: Partial<PersistOptions<S, PersistedState>>) => void;
 };
 
 /**
- * Hydration promise API attached to stores backed by asynchronous persistence.
+ * Store shape after the persistence wrapper adds persistence methods, write-through `setState`,
+ * and async hydration state when applicable.
  */
-export type HydrationPromise<PersistReturn> =
+export type WithPersist<Store, PersistedState, PersistReturn extends void | Promise<void>> =
+  Store extends StoreApi<infer S>
+    ? Write<
+        Store,
+        {
+          persist: PersistMethods<S, PersistedState> & HydrationPromise<PersistReturn>;
+          setState: SetStateOverloads<S, PersistReturn>;
+        }
+      >
+    : Store;
+
+type HydrationPromise<PersistReturn> =
   PersistReturn extends Promise<void>
     ? {
         /** Invoke to get a promise that resolves once hydration completes. */
@@ -94,58 +108,40 @@ export type HydrationPromise<PersistReturn> =
       }
     : { hydrationPromise?: undefined };
 
-// ============ Mutators ======================================================= //
+// ============ Store Mutators ================================================= //
 
 type Get<T, K, Fallback> = K extends keyof T ? T[K] : Fallback;
-type MutatorTuple = [StoreMutatorIdentifier, unknown];
 type Write<T, U> = Omit<T, keyof U> & U;
 
-type WithPersist<Store, Args> = Args extends [infer PersistedState, infer PersistReturn]
-  ? Store extends StoreApi<infer S>
-    ? Write<
-        Store,
-        {
-          persist: StorePersistApi<S, PersistedState, PersistReturn>;
-          setState(update: SetPartial<S>, replace?: false): PersistReturn;
-          setState(update: SetFull<S>, replace: true): PersistReturn;
-        }
-      >
-    : Store
+type PersistMutator<Store, Args> = Args extends [infer PersistedState, infer PersistReturn extends void | Promise<void>]
+  ? WithPersist<Store, PersistedState, PersistReturn>
   : Store;
 
-export interface StoreMutators<Store, Args> {
-  'stores/persist': WithPersist<Store, Args>;
+type StoreMutatorIdentifier = keyof StoreMutatorMap<unknown, unknown>;
+
+/**
+ * Mapping from store mutator identifiers to the store API shape they add.
+ */
+export interface StoreMutatorMap<Store, Args> {
+  'stores/persist': PersistMutator<Store, Args>;
 }
 
-export type StoreMutatorIdentifier = keyof StoreMutators<unknown, unknown>;
+/**
+ * Ordered list of store mutators applied to a state creator.
+ */
+export type StoreMutators = [StoreMutatorIdentifier, unknown][];
 
+/**
+ * Applies a list of store mutators to a store API type.
+ */
 export type Mutate<Store, Mutators> = number extends Mutators['length' & keyof Mutators]
   ? Store
   : Mutators extends []
     ? Store
     : Mutators extends [[infer Identifier, infer Args], ...infer Rest]
       ? Identifier extends StoreMutatorIdentifier
-        ? Rest extends MutatorTuple[]
-          ? Mutate<StoreMutators<Store, Args>[Identifier], Rest>
-          : StoreMutators<Store, Args>[Identifier]
+        ? Rest extends StoreMutators
+          ? Mutate<StoreMutatorMap<Store, Args>[Identifier], Rest>
+          : StoreMutatorMap<Store, Args>[Identifier]
         : Store
       : Store;
-
-/** @internal */
-export type PersistedStoreApi<S, PersistedState = Partial<S>, PersistReturn = unknown> = Omit<
-  Mutate<StoreApi<S>, [['stores/persist', [PersistedState, PersistReturn]]]>,
-  'persist'
-> & {
-  persist: StorePersistApi<S, PersistedState, PersistReturn> & HydrationPromise<PersistReturn>;
-};
-
-/**
- * Creates initial state with access to the store API.
- */
-export type StateCreator<S, Mutators extends MutatorTuple[] = [], StoreMutatorOutput extends MutatorTuple[] = [], U = S> = ((
-  setState: Get<Mutate<StoreApi<S>, Mutators>, 'setState', never>,
-  getState: Get<Mutate<StoreApi<S>, Mutators>, 'getState', never>,
-  store: Mutate<StoreApi<S>, Mutators>
-) => U) & {
-  $$storeMutators?: StoreMutatorOutput;
-};

@@ -1,9 +1,7 @@
-import type { PersistedStoreApi, StoreApi } from '../store/types';
+import type { StoreApi, WithPersist } from '../store/types';
 import type {
   BaseStore,
   DeriveGetter,
-  DeriveOptions,
-  EqualityFn,
   InferPersistedState,
   InferStoreState,
   OptionallyPersistedStore,
@@ -15,20 +13,19 @@ import { noop } from '../utils/core';
 import { derivedStore } from './derivedStore';
 import { StoreTags, destroyStore } from './storeUtils';
 
-type DeriveConfig = Exclude<DeriveOptions, EqualityFn<unknown>>;
+type VirtualStoreOptions = {
+  debugMode?: boolean;
+  lockDependencies?: boolean;
+};
 
 // ============ Virtual Store Factory ========================================== //
 
 /** @internal */
 export function virtualStore<Store extends BaseStore<InferStoreState<Store>>, Overrides extends object = Record<string, never>>(
   createStore: ($: DeriveGetter) => Store,
-  overridesOrOptions?: Pick<DeriveConfig, 'debugMode' | 'lockDependencies'> | ((getStore: () => Store) => Overrides),
-  options?: Pick<DeriveConfig, 'debugMode' | 'lockDependencies'>
-): Omit<StoreApi<InferStoreState<Store>>, 'setState'> & {
-  destroy: () => void;
-  persist: PersistedStoreApi<InferStoreState<Store>, InferPersistedState<Store>, void | Promise<void>>['persist'];
-  setState: Store['setState'];
-} & Overrides {
+  overridesOrOptions?: VirtualStoreOptions | ((getStore: () => Store) => Overrides),
+  options?: VirtualStoreOptions
+): WithPersist<StoreApi<InferStoreState<Store>>, InferPersistedState<Store>, void | Promise<void>> & { destroy: () => void } & Overrides {
   type State = InferStoreState<Store>;
 
   const hasOverrides = typeof overridesOrOptions === 'function';
@@ -124,9 +121,9 @@ export function virtualStore<Store extends BaseStore<InferStoreState<Store>>, Ov
 
 // ============ Helpers ======================================================== //
 
-function createPersist<State, PersistedState extends Partial<State>>(
+function createPersist<State, PersistedState>(
   getStore: () => OptionallyPersistedStore<State, PersistedState, void | Promise<void>>
-): PersistedStoreApi<State, PersistedState, void | Promise<void>>['persist'] {
+): NonNullable<OptionallyPersistedStore<State, PersistedState, void | Promise<void>>['persist']> {
   return {
     clearStorage: () => getStore().persist?.clearStorage(),
     getOptions: () => getStore().persist?.getOptions() ?? {},

@@ -225,7 +225,7 @@ describe('createBaseStore / persistence + hydration', () => {
   });
 });
 
-function assertIsPersisted<S, PersistedState extends Partial<S>, PersistReturn>(
+function assertIsPersisted<S, PersistedState extends Partial<S>, PersistReturn extends void | Promise<void>>(
   store: OptionallyPersistedStore<S, PersistedState, PersistReturn>
 ): asserts store is PersistedStore<S, PersistedState, PersistReturn, false> {
   return;

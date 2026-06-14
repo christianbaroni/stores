@@ -227,7 +227,7 @@ export function createQueryStore<
   CustomState,
   TData = TQueryFnData,
   PersistedState extends Partial<QueryStoreState<TData, TParams, CustomState>> = Partial<QueryStoreState<TData, TParams, CustomState>>,
-  PersistReturn = void,
+  PersistReturn extends void | Promise<void> = void,
 >(
   config: QueryStoreConfig<TQueryFnData, TParams, TData, CustomState>,
   creatorOrOptions?:

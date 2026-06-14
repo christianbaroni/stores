@@ -1,13 +1,14 @@
-import type { Listener, SetStateArgs, SubscribeArgs, SubscribeOptions, UnsubscribeFn } from '../types';
+import type { Listener, Selector, SetStateArgs, SubscribeArgs, SubscribeOptions, UnsubscribeFn } from '../types';
 import { applyStateUpdate } from './stateUpdate';
-import type { Mutate, StateCreator, StoreApi, StoreMutatorIdentifier } from './types';
+import type { Mutate, StateCreator, StoreApi, StoreMutators } from './types';
 
 /**
- * Creates the internal store API used by Stores.
+ * Creates the internal core store API.
  */
-export function createStore<State, StoreMutators extends [StoreMutatorIdentifier, unknown][] = []>(
-  createState: StateCreator<State, [], StoreMutators>
-): Mutate<StoreApi<State>, StoreMutators>;
+export function createStore<State, Mutators extends StoreMutators = []>(
+  createState: StateCreator<State, [], Mutators>
+): Mutate<StoreApi<State>, Mutators>;
+
 export function createStore<State>(createState: StateCreator<State>): StoreApi<State> {
   let state: State;
   const listeners = new Set<Listener<State>>();
@@ -30,8 +31,8 @@ export function createStore<State>(createState: StateCreator<State>): StoreApi<S
   }
 
   function subscribe<Selected>(...args: SubscribeArgs<State, Selected>): UnsubscribeFn {
-    if (args.length === 1) return subscribeState(args[0]);
-    return subscribeToSelection(args[0], args[1], args[2]);
+    if (args.length === 1) return createSubscription(args[0]);
+    return createSelectorSubscription(args[0], args[1], args[2]);
   }
 
   const api: StoreApi<State> = { getInitialState, getState, setState, subscribe };
@@ -39,15 +40,15 @@ export function createStore<State>(createState: StateCreator<State>): StoreApi<S
 
   return api;
 
-  function subscribeState(listener: Listener<State>): UnsubscribeFn {
+  function createSubscription(listener: Listener<State>): UnsubscribeFn {
     listeners.add(listener);
     return () => {
       listeners.delete(listener);
     };
   }
 
-  function subscribeToSelection<Selected>(
-    selector: (state: State) => Selected,
+  function createSelectorSubscription<Selected>(
+    selector: Selector<State, Selected>,
     listener: Listener<Selected>,
     options: SubscribeOptions<Selected> | undefined
   ): UnsubscribeFn {
@@ -64,6 +65,6 @@ export function createStore<State>(createState: StateCreator<State>): StoreApi<S
     }
 
     if (options?.fireImmediately) listener(currentSelection, currentSelection);
-    return subscribeState(selectedListener);
+    return createSubscription(selectedListener);
   }
 }

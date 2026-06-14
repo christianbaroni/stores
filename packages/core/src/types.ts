@@ -1,39 +1,19 @@
 import type { StorageValue } from './storage/storageTypes';
-import type {
-  HydrationPromise,
-  Mutate,
-  PersistOptions,
-  StateCreator as StoreStateCreator,
-  StoreApi,
-  StoreMutatorIdentifier,
-  StorePersistApi,
-} from './store/types';
+import type { PersistOptions, StateCreator as StoreStateCreator, StoreApi, StoreMutators, WithPersist } from './store/types';
 import type { SyncConfig } from './sync/types';
 import type { FunctionKeys } from './types/functions';
-import type { EqualityFn, Selector } from './types/selection';
+import type { SetFull, SetPartial, SetStateArgs } from './types/setState';
+import type { EqualityFn, Selector, SubscribeOverloads } from './types/subscribe';
 import type { UseStoreCallSignatures } from './types/useStoreCallSignatures';
 
-export type { EqualityFn, Selector } from './types/selection';
-export type { UseStoreCallSignatures } from './types/useStoreCallSignatures';
+export type { StoreMutators } from './store/types';
+export type * from './types/setState';
+export type * from './types/subscribe';
+export type * from './types/useStoreCallSignatures';
 
 // ============ Store Mutators ================================================= //
 
-export type StoreMutators = [StoreMutatorIdentifier, unknown][];
 export type StoreMutatorsWithSelector<Mutators extends StoreMutators = StoreMutators> = Mutators;
-
-type WithPersist<Store, PersistedState, PersistReturn> = Store extends {
-  getState: () => infer S;
-  setState: {
-    (...args: infer SetPartialArgs): infer _;
-    (...args: infer SetFullArgs): infer _;
-  };
-}
-  ? {
-      setState(...args: SetPartialArgs): PersistReturn;
-      setState(...args: SetFullArgs): PersistReturn;
-      persist: StorePersistApi<S, PersistedState, PersistReturn> & HydrationPromise<PersistReturn>;
-    }
-  : never;
 
 // ============ Core Store Types =============================================== //
 
@@ -44,26 +24,31 @@ export type UseBoundStoreWithEqualityFn<
   State = InferStoreState<Store>,
 > = UseStoreCallSignatures<State> & Store;
 
-export type BaseStore<S, ExtraSubscribeOptions extends boolean = false> = UseBoundStoreWithEqualityFn<Mutate<StoreApi<S>, []>> & {
+export type BaseStore<S, ExtraSubscribeOptions extends boolean = false> = UseBoundStoreWithEqualityFn<StoreApi<S>> & {
   subscribe: SubscribeOverloads<S, ExtraSubscribeOptions>;
 };
 
 export type PersistedStore<
   S,
   PersistedState = Partial<S>,
-  PersistReturn = unknown,
+  PersistReturn extends void | Promise<void> = void | Promise<void>,
   ExtraSubscribeOptions extends boolean = false,
-> = UseStoreCallSignatures<S> &
-  Omit<BaseStore<S, ExtraSubscribeOptions>, 'setState' | 'persist'> &
-  WithPersist<BaseStore<S, ExtraSubscribeOptions>, PersistedState, PersistReturn>;
+> = UseStoreCallSignatures<S> & WithPersist<BaseStore<S, ExtraSubscribeOptions>, PersistedState, PersistReturn>;
 
-export type Store<S, PersistedState extends Partial<S> = never, PersistReturn = unknown, ExtraSubscribeOptions extends boolean = false> = [
-  PersistedState,
-] extends [never]
+export type Store<
+  S,
+  PersistedState extends Partial<S> = never,
+  PersistReturn extends void | Promise<void> = void | Promise<void>,
+  ExtraSubscribeOptions extends boolean = false,
+> = [PersistedState] extends [never]
   ? BaseStore<S, ExtraSubscribeOptions>
   : PersistedStore<S, PersistedState, PersistReturn, ExtraSubscribeOptions>;
 
-export type OptionallyPersistedStore<S, PersistedState, PersistReturn = void> = UseStoreCallSignatures<S> &
+/**
+ * Store returned by creators that accept optional persistence options.
+ * `persist` exists only when persistence is configured.
+ */
+export type OptionallyPersistedStore<S, PersistedState, PersistReturn extends void | Promise<void> = void> = UseStoreCallSignatures<S> &
   Omit<BaseStore<S>, 'setState'> & {
     persist?: PersistedStore<S, PersistedState, PersistReturn, false>['persist'];
     setState(update: SetPartial<S>, replace?: false): PersistReturn;
@@ -74,8 +59,6 @@ export type OptionallyPersistedStore<S, PersistedState, PersistReturn = void> = 
 
 export type NoInfer<T> = [T][T extends unknown ? 0 : never];
 export type Timeout = ReturnType<typeof setTimeout>;
-
-export type Listener<S> = (state: S, prevState: S) => void;
 
 export type InferStoreState<Store> = Store extends { getState: () => infer T } ? T : never;
 
@@ -97,59 +80,6 @@ export type InferSetStateReturn<Store> = Store extends { setState(...args: SetSt
  */
 export type InferPersistedState<PersistedStore> = PersistedStore extends Store<infer _, infer PersistedState> ? PersistedState : never;
 
-// ============ Set State Types ================================================ //
-
-export type SetPartial<S> = Partial<S> | ((state: S) => Partial<S>);
-export type SetFull<S> = S | ((state: S) => S);
-
-export type SetStateReplaceArgs<S, ExtraArgs extends unknown[] = []> = [update: SetFull<S>, replace: true, ...extraArgs: ExtraArgs];
-export type SetStatePartialArgs<S, ExtraArgs extends unknown[] = []> = [update: SetPartial<S>, replace?: false, ...extraArgs: ExtraArgs];
-
-export type SetStateArgs<S, ExtraArgs extends unknown[] = []> = SetStatePartialArgs<S, ExtraArgs> | SetStateReplaceArgs<S, ExtraArgs>;
-export type SetState<S, ExtraArgs extends unknown[] = [], PersistReturn extends Promise<void> | void = void> = (
-  ...args: SetStateArgs<S, ExtraArgs>
-) => PersistReturn;
-
-export type SetStateOverloads<S, PersistReturn extends Promise<void> | void = void> = {
-  (update: SetPartial<S>, replace?: false): PersistReturn;
-  (update: SetFull<S>, replace: true): PersistReturn;
-};
-
-// ============ Subscribe Types ================================================ //
-
-/**
- * Minimum store API required for subscription.
- */
-export type SubscribableStore = {
-  subscribe(selector: Selector<unknown, unknown>, listener: () => void, options?: SubscribeOptions<unknown>): UnsubscribeFn;
-};
-
-export type SubscribeOptions<Selected> = {
-  equalityFn?: EqualityFn<Selected>;
-  fireImmediately?: boolean;
-  isDerivedStore?: boolean;
-};
-
-export type ListenerArgs<S> = [listener: Listener<S>];
-export type SelectorArgs<S, Selected> = [
-  selector: Selector<S, Selected>,
-  listener: Listener<Selected>,
-  options?: SubscribeOptions<Selected>,
-];
-
-export type SubscribeOverloads<S, ExtraOptions extends boolean = false> = {
-  (listener: Listener<S>): UnsubscribeFn<ExtraOptions>;
-  <Selected>(
-    selector: Selector<S, Selected>,
-    listener: Listener<Selected>,
-    options?: SubscribeOptions<Selected>
-  ): UnsubscribeFn<ExtraOptions>;
-};
-
-export type SubscribeArgs<S, Selected = unknown> = ListenerArgs<S> | SelectorArgs<S, Selected>;
-export type UnsubscribeFn<Options extends boolean = false> = Options extends true ? (skipAbortFetch?: boolean) => void : () => void;
-export type SubscribeFn<S, Selected = S> = (...args: SubscribeArgs<S, Selected>) => UnsubscribeFn;
-
 // ============ Derived Store Types ============================================ //
 
 /**
@@ -158,13 +88,17 @@ export type SubscribeFn<S, Selected = S> = (...args: SubscribeArgs<S, Selected>)
  *  - `$(store)` depends on accessed state paths
  */
 export type DeriveGetter = {
-  <S>(store: Store<S>): S;
-  <S, Selected>(store: Store<S>, selector: Selector<S, Selected>, equalityFn?: EqualityFn<Selected>): Selected;
+  <S extends Store<InferStoreState<S>>>(store: S): InferStoreState<S>;
+  <S extends Store<InferStoreState<S>>, Selected>(
+    store: S,
+    selector: Selector<InferStoreState<S>, Selected>,
+    equalityFn?: EqualityFn<Selected>
+  ): Selected;
 };
 
-export type DerivedStore<S> = WithFlushUpdates<ReadOnlyDerivedStore<S>>;
+export type DerivedStore<S> = WithFlushUpdates<ReadOnlyDerivedStore<BaseStore<S>>>;
 
-export type WithFlushUpdates<Store extends { getState: () => unknown }> = Store & {
+export type WithFlushUpdates<Store extends StoreApi<unknown>> = Store & {
   /**
    * Destroy the derived store and its subscriptions.
    *
@@ -179,23 +113,23 @@ export type WithFlushUpdates<Store extends { getState: () => unknown }> = Store 
   flushUpdates: () => void;
 };
 
-export type WithGetSnapshot<Store extends { getState: () => unknown }> = Store & {
+export type WithGetSnapshot<Store extends StoreApi<unknown>> = Store & {
   /**
    * Reads the current snapshot while activating lazy derived stores before subscription.
    */
   getSnapshot: () => InferStoreState<Store>;
 };
 
-type ReadOnlyDerivedStore<S> = Omit<BaseStore<S>, 'getInitialState' | 'setState'> &
-  UseStoreCallSignatures<S> & {
+type ReadOnlyDerivedStore<Store extends BaseStore<unknown>> = Omit<Store, 'getInitialState' | 'setState'> &
+  UseStoreCallSignatures<InferStoreState<Store>> & {
     /**
      * @deprecated **Not applicable to derived stores.** Will throw an error.
      */
-    getInitialState: () => S;
+    getInitialState: Store['getInitialState'];
     /**
      * @deprecated **Not applicable to derived stores.** Will throw an error.
      */
-    setState: BaseStore<S>['setState'];
+    setState: Store['setState'];
   };
 
 /**
