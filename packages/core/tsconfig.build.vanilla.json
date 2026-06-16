@@ -4,13 +4,8 @@
     "composite": false,
     "declarationMap": false,
     "declarationDir": "dist/vanilla",
-    "moduleSuffixes": [".vanilla", ""],
-    "paths": {
-      "@/env": ["src/env.web.ts"],
-      "@/store/batchStoreNotifications": ["src/store/batchStoreNotifications.web.ts"],
-      "@/store/attachStoreHook": ["src/store/attachStoreHook"],
-      "@/storage": ["src/storesStorage.web.ts"]
-    }
+    "customConditions": ["vanilla"],
+    "moduleSuffixes": [".vanilla", ""]
   },
   "include": ["src/index.vanilla.ts"]
 }

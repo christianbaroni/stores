@@ -1,4 +1,4 @@
-import { batchStoreNotifications } from '@/store/batchStoreNotifications';
+import { batchStoreNotifications } from '#store/batchStoreNotifications';
 
 /**
  * Cascade Scheduler

@@ -1,5 +1,5 @@
-import { IS_BROWSER, IS_DEV } from '@/env';
-import { createStoresStorage } from '@/storage';
+import { IS_BROWSER, IS_DEV } from '#env';
+import { createStoresStorage } from '#storage';
 import { QueryStoreConfig } from '../queryStore/types';
 import { SyncEngine } from '../sync/types';
 import { AsyncStorageInterface, SyncStorageInterface } from '../types';

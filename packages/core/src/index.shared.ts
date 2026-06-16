@@ -1,10 +1,9 @@
 /* -- Core ---------- */
-export { configureStores } from './internal/runtime';
-export { createBaseStore } from './createBaseStore';
+export * from './createBaseStore';
 export * from './createDerivedStore';
 export * from './createQueryStore';
 export * from './createVirtualStore';
-export { StoresError } from './internal/runtime';
+export { configureStores, StoresError } from './internal/runtime';
 
 /* -- Helpers ------- */
 export { applyStateUpdate, replacer, reviver } from './internal/runtime';

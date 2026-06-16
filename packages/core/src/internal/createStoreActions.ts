@@ -1,4 +1,4 @@
-import { IS_DEV } from '@/env';
+import { IS_DEV } from '#env';
 import type { StoreApi } from '../store/types';
 import type { InferStoreState, StoreActions } from '../types';
 import type { FunctionKeys, FunctionRecord, UnknownFunction } from '../types/functions';

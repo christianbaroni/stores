@@ -1,4 +1,4 @@
-import { IS_DEV } from '@/env';
+import { IS_DEV } from '#env';
 import { applyStateUpdate } from '../../store/stateUpdate';
 import { FieldMetadata, NormalizedSyncConfig, SyncHandle, SyncStateKey, SyncUpdate, SyncValues } from '../../sync/types';
 import { StateCreator, SubscribeArgs, SubscribeOverloads } from '../../types';

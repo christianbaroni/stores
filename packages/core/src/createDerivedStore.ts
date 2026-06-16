@@ -1,4 +1,4 @@
-import { attachStoreHook } from '@/store/attachStoreHook';
+import { attachStoreHook } from '#store/attachStoreHook';
 import { derivedStore } from './internal/runtime';
 import type { DeriveGetter, DeriveOptions, DerivedStore } from './types';
 

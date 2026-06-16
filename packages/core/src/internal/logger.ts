@@ -1,4 +1,4 @@
-import { IS_DEV, IS_TEST } from '@/env';
+import { IS_DEV, IS_TEST } from '#env';
 
 export interface Logger {
   debug: (message: string, context?: Record<string, unknown>) => void;

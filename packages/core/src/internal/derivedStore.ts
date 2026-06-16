@@ -1,4 +1,4 @@
-import { IS_DEV } from '@/env';
+import { IS_DEV } from '#env';
 import type { StoreApi } from '../store/types';
 import type {
   BaseStore,

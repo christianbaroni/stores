@@ -36,12 +36,7 @@ export default defineConfig({
   treeshake: true,
 
   esbuildOptions(options) {
-    options.alias = {
-      '@/env': path.resolve(__dirname, `src/env.${platform}.ts`),
-      '@/storage': path.resolve(__dirname, `src/storesStorage.${platform}.ts`),
-      '@/store/attachStoreHook': path.resolve(__dirname, `src/store/attachStoreHook.${mode}.ts`),
-      '@/store/batchStoreNotifications': path.resolve(__dirname, `src/store/batchStoreNotifications.${platform}.ts`),
-    };
+    options.conditions = mode === 'vanilla' ? ['vanilla'] : platform === 'native' ? ['react-native'] : undefined;
     if (isProduction) {
       options.drop = ['debugger'];
       options.legalComments = 'none';

@@ -1,4 +1,4 @@
-import { IS_REACT_NATIVE } from '@/env';
+import { IS_REACT_NATIVE } from '#env';
 
 // ============ Constants ====================================================== //
 

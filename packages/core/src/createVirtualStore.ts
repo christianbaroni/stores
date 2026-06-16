@@ -1,4 +1,4 @@
-import { attachStoreHook } from '@/store/attachStoreHook';
+import { attachStoreHook } from '#store/attachStoreHook';
 import { virtualStore } from './internal/runtime';
 import type {
   BaseStore,

@@ -1,0 +1,20 @@
+{
+  "imports": {
+    "#env": {
+      "react-native": "./env.native.ts",
+      "default": "./env.web.ts"
+    },
+    "#storage": {
+      "react-native": "./storesStorage.native.ts",
+      "default": "./storesStorage.web.ts"
+    },
+    "#store/attachStoreHook": {
+      "vanilla": "./store/attachStoreHook.vanilla.ts",
+      "default": "./store/attachStoreHook.react.ts"
+    },
+    "#store/batchStoreNotifications": {
+      "react-native": "./store/batchStoreNotifications.native.ts",
+      "default": "./store/batchStoreNotifications.web.ts"
+    }
+  }
+}

@@ -1,4 +1,4 @@
-import { attachStoreHook } from '@/store/attachStoreHook';
+import { attachStoreHook } from '#store/attachStoreHook';
 import { baseStore } from './internal/runtime';
 import type { BaseStoreOptions, OptionallyPersistedStore, Store, StateCreator } from './types';
 

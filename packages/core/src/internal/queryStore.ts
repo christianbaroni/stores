@@ -1,4 +1,4 @@
-import { IS_DEV, IS_TEST } from '@/env';
+import { IS_DEV, IS_TEST } from '#env';
 import { SubscriptionManager } from '../queryStore/classes/SubscriptionManager';
 import { getQueryKey } from '../queryStore/queryKey';
 import type { AttachValue, SignalFunction } from '../queryStore/signalTypes';

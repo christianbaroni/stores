@@ -1,8 +1,4 @@
-import { dirname, resolve } from 'path';
-import { fileURLToPath } from 'url';
 import { defineConfig } from 'vitest/config';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   test: {
@@ -13,13 +9,5 @@ export default defineConfig({
       toFake: ['setTimeout', 'clearTimeout', 'setImmediate', 'clearImmediate', 'setInterval', 'clearInterval', 'Date', 'performance'],
     },
     testTimeout: 30_000,
-  },
-  resolve: {
-    alias: {
-      '@/env': resolve(__dirname, 'src/env.web.ts'),
-      '@/store/batchStoreNotifications': resolve(__dirname, 'src/store/batchStoreNotifications.web.ts'),
-      '@/store/attachStoreHook': resolve(__dirname, 'src/store/attachStoreHook.react.ts'),
-      '@/storage': resolve(__dirname, 'src/storesStorage.web.ts'),
-    },
   },
 });

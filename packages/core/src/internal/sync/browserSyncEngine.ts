@@ -1,4 +1,4 @@
-import { IS_BROWSER } from '@/env';
+import { IS_BROWSER } from '#env';
 import { SyncEngine, SyncHandle, SyncRegistration, SyncUpdate } from '../../sync/types';
 import { hasOwn } from '../../types/utils';
 import { nullObject } from '../../utils/core';

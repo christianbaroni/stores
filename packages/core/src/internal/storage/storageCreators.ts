@@ -1,4 +1,4 @@
-import { IS_BROWSER, IS_IOS, IS_TEST } from '@/env';
+import { IS_BROWSER, IS_IOS, IS_TEST } from '#env';
 import type { StorageValue } from '../../storage/storageTypes';
 import type { AsyncPersistStorage, PersistStorageConfig, SyncPersistStorage } from '../../store/types';
 import type { AsyncStorageInterface, BaseStoreOptions, EnforceStorageKey, SyncStorageInterface } from '../../types';

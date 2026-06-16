@@ -1,4 +1,4 @@
-import { attachStoreHook } from '@/store/attachStoreHook';
+import { attachStoreHook } from '#store/attachStoreHook';
 import { defaultRetryDelay, getQueryKey as getQueryKeyValue, parseQueryKey as parseQueryKeyValue, queryStore } from './internal/runtime';
 import type { QueryStoreConfig, QueryStoreState } from './queryStore/types';
 import type { BaseStoreOptions, OptionallyPersistedStore, PersistedStore, StateCreator, Store } from './types';
