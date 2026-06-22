@@ -10,7 +10,6 @@ export interface Logger {
   warn: (message: string, context?: Record<string, unknown>) => void;
 }
 
-/** @internal */
 export let logger: Logger = {
   debug: (message: string, context?: Record<string, unknown>) => {
     if (IS_DEV) console.debug(message, context);
@@ -26,7 +25,6 @@ export let logger: Logger = {
   },
 };
 
-/** @internal */
 export function setLogger(customLogger: Logger): void {
   logger = customLogger;
 }

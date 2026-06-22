@@ -99,7 +99,6 @@ function flushQueryTasks(): void {
 
 // ============ Query Store Factory ================================================== //
 
-/** @internal */
 export function queryStore<
   TQueryFnData,
   TParams extends Record<string, unknown>,

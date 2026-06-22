@@ -21,7 +21,6 @@ type VirtualStoreOptions = {
 
 // ============ Virtual Store Factory ========================================== //
 
-/** @internal */
 export function virtualStore<Store extends BaseStore<InferStoreState<Store>>, Overrides extends object = Record<string, never>>(
   createStore: ($: DeriveGetter) => Store,
   overridesOrOptions?: VirtualStoreOptions | ((getStore: () => Store) => Overrides),

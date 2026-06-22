@@ -56,7 +56,6 @@ type UninitializedState = typeof UNINITIALIZED;
 
 // ============ Store Creator ================================================== //
 
-/** @internal */
 export function derivedStore<DerivedState>(
   deriveFunction: ($: DeriveGetter) => DerivedState,
   optionsOrEqualityFn: DeriveOptions<DerivedState> = Object.is

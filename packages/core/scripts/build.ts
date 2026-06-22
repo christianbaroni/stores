@@ -1,18 +1,19 @@
 #!/usr/bin/env tsx
 import { exec } from 'child_process';
-import { copyFileSync, readFileSync, readdirSync, rmSync, statSync } from 'fs';
+import { copyFileSync, readFileSync, rmSync, statSync } from 'fs';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { promisify } from 'util';
 import { bold, formatSize, handleError, spinner, summary, timedRow, write } from '@/cli';
-import { disabledPluginTypeRoots, pluginBuildEntries, type Platform } from '../build/plugins';
+import { pluginBuildEntries, pluginDeclarationEntries, type Platform } from '../build/plugins';
 
 // ============ Script ========================================================= //
 
 const execAsync = promisify(exec);
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const typesOnly = process.argv.includes('--types-only');
 
-build().catch(e => {
+(typesOnly ? buildTypesOnly() : build()).catch(e => {
   write(summary('build', { success: false }));
   handleError(e);
 });
@@ -20,10 +21,15 @@ build().catch(e => {
 // ============ Types ========================================================== //
 
 type BuildOutput = Platform | 'vanilla';
-type BuildCommandOptions = { after?: () => void; env?: NodeJS.ProcessEnv };
+type BuildCommandOptions = { env?: NodeJS.ProcessEnv };
 type TimedResult = { time: number };
 
 // ============ Build Runner =================================================== //
+
+async function buildTypesOnly(): Promise<void> {
+  prepareBuild();
+  await buildTypes();
+}
 
 async function build(): Promise<void> {
   const start = performance.now();
@@ -56,8 +62,9 @@ async function build(): Promise<void> {
 async function buildTypes(): Promise<TimedResult> {
   return timed(async () => {
     await Promise.all([
-      runCommand('tsc -b tsconfig.build.json --emitDeclarationOnly --force', { after: removeDisabledPluginTypes }),
-      runCommand('tsc -p tsconfig.build.vanilla.json --emitDeclarationOnly', { after: normalizeVanillaDeclarations }),
+      buildDeclarations('src/index.ts', 'dist', 'tsconfig.build.dts.json'),
+      buildDeclarations('src/index.vanilla.ts', 'dist/vanilla', 'tsconfig.build.vanilla.dts.json'),
+      ...pluginDeclarationEntries().map(({ entry, outDir }) => buildDeclarations(entry, outDir, 'tsconfig.build.dts.json')),
     ]);
   });
 }
@@ -70,7 +77,10 @@ async function timed(action: () => Promise<void>): Promise<TimedResult> {
 
 async function runCommand(command: string, options?: BuildCommandOptions): Promise<void> {
   await execAsync(command, { cwd: root, env: options?.env });
-  options?.after?.();
+}
+
+function buildDeclarations(entry: string, outDir: string, tsconfig: string): Promise<void> {
+  return runCommand(`tsup ${entry} --dts-only --format cjs --out-dir ${outDir} --tsconfig ${tsconfig} --silent --no-clean`);
 }
 
 function buildOutput(output: BuildOutput): Promise<TimedResult> {
@@ -140,22 +150,4 @@ function copyFilesFromRoot(files: string[]): void {
 function prepareBuild(): void {
   rmSync(join(root, 'dist'), { recursive: true, force: true });
   copyFilesFromRoot(['LICENSE', 'README.md']);
-}
-
-function normalizeVanillaDeclarations(dir: string = join(root, 'dist/vanilla')): void {
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const entryPath = join(dir, entry.name);
-
-    if (entry.isDirectory()) {
-      normalizeVanillaDeclarations(entryPath);
-    } else if (entry.name.endsWith('.vanilla.d.ts')) {
-      copyFileSync(entryPath, join(dir, entry.name.replace(/\.vanilla\.d\.ts$/, '.d.ts')));
-    }
-  }
-}
-
-function removeDisabledPluginTypes(): void {
-  for (let i = 0; i < disabledPluginTypeRoots.length; i++) {
-    rmSync(join(root, disabledPluginTypeRoots[i]), { recursive: true, force: true });
-  }
 }

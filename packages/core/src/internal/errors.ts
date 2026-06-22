@@ -21,7 +21,6 @@ export class StoresError extends Error {
 
 /**
  * Normalizes unknown errors into `Error`.
- * @internal
  */
 export function ensureError(error: unknown): Error {
   if (error instanceof Error) return error;

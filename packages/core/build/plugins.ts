@@ -42,22 +42,37 @@ function isPublishing(): boolean {
 export function pluginBuildEntries(platform: Platform): Record<string, string> {
   const buildEntries: Record<string, string> = {};
 
+  visitPluginEntries((name, config, subpath) => {
+    if (config.includes(platform)) buildEntries[pluginOutputName(name, subpath)] = pluginSourcePath(name, subpath);
+  });
+
+  return buildEntries;
+}
+
+export function pluginDeclarationEntries(): Array<{ entry: string; outDir: string }> {
+  const declarationEntries: Array<{ entry: string; outDir: string }> = [];
+
+  visitPluginEntries((name, _config, subpath) => {
+    const typesPath = pluginTypesPath(name, subpath);
+    declarationEntries.push({ entry: pluginSourcePath(name, subpath), outDir: typesPath.slice(0, typesPath.lastIndexOf('/')) });
+  });
+
+  return declarationEntries;
+}
+
+function visitPluginEntries(visit: (name: string, config: PluginConfig, subpath?: EntrypointSubpath) => void): void {
   for (const name in plugins) {
     const config = plugins[name];
-    if (!config.includes(platform)) continue;
-
-    buildEntries[name] = pluginSourcePath(name);
+    visit(name, config);
 
     const subpaths = config.subpaths;
     if (subpaths === undefined) continue;
 
     for (let j = 0; j < subpaths.length; j++) {
       const subpath = subpaths[j];
-      if (typeof subpath !== 'string') buildEntries[pluginOutputName(name, subpath)] = pluginSourcePath(name, subpath);
+      if (typeof subpath !== 'string') visit(name, config, subpath);
     }
   }
-
-  return buildEntries;
 }
 
 // ============ Path Utilities ================================================= //

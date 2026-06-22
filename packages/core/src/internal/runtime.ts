@@ -29,19 +29,11 @@ export { deepEqual, shallowEqual } from '../utils/equality';
 export { time } from '../utils/time';
 
 /* -- Internal ------ */
-/** @internal */
 export { baseStore } from './baseStore';
-/** @internal */
 export { derivedStore } from './derivedStore';
-/** @internal */
 export { queryStore } from './queryStore';
-/** @internal */
 export { virtualStore } from './virtualStore';
-/** @internal */
 export { DEFAULT_STORAGE_KEY_PREFIX, getOptions, getStorageConfig, markStoreCreated } from './config';
-/** @internal */
 export { ensureError } from './errors';
-/** @internal */
 export { logger, setLogger } from './logger';
-/** @internal */
 export { StoreTags, assignStoreTag, hasDestroy } from './storeUtils';

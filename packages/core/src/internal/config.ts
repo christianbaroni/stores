@@ -70,7 +70,6 @@ type StorageConfig = Pick<StoresConfig, 'storage' | 'syncEngine'>;
 
 // ============ Constants ====================================================== //
 
-/** @internal */
 export const DEFAULT_STORAGE_KEY_PREFIX = 'stores:';
 
 // ============ Stores Config ================================================== //
@@ -103,18 +102,15 @@ export function configureStores(config: Partial<StoresConfig>): void {
 
 // ============ Internal Helpers =============================================== //
 
-/** @internal */
 export function getOptions(): Options | undefined {
   if (!optionsConfig) return undefined;
   return optionsConfig;
 }
 
-/** @internal */
 export function getStorageConfig(): StorageConfig {
   return (storageConfig ??= buildStorageConfig(undefined));
 }
 
-/** @internal */
 export function markStoreCreated(): void {
   configLocked = true;
 }

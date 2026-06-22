@@ -11,7 +11,6 @@ import { createSyncedStateCreator } from './sync/syncEnhancer';
 
 // ============ Store Creator ================================================== //
 
-/** @internal */
 export function baseStore<S, PersistedState extends Partial<S>, PersistReturn extends void | Promise<void>>(
   createState: StateCreator<S>,
   options?: BaseStoreOptions<S, PersistedState, PersistReturn>

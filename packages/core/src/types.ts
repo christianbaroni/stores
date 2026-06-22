@@ -84,10 +84,10 @@ export type InferPersistedState<PersistedStore> = PersistedStore extends Store<i
  *  - `$(store)` depends on accessed state paths
  */
 export type DeriveGetter = {
-  <Store extends StoreApi<InferStoreState<Store>>>(store: Store): InferStoreState<Store>;
-  <Store extends StoreApi<InferStoreState<Store>>, Selected>(
-    store: Store,
-    selector: Selector<InferStoreState<Store>, Selected>,
+  <SourceStore extends StoreApi<InferStoreState<SourceStore>>>(store: SourceStore): InferStoreState<SourceStore>;
+  <SourceStore extends StoreApi<InferStoreState<SourceStore>>, Selected>(
+    store: SourceStore,
+    selector: Selector<InferStoreState<SourceStore>, Selected>,
     equalityFn?: EqualityFn<Selected>
   ): Selected;
 };
