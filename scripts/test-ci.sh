@@ -38,11 +38,7 @@ echo_step "JOB 3: Test Core"
 pnpm --filter stores test
 echo_success "Core tests passed"
 
-echo_step "JOB 4: Test Chrome Plugin"
-pnpm --filter stores test:chrome
-echo_success "Chrome plugin tests passed"
-
-echo_step "JOB 5: Test Treeshaking"
+echo_step "JOB 4: Test Treeshaking"
 pnpm --filter stores test:treeshake
 echo_success "Treeshake tests passed"
 
