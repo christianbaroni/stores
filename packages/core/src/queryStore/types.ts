@@ -1,6 +1,7 @@
-import type { AttachValue, SignalFunction } from './signalTypes';
-import type { StoreApi } from '../store/types';
+import type { QueryParam, ReactiveParam } from './queryParam';
 import type { DebounceOptions, SetPartial, Store } from '../types';
+
+export type { QueryParam, QueryParamConfig, QueryParamKey, ReactiveParam } from './queryParam';
 
 // ============ Query Store Type =============================================== //
 
@@ -117,7 +118,7 @@ export type QueryStoreConfig<
    * When `false`, the store will not automatically fetch data until explicitly enabled.
    * @default true
    */
-  enabled?: boolean | ReactiveParam<boolean, TParams, S, TData>;
+  enabled?: boolean | ReactiveParam<boolean, S>;
 
   /**
    * When `true`, the store's `getData` method will always return existing data from the cache if it exists,
@@ -145,8 +146,7 @@ export type QueryStoreConfig<
   paramChangeThrottle?: false | number | DebounceOptions;
 
   /**
-   * Parameters to be passed to the fetcher, defined as either direct values or `ReactiveParam` functions.
-   * Dynamic parameters using `AttachValue` will cause the store to refetch when their values change.
+   * Reactive or static parameters to be passed to the fetcher.
    */
   params?: QueryStoreParams<TParams, TData, S, CustomState>;
 
@@ -166,7 +166,7 @@ export type QueryStoreConfig<
    * After becoming stale, the store may automatically refetch data in the background if there are active subscribers.
    * @default time.minutes(2)
    */
-  staleTime?: number | ReactiveParam<number, TParams, S, TData>;
+  staleTime?: number | ReactiveParam<number, S>;
 
   /**
    * Suppresses warnings in the event a `staleTime` under the minimum is desired.
@@ -258,12 +258,12 @@ export type QueryStoreInternalState<TData, TParams extends Record<string, unknow
   lastFetchedAt: number | null;
 
   /**
-   * A cache of fetched data and metadata, keyed by query stringified params.
+   * A cache of fetched data and metadata, keyed by generated query keys.
    */
   queryCache: Record<string, CacheEntry<TData> | undefined>;
 
   /**
-   * The current query key, which is a string representation of the current query parameter values.
+   * The current query key, generated deterministically from store parameters.
    */
   queryKey: string;
 
@@ -335,7 +335,8 @@ export type FetchOptions = {
    * `queryKey` (which determines where `getData()` points to).
    *
    * ---
-   * Defaults to `true` unless `skipStoreUpdates: true` is specified, in which case the default is `false`.
+   * Manual fetches default to `false`. Internal query-store fetches default to the store's `keepPreviousData`
+   * behavior. When `skipStoreUpdates` is set, the query key is never updated.
    */
   updateQueryKey?: boolean;
 };
@@ -412,65 +413,7 @@ export type QueryStoreParams<
   TData,
   S extends QueryStoreState<TData, TParams, CustomState>,
   CustomState = unknown,
-> = [TParams] extends [Record<string, never>]
-  ? undefined
-  : {
-      [K in keyof TParams]: ReactiveParam<TParams[K], TParams, S, TData>;
-    };
-
-/**
- * Represents a parameter that can be provided directly or defined via a reactive `AttachValue`.
- * A parameter can be:
- *  - A static value (e.g. `string`, `number`).
- *  - A function that returns an `AttachValue<T>` when given a `SignalFunction`.
- */
-export type ReactiveParam<T, TParams extends Record<string, unknown>, S extends QueryStoreState<TData, TParams>, TData> =
-  | T
-  | (($: SignalFunction, store: StoreApi<S>) => AttachValue<T>);
-
-export type AttachValueParams<TParams extends Record<string, unknown>> = Partial<
-  Record<keyof TParams, AttachValue<TParams[Extract<keyof TParams, string>]>>
->;
-
-/**
- * The result of resolving reactive and static parameter values.
- */
-export type ResolvedParamsResult<TParams extends Record<string, unknown>> = {
-  /**
-   * Reactive parameter values wrapped in `AttachValue`, which trigger refetches when they change.
-   */
-  attachVals: AttachValueParams<TParams>;
-
-  /**
-   * Direct, non-reactive values resolved from the initial configuration.
-   */
-  directValues: Partial<TParams>;
-
-  /**
-   * Fully resolved parameters, merging both direct and reactive values.
-   */
-  resolvedParams: TParams;
-};
-
-/**
- * The result of resolving the `enabled` option.
- */
-export type ResolvedEnabledResult = {
-  /**
-   * The reactive enabled state, if provided as a function returning an AttachValue.
-   */
-  enabledAttachVal: AttachValue<boolean> | null;
-
-  /**
-   * The static enabled state, if provided as a direct boolean value.
-   */
-  enabledDirectValue: boolean | null;
-
-  /**
-   * The final enabled state, derived from either the reactive or static value.
-   */
-  resolvedEnabled: boolean;
-};
+> = [TParams] extends [Record<string, never>] ? undefined : { [K in keyof TParams]: QueryParam<TParams[K], S> };
 
 // ============ Internal Helper Types ========================================== //
 

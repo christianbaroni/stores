@@ -24,25 +24,21 @@ export type UseBoundStoreWithEqualityFn<
   State = InferStoreState<Store>,
 > = UseStoreCallSignatures<State> & Store;
 
-export type BaseStore<S, ExtraSubscribeOptions extends boolean = false> = UseBoundStoreWithEqualityFn<StoreApi<S>> & {
-  subscribe: SubscribeOverloads<S, ExtraSubscribeOptions>;
+export type BaseStore<S> = UseBoundStoreWithEqualityFn<StoreApi<S>> & {
+  subscribe: SubscribeOverloads<S>;
 };
 
 export type PersistedStore<
   S,
   PersistedState = Partial<S>,
   PersistReturn extends void | Promise<void> = void | Promise<void>,
-  ExtraSubscribeOptions extends boolean = false,
-> = UseStoreCallSignatures<S> & WithPersist<BaseStore<S, ExtraSubscribeOptions>, PersistedState, PersistReturn>;
+> = UseStoreCallSignatures<S> & WithPersist<BaseStore<S>, PersistedState, PersistReturn>;
 
-export type Store<
-  S,
-  PersistedState extends Partial<S> = never,
-  PersistReturn extends void | Promise<void> = void | Promise<void>,
-  ExtraSubscribeOptions extends boolean = false,
-> = [PersistedState] extends [never]
-  ? BaseStore<S, ExtraSubscribeOptions>
-  : PersistedStore<S, PersistedState, PersistReturn, ExtraSubscribeOptions>;
+export type Store<S, PersistedState extends Partial<S> = never, PersistReturn extends void | Promise<void> = void | Promise<void>> = [
+  PersistedState,
+] extends [never]
+  ? BaseStore<S>
+  : PersistedStore<S, PersistedState, PersistReturn>;
 
 /**
  * Store returned by creators that accept optional persistence options.
@@ -50,7 +46,7 @@ export type Store<
  */
 export type OptionallyPersistedStore<S, PersistedState, PersistReturn extends void | Promise<void> = void> = UseStoreCallSignatures<S> &
   Omit<BaseStore<S>, 'setState'> & {
-    persist?: PersistedStore<S, PersistedState, PersistReturn, false>['persist'];
+    persist?: PersistedStore<S, PersistedState, PersistReturn>['persist'];
     setState(update: SetPartial<S>, replace?: false): PersistReturn;
     setState(update: SetFull<S>, replace: true): PersistReturn;
   };
@@ -80,21 +76,23 @@ export type InferSetStateReturn<Store> = Store extends { setState(...args: SetSt
  */
 export type InferPersistedState<PersistedStore> = PersistedStore extends Store<infer _, infer PersistedState> ? PersistedState : never;
 
-// ============ Derived Store Types ============================================ //
+// ============ Dependency Tracking Types ====================================== //
 
 /**
- * Reads store state and records the dependencies of a derived computation.
+ * Reads store state and records dependencies for tracked computations.
  *  - `$(store, selector, equalityFn?)` depends on the selected state
  *  - `$(store)` depends on accessed state paths
  */
 export type DeriveGetter = {
-  <S extends Store<InferStoreState<S>>>(store: S): InferStoreState<S>;
-  <S extends Store<InferStoreState<S>>, Selected>(
-    store: S,
-    selector: Selector<InferStoreState<S>, Selected>,
+  <Store extends StoreApi<InferStoreState<Store>>>(store: Store): InferStoreState<Store>;
+  <Store extends StoreApi<InferStoreState<Store>>, Selected>(
+    store: Store,
+    selector: Selector<InferStoreState<Store>, Selected>,
     equalityFn?: EqualityFn<Selected>
   ): Selected;
 };
+
+// ============ Derived Store Types ============================================ //
 
 export type DerivedStore<S> = WithFlushUpdates<ReadOnlyDerivedStore<BaseStore<S>>>;
 

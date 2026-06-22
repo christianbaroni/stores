@@ -1,23 +1,27 @@
 import { IS_DEV } from '#env';
 import type { StoreApi } from '../store/types';
 import type {
-  BaseStore,
   DebounceOptions,
   DeriveGetter,
   DeriveOptions,
   EqualityFn,
   Listener,
   Selector,
-  SubscribeArgs,
-  SubscribeOptions,
-  UnsubscribeFn,
   WithFlushUpdates,
   WithGetSnapshot,
 } from '../types';
+import type { InternalSubscribeArgs, InternalUnsubscribeFn } from './types/internalSubscribeTypes';
 import { identity } from '../utils/core';
 import { debounce } from '../utils/debounce';
 import { pluralize } from '../utils/stringUtils';
-import { activateCascade, enqueueDerive, getCurrentDeriveRank, isCascadeActive, joinCascade } from './derivedStore/cascadeScheduler';
+import {
+  activateCascade,
+  enqueueDerive,
+  getCurrentDeriveRank,
+  isCascadeActive,
+  joinCascade,
+  settleCascadeDerivations,
+} from '../store/cascadeScheduler';
 import { getOrCreateProxy, stripProxies } from './derivedStore/deriveProxy';
 import { PathFinder, createPathFinder } from './derivedStore/pathFinder';
 import { hasGetSnapshot } from './storeUtils';
@@ -34,7 +38,7 @@ type Watcher<DerivedState, Selected = unknown> =
   | {
       currentSlice: Selected;
       equalityFn: EqualityFn<Selected>;
-      isDerivedWatcher: boolean;
+      isCascadeParticipant: boolean;
       listener: Listener<Selected>;
       selector: Selector<DerivedState, Selected>;
     };
@@ -46,7 +50,7 @@ type Watcher<DerivedState, Selected = unknown> =
  */
 const UNINITIALIZED = Symbol();
 
-const DERIVED_STORE_SUBSCRIBE_OPTIONS: SubscribeOptions<unknown> = Object.freeze({ equalityFn: Object.is, isDerivedStore: true });
+const CASCADE_PARTICIPANT_SUBSCRIBE_OPTIONS = Object.freeze({ equalityFn: Object.is, isCascadeParticipant: true });
 
 type UninitializedState = typeof UNINITIALIZED;
 
@@ -58,14 +62,13 @@ export function derivedStore<DerivedState>(
   optionsOrEqualityFn: DeriveOptions<DerivedState> = Object.is
 ): WithGetSnapshot<WithFlushUpdates<StoreApi<DerivedState>>> {
   const { debounceOptions, debugMode, equalityFn, keepAlive, lockDependencies } = parseOptions(optionsOrEqualityFn);
-  const storeId = getStoreId();
 
   // Active subscriptions *to* the derived store
   const watchers = new Set<Watcher<DerivedState>>();
   if (keepAlive) watchers.add(dummyWatcher);
 
   // For subscriptions created by `$` within `deriveFunction`
-  const unsubscribes = new Set<UnsubscribeFn<true>>();
+  const unsubscribes = new Set<InternalUnsubscribeFn>();
 
   // Proxy tracking
   let rootProxyCache: WeakMap<object, unknown> | undefined;
@@ -74,23 +77,24 @@ export function derivedStore<DerivedState>(
   // Core state
   let derivedState: DerivedState | UninitializedState = UNINITIALIZED;
   let deriveScheduled = false;
+  let isDeriving = false;
   let invalidated = true;
   let shouldRebuildSubscriptions = true;
 
   // Cascade coordination state
-  let derivedWatchers = 0;
+  let cascadeParticipants = 0;
   let enlistedInCascade = false;
   let enqueuedAtRank: number | null = null;
   let prevStateForFlush: DerivedState | UninitializedState = UNINITIALIZED;
 
   // ========== $ ==========
 
-  function $<S>(store: BaseStore<S>): S;
-  function $<S, Selected>(store: BaseStore<S>, selector: Selector<S, Selected>, equalityFn?: EqualityFn<Selected>): Selected;
-  function $<S, Selected = S>(store: BaseStore<S>, selector?: Selector<S, Selected>, equalityFn?: EqualityFn<Selected>): Selected | S {
+  function $<S>(store: StoreApi<S>): S;
+  function $<S, Selected>(store: StoreApi<S>, selector: Selector<S, Selected>, equalityFn?: EqualityFn<Selected>): Selected;
+  function $<S, Selected = S>(store: StoreApi<S>, selector?: Selector<S, Selected>, equalityFn?: EqualityFn<Selected>): Selected | S {
     // -- Direct derivation, no subscription
     if (!shouldRebuildSubscriptions || !watchers.size) {
-      return (selector ?? identity)(hasGetSnapshot(store) ? store.getSnapshot() : store.getState());
+      return (selector ?? identity)(store.getState());
     }
 
     // -- Overload #1: $(store).maybe.a.path
@@ -101,9 +105,8 @@ export function derivedStore<DerivedState>(
     }
     // -- Overload #2: $(store, selector, equalityFn?)
     // No proxy, just a direct subscription to the store
-    unsubscribes.add(
-      store.subscribe(selector, invalidate, equalityFn ? { equalityFn, isDerivedStore: true } : DERIVED_STORE_SUBSCRIBE_OPTIONS)
-    );
+    const subscribeOptions = equalityFn ? { equalityFn, isCascadeParticipant: true } : CASCADE_PARTICIPANT_SUBSCRIBE_OPTIONS;
+    unsubscribes.add(store.subscribe(selector, invalidate, subscribeOptions));
     return selector(hasGetSnapshot(store) ? store.getSnapshot() : store.getState());
   }
 
@@ -124,7 +127,13 @@ export function derivedStore<DerivedState>(
 
     const prevState = derivedState;
     const hasPreviousState = isInitialized(prevState);
-    derivedState = produceNextState($);
+
+    isDeriving = true;
+    try {
+      derivedState = produceNextState($);
+    } finally {
+      isDeriving = false;
+    }
 
     const shouldLogSubscriptions = debugMode && (!hasPreviousState || (debugMode === 'verbose' && shouldRebuildSubscriptions));
 
@@ -138,7 +147,7 @@ export function derivedStore<DerivedState>(
     if (pathFinder && shouldRebuildSubscriptions) {
       // Create subscriptions for each proxy-generated dependency path
       pathFinder.buildProxySubscriptions((store, selector) => {
-        unsubscribes.add(store.subscribe(selector, invalidate, DERIVED_STORE_SUBSCRIBE_OPTIONS));
+        unsubscribes.add(store.subscribe(selector, invalidate, CASCADE_PARTICIPANT_SUBSCRIBE_OPTIONS));
       }, shouldLogSubscriptions);
 
       // Reset proxy tracking state
@@ -173,22 +182,22 @@ export function derivedStore<DerivedState>(
 
   function notifyWatchers(newState: DerivedState, prevState: DerivedState): void {
     const mixedWatchers = hasMixedWatchers();
-    const hasComponentWatchers = !derivedWatchers || mixedWatchers;
+    const hasOrdinaryWatchers = !cascadeParticipants || mixedWatchers;
 
     // Defer if any of the following are true:
     // - This store has mixed watchers
     // - We're currently inside a derive batch (part of active derivation chain)
-    // - A cascade is active and we have component watchers (component-only stores need batching)
-    const shouldDefer = mixedWatchers || getCurrentDeriveRank() !== null || (isCascadeActive() && hasComponentWatchers);
+    // - A cascade is active and ordinary watchers need batched notification
+    const shouldDefer = hasOrdinaryWatchers && (mixedWatchers || getCurrentDeriveRank() !== null || isCascadeActive());
 
     // Arm early so downstream invalidations see the cascade
     if (mixedWatchers) activateCascade();
 
     if (debugMode) console.log(`[📻 Derive Complete 📻]: Notifying ${watchers.size} ${pluralize('watcher', watchers.size)}`);
 
-    // -- Phase 1: propagate derivations synchronously to downstream derived stores
+    // -- Phase 1: propagate cascade participant notifications synchronously
     for (const w of watchers) {
-      if (typeof w === 'function' || !w.isDerivedWatcher) continue;
+      if (typeof w === 'function' || !w.isCascadeParticipant) continue;
       const nextSlice = w.selector(newState);
       if (!w.equalityFn(w.currentSlice, nextSlice)) {
         const prevSlice = w.currentSlice;
@@ -197,25 +206,25 @@ export function derivedStore<DerivedState>(
       }
     }
 
-    // Defer non-derived notifications during a cascade
+    // Defer ordinary watcher notifications during a cascade
     if (shouldDefer) {
+      if (!isInitialized(prevStateForFlush)) prevStateForFlush = prevState;
       if (!enlistedInCascade) {
         enlistedInCascade = true;
-        if (!isInitialized(prevStateForFlush)) prevStateForFlush = prevState;
-        joinCascade(storeId, onCascadeFlush);
+        joinCascade(onCascadeFlush);
       }
       return;
     }
 
     // -- Phase 2: immediate delivery (no cascade active)
-    notifyNonDerivedWatchers(newState, prevState);
+    notifyOrdinaryWatchers(newState, prevState);
   }
 
-  function notifyNonDerivedWatchers(newState: DerivedState, prevState: DerivedState): void {
+  function notifyOrdinaryWatchers(newState: DerivedState, prevState: DerivedState): void {
     for (const w of watchers) {
       if (typeof w === 'function') {
         w(newState, prevState);
-      } else if (!w.isDerivedWatcher) {
+      } else if (!w.isCascadeParticipant) {
         const nextSlice = w.selector(newState);
         if (!w.equalityFn(w.currentSlice, nextSlice)) {
           const prevSlice = w.currentSlice;
@@ -229,28 +238,27 @@ export function derivedStore<DerivedState>(
   function hasMixedWatchers(): boolean {
     const hasDummy = watchers.has(dummyWatcher);
     const watcherCount = hasDummy ? watchers.size - 1 : watchers.size;
-    return derivedWatchers > 0 && derivedWatchers < watcherCount;
+    return cascadeParticipants > 0 && cascadeParticipants < watcherCount;
   }
 
   // ========== Cascade Flush ==========
 
   /**
    * Called by the cascade scheduler after derivations settle.
-   * Lazily derives and flushes non-derived-store watcher notifications.
+   * Lazily derives and flushes ordinary watcher notifications.
    */
   function onCascadeFlush(): void {
-    if (!watchers.size) return;
+    // Stores without cascade participants may be invalidated but not yet derived
+    // Derive now before flushing to ordinary watchers
+    if (watchers.size && invalidated && !cascadeParticipants) runDerive();
 
-    // Stores without derived watchers may be invalidated but not yet derived
-    // Derive now before flushing to components
-    if (invalidated && !derivedWatchers) runDerive();
-    if (!isInitialized(derivedState)) return;
-
-    const prevState = isInitialized(prevStateForFlush) ? prevStateForFlush : derivedState;
-    notifyNonDerivedWatchers(derivedState, prevState);
-
+    const prevState = prevStateForFlush;
     enlistedInCascade = false;
     prevStateForFlush = UNINITIALIZED;
+
+    if (watchers.size && isInitialized(derivedState) && isInitialized(prevState)) {
+      notifyOrdinaryWatchers(derivedState, prevState);
+    }
   }
 
   // ========== Debouncing / Scheduling ==========
@@ -282,8 +290,8 @@ export function derivedStore<DerivedState>(
 
   // ========== Lifecycle Helpers ==========
 
-  function handleDestroy(isDerivedWatcher: boolean): void {
-    const shouldDefer = isDerivedWatcher || (!!debouncedDerive && invalidated);
+  function handleDestroy(isCascadeParticipant: boolean): void {
+    const shouldDefer = isCascadeParticipant || (!!debouncedDerive && invalidated);
     if (!shouldDefer) {
       destroy();
       return;
@@ -299,11 +307,12 @@ export function derivedStore<DerivedState>(
   }
 
   function invalidate(): void {
-    if (invalidated) return;
+    // A dependency settled during this derivation is already reflected in the current output.
+    if (isDeriving || invalidated) return;
     invalidated = true;
 
     if (!debouncedDerive) {
-      if (derivedWatchers) {
+      if (cascadeParticipants) {
         activateCascade();
         const upstream = getCurrentDeriveRank();
         const rank = upstream === null ? 0 : upstream + 1;
@@ -317,57 +326,65 @@ export function derivedStore<DerivedState>(
         return;
       }
 
-      // Stores without derived watchers during active cascade: enlist for lazy derive and flush
+      // Stores without cascade participants during active cascade: enlist for lazy derive and flush
       if (isCascadeActive()) {
-        // Mark as needing derive and enlist for flush
-        // The flush will check invalidated flag and derive if needed
         if (!enlistedInCascade) {
           enlistedInCascade = true;
-          if (isInitialized(derivedState)) {
-            prevStateForFlush = derivedState;
-          }
-          joinCascade(storeId, onCascadeFlush);
+          joinCascade(onCascadeFlush);
         }
         return;
       }
     }
 
-    // Outside cascades (debounced or component-only stores, no active cascade)
+    // Outside cascades (debounced stores or no active cascade)
     enqueuedAtRank = null;
     scheduleDerive();
   }
 
+  function withDummyWatcher<T>(fn: () => T): T {
+    watchers.add(dummyWatcher);
+    try {
+      return fn();
+    } finally {
+      watchers.delete(dummyWatcher);
+    }
+  }
+
+  // ========== Snapshots ==========
+
   function getSnapshot(): DerivedState {
     if (!isInitialized(derivedState)) {
       // Ensures useSyncExternalStore doesn't trigger redundant derivations
-      watchers.add(dummyWatcher);
-      const state = runDerive();
-      watchers.delete(dummyWatcher);
-      return state;
+      return watchers.size ? runDerive() : withDummyWatcher(runDerive);
     }
     if (deriveScheduled) runScheduledDerive();
     return derivedState;
   }
 
+  function initializeWatcherSlice<Selected>(selector: Selector<DerivedState, Selected>): Selected {
+    return selector(watchers.size ? getState() : withDummyWatcher(getState));
+  }
+
   // ========== Public Methods ==========
 
   function getState(): DerivedState {
+    if (isCascadeActive()) settleCascadeDerivations();
+
     if (invalidated || !isInitialized(derivedState)) {
       // If there are watchers, build subscriptions, otherwise compute directly
       return watchers.size > 0 ? runDerive() : deriveFunction($);
     }
+
     return derivedState;
   }
 
-  function subscribe(...args: SubscribeArgs<DerivedState>): UnsubscribeFn {
+  function subscribe(...args: InternalSubscribeArgs<DerivedState>): InternalUnsubscribeFn {
     // -- Overload #1: single argument (listener)
     if (args.length === 1) {
       const listener = args[0];
       watchers.add(listener);
 
-      if (watchers.size === 1 && !isInitialized(derivedState)) {
-        getState();
-      }
+      if (!isInitialized(derivedState)) getState();
 
       return () => {
         watchers.delete(listener);
@@ -375,29 +392,28 @@ export function derivedStore<DerivedState>(
       };
     }
 
-    // -- Overload #2: (selector, listener, { equalityFn, fireImmediately, isDerivedStore })
+    // -- Overload #2: (selector, listener, { equalityFn, fireImmediately, isCascadeParticipant })
     const [selector, listener, options] = args;
     const equalityFn = options?.equalityFn ?? Object.is;
-    const isDerivedWatcher = options?.isDerivedStore ?? false;
+    const isCascadeParticipant = options?.isCascadeParticipant ?? false;
+    const currentSlice = initializeWatcherSlice(selector);
 
     const watcher: Watcher<DerivedState> = {
-      currentSlice: undefined,
+      currentSlice,
       equalityFn,
-      isDerivedWatcher,
+      isCascadeParticipant,
       listener,
       selector,
     };
 
     watchers.add(watcher);
-    watcher.currentSlice = selector(getState());
-
-    if (isDerivedWatcher) derivedWatchers += 1;
-    if (options?.fireImmediately) listener(watcher.currentSlice, watcher.currentSlice);
+    if (isCascadeParticipant) cascadeParticipants += 1;
+    if (options?.fireImmediately) listener(currentSlice, currentSlice);
 
     return () => {
       watchers.delete(watcher);
-      if (isDerivedWatcher) derivedWatchers -= 1;
-      if (!watchers.size) handleDestroy(isDerivedWatcher);
+      if (isCascadeParticipant) cascadeParticipants -= 1;
+      if (!watchers.size) handleDestroy(isCascadeParticipant);
     };
   }
 
@@ -412,11 +428,12 @@ export function derivedStore<DerivedState>(
     debouncedDerive?.cancel();
     unsubscribeAll();
     watchers.clear();
-    derivedWatchers = 0;
+    cascadeParticipants = 0;
     pathFinder = undefined;
     rootProxyCache = undefined;
     shouldRebuildSubscriptions = true;
     deriveScheduled = false;
+    isDeriving = false;
     invalidated = true;
     derivedState = UNINITIALIZED;
     enlistedInCascade = false;
@@ -441,13 +458,6 @@ export function derivedStore<DerivedState>(
 }
 
 // ============ Helpers ======================================================== //
-
-let id = 0;
-
-function getStoreId(): string {
-  id += 1;
-  return String(id);
-}
 
 function dummyWatcher(): void {
   return;

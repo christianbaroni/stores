@@ -1,4 +1,4 @@
-import { BaseStore } from '../../types';
+import type { StoreApi } from '../../store/types';
 import { isPlainObject } from '../../types/utils';
 import { hasGetSnapshot } from '../storeUtils';
 import { TrackPathFn } from './pathFinder';
@@ -14,7 +14,7 @@ const TRACKING_PROXY_UNWRAP = Symbol('stores.deriveProxy.unwrap');
  * method invocations via proxy traps. Used to auto-generate selectors that point
  * to either the accessed path or the value returned by an invoked store method.
  */
-export function getOrCreateProxy<S>(store: BaseStore<S>, rootProxyCache: WeakMap<object, unknown>, trackPath: TrackPathFn): S {
+export function getOrCreateProxy<S>(store: StoreApi<S>, rootProxyCache: WeakMap<object, unknown>, trackPath: TrackPathFn): S {
   const cachedProxy = rootProxyCache.get(store);
   if (isCachedProxy<S>(cachedProxy)) return cachedProxy;
 
@@ -24,7 +24,7 @@ export function getOrCreateProxy<S>(store: BaseStore<S>, rootProxyCache: WeakMap
   return newProxy;
 }
 
-function createTrackingProxy<S>(snapshot: S, store: BaseStore<S>, trackPath: TrackPathFn, path: string[] = []): S {
+function createTrackingProxy<S>(snapshot: S, store: StoreApi<S>, trackPath: TrackPathFn, path: string[] = []): S {
   // -- If the store state is a primitive or nullish, track as a leaf and return directly
   if (!snapshot || typeof snapshot !== 'object') {
     trackPath(store, path, true);
@@ -39,7 +39,7 @@ function createTrackingProxy<S>(snapshot: S, store: BaseStore<S>, trackPath: Tra
 function buildProxy<T extends object, S>(
   value: T,
   path: string[],
-  store: BaseStore<S>,
+  store: StoreApi<S>,
   trackPath: TrackPathFn,
   bailedOutObjects: WeakSet<object>,
   subProxyCache: WeakMap<object, object>

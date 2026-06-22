@@ -1,30 +1,15 @@
 import { time } from '../../utils/time';
 
 /**
- * Initialization config for the SubscriptionManager.
- */
-interface SubscriptionManagerConfig {
-  /**
-   * The store's `disableAutoRefetching` option, passed through from the query config.
-   */
-  disableAutoRefetching: boolean;
-  /**
-   * The initial enabled state for the SubscriptionManager.
-   */
-  initialEnabled: boolean;
-}
-
-/**
  * Lazy initialization config for subscription handlers.
  */
 interface SubscriptionHandlerConfig {
   /**
    * Callback executed when a subscription is added.
-   * @param enabled - The current enabled state
    * @param isFirstSubscription - Whether this is the first subscription
    * @param shouldThrottle - Whether to throttle the fetch
    */
-  onSubscribe: (enabled: boolean, isFirstSubscription: boolean, shouldThrottle: boolean) => void;
+  onSubscribe: (isFirstSubscription: boolean, shouldThrottle: boolean) => void;
   /** Callback executed when the last remaining subscription is removed. */
   onLastUnsubscribe: (willResubscribe?: boolean) => void;
 }
@@ -34,7 +19,6 @@ interface SubscriptionHandlerConfig {
  */
 export class SubscriptionManager {
   private count = 0;
-  private enabled = false;
   private lastSubscriptionTime: number | null = null;
   private readonly fetchThrottleMs: number | null = null;
 
@@ -44,8 +28,7 @@ export class SubscriptionManager {
   /**
    * Creates a new SubscriptionManager instance.
    */
-  constructor({ disableAutoRefetching, initialEnabled }: SubscriptionManagerConfig) {
-    this.enabled = initialEnabled;
+  constructor(disableAutoRefetching: boolean) {
     if (disableAutoRefetching) {
       this.fetchThrottleMs = time.seconds(5);
     }
@@ -59,24 +42,8 @@ export class SubscriptionManager {
     this.onLastUnsubscribe = onLastUnsubscribe;
   }
 
-  /**
-   * Returns the current subscription state.
-   * @returns An object containing `enabled`, `lastSubscriptionTime`, and `subscriptionCount`
-   */
-  get(): { enabled: boolean; lastSubscriptionTime: number | null; subscriptionCount: number } {
-    return {
-      enabled: this.enabled,
-      lastSubscriptionTime: this.lastSubscriptionTime,
-      subscriptionCount: this.count,
-    };
-  }
-
-  /**
-   * Updates the enabled state for queries.
-   * @param enabled - The new enabled state
-   */
-  setEnabled(enabled: boolean): void {
-    this.enabled = enabled;
+  hasSubscribers(): boolean {
+    return this.count > 0;
   }
 
   /**
@@ -85,16 +52,18 @@ export class SubscriptionManager {
    */
   subscribe(): (skipAbortFetch?: boolean) => void {
     const isFirstSubscription = this.count === 0;
+    const throttleActive = this.fetchThrottleMs !== null;
+
     const shouldThrottle =
-      this.fetchThrottleMs !== null &&
+      throttleActive &&
       this.lastSubscriptionTime !== null &&
       !isFirstSubscription &&
       Date.now() - this.lastSubscriptionTime <= this.fetchThrottleMs;
 
-    this.onSubscribe?.(this.enabled, isFirstSubscription, shouldThrottle);
-
     this.count += 1;
-    this.lastSubscriptionTime = Date.now();
+    this.onSubscribe?.(isFirstSubscription, shouldThrottle);
+
+    if (throttleActive) this.lastSubscriptionTime = Date.now();
 
     return (skipAbortFetch?: boolean) => {
       const isLastSubscription = this.count === 1;

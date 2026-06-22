@@ -18,7 +18,7 @@ export function createBaseStore<S>(createState: StateCreator<S>): Store<S>;
 export function createBaseStore<S, PersistedState extends Partial<S> = Partial<S>, PersistReturn extends void = void>(
   createState: StateCreator<S>,
   options: BaseStoreOptions<S, PersistedState, PersistReturn>
-): Store<S, PersistedState, PersistReturn, false>;
+): Store<S, PersistedState, PersistReturn>;
 
 /**
  * Creates a base store with async persistence.
@@ -29,7 +29,7 @@ export function createBaseStore<S, PersistedState extends Partial<S> = Partial<S
 export function createBaseStore<S, PersistedState extends Partial<S> = Partial<S>, PersistReturn extends Promise<void> = Promise<void>>(
   createState: StateCreator<S>,
   options: BaseStoreOptions<S, PersistedState, PersistReturn>
-): Store<S, PersistedState, PersistReturn, false>;
+): Store<S, PersistedState, PersistReturn>;
 
 /**
  * Creates a base store with optional persistence.
@@ -62,7 +62,7 @@ export function createBaseStore<S, PersistedState extends Partial<S> = Partial<S
 export function createBaseStore<S, PersistedState extends Partial<S>, PersistReturn extends void | Promise<void>>(
   createState: StateCreator<S>,
   options?: BaseStoreOptions<S, PersistedState, PersistReturn>
-): Store<S> | Store<S, PersistedState, PersistReturn, false> {
+): Store<S> | Store<S, PersistedState, PersistReturn> {
   const store = baseStore(createState, options);
   return attachStoreHook(store, store.getState, store.getInitialState, Object.is);
 }

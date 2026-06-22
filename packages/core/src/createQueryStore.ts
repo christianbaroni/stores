@@ -1,11 +1,14 @@
 import { attachStoreHook } from '#store/attachStoreHook';
-import { defaultRetryDelay, getQueryKey as getQueryKeyValue, parseQueryKey as parseQueryKeyValue, queryStore } from './internal/runtime';
+import { defaultRetryDelay, queryStore } from './internal/runtime';
 import type { QueryStoreConfig, QueryStoreState } from './queryStore/types';
 import type { BaseStoreOptions, OptionallyPersistedStore, PersistedStore, StateCreator, Store } from './types';
 
 export { defaultRetryDelay };
+export { getQueryKey, parseQueryKey } from './queryStore/queryKey';
+export { queryParam } from './queryStore/queryParam';
+export type { QueryParam, QueryParamConfig, QueryParamKey, ReactiveParam } from './queryStore/queryParam';
 
-// ============ Query Store Factory ================================================== //
+// ============ Query Store Factory ============================================ //
 
 /**
  * Creates a persisted, query-enabled store with data fetching capabilities (sync storage).
@@ -24,7 +27,7 @@ export function createQueryStore<
 >(
   config: QueryStoreConfig<TQueryFnData, TParams, TData>,
   options: BaseStoreOptions<QueryStoreState<TData, TParams>, PersistedState, PersistReturn>
-): PersistedStore<QueryStoreState<TData, TParams>, PersistedState, PersistReturn, false>;
+): PersistedStore<QueryStoreState<TData, TParams>, PersistedState, PersistReturn>;
 
 /**
  * Creates a persisted, query-enabled store with data fetching capabilities (async storage).
@@ -43,7 +46,7 @@ export function createQueryStore<
 >(
   config: QueryStoreConfig<TQueryFnData, TParams, TData>,
   options: BaseStoreOptions<QueryStoreState<TData, TParams>, PersistedState, PersistReturn>
-): PersistedStore<QueryStoreState<TData, TParams>, PersistedState, PersistReturn, false>;
+): PersistedStore<QueryStoreState<TData, TParams>, PersistedState, PersistReturn>;
 
 /**
  * Creates a persisted, query-enabled store with data fetching capabilities (sync storage).
@@ -65,7 +68,7 @@ export function createQueryStore<
   config: QueryStoreConfig<TQueryFnData, TParams, TData, CustomState>,
   stateCreator: StateCreator<QueryStoreState<TData, TParams, CustomState>, CustomState>,
   options: BaseStoreOptions<QueryStoreState<TData, TParams, CustomState>, PersistedState, PersistReturn>
-): PersistedStore<QueryStoreState<TData, TParams, CustomState>, PersistedState, PersistReturn, false>;
+): PersistedStore<QueryStoreState<TData, TParams, CustomState>, PersistedState, PersistReturn>;
 
 /**
  * Creates a persisted, query-enabled store with data fetching capabilities (async storage).
@@ -87,7 +90,7 @@ export function createQueryStore<
   config: QueryStoreConfig<TQueryFnData, TParams, TData, CustomState>,
   stateCreator: StateCreator<QueryStoreState<TData, TParams, CustomState>, CustomState>,
   options: BaseStoreOptions<QueryStoreState<TData, TParams, CustomState>, PersistedState, PersistReturn>
-): PersistedStore<QueryStoreState<TData, TParams, CustomState>, PersistedState, PersistReturn, false>;
+): PersistedStore<QueryStoreState<TData, TParams, CustomState>, PersistedState, PersistReturn>;
 
 /**
  * Creates a query-enabled store with data fetching capabilities.
@@ -236,24 +239,7 @@ export function createQueryStore<
   maybeOptions?: BaseStoreOptions<QueryStoreState<TData, TParams, CustomState>, PersistedState, PersistReturn>
 ):
   | Store<QueryStoreState<TData, TParams, CustomState>>
-  | Store<QueryStoreState<TData, TParams, CustomState>, PersistedState, PersistReturn, false> {
+  | Store<QueryStoreState<TData, TParams, CustomState>, PersistedState, PersistReturn> {
   const store = queryStore(config, creatorOrOptions, maybeOptions);
   return attachStoreHook(store, store.getState, store.getInitialState, Object.is);
-}
-
-// ============ Public Helpers ================================================= //
-
-/**
- * Generates a deterministic query store `queryKey` from the given parameters,
- * consistent with internally generated keys.
- */
-export function getQueryKey<TParams extends Record<string, unknown>>(params: TParams): string {
-  return getQueryKeyValue(params);
-}
-
-/**
- * Parses a query store `queryKey` into the corresponding parameters.
- */
-export function parseQueryKey<TParams extends Record<string, unknown>>(queryKey: string): TParams {
-  return parseQueryKeyValue(queryKey);
 }

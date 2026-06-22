@@ -16,7 +16,6 @@ export type SubscribableStore = {
 export type SubscribeOptions<Selected> = {
   equalityFn?: EqualityFn<Selected>;
   fireImmediately?: boolean;
-  isDerivedStore?: boolean;
 };
 
 export type ListenerArgs<S> = [listener: Listener<S>];
@@ -27,14 +26,10 @@ export type SelectorArgs<S, Selected> = [
 ];
 
 export type SubscribeArgs<S, Selected = unknown> = ListenerArgs<S> | SelectorArgs<S, Selected>;
-export type UnsubscribeFn<Options extends boolean = false> = Options extends true ? (skipAbortFetch?: boolean) => void : () => void;
+export type UnsubscribeFn = () => void;
 export type SubscribeFn<S, Selected = S> = (...args: SubscribeArgs<S, Selected>) => UnsubscribeFn;
 
-export type SubscribeOverloads<S, ExtraOptions extends boolean = false> = {
-  (listener: Listener<S>): UnsubscribeFn<ExtraOptions>;
-  <Selected>(
-    selector: Selector<S, Selected>,
-    listener: Listener<Selected>,
-    options?: SubscribeOptions<Selected>
-  ): UnsubscribeFn<ExtraOptions>;
+export type SubscribeOverloads<S> = {
+  (listener: Listener<S>): UnsubscribeFn;
+  <Selected>(selector: Selector<S, Selected>, listener: Listener<Selected>, options?: SubscribeOptions<Selected>): UnsubscribeFn;
 };

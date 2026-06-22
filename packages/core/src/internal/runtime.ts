@@ -7,7 +7,6 @@ export { StoresError } from './errors';
 /* -- Query --------- */
 export { QueryStatuses } from '../queryStore/types';
 export { defaultRetryDelay } from './queryStore/queryStoreDefaults';
-export { getQueryKey, parseQueryKey } from '../queryStore/queryKey';
 
 /* -- Helpers ------- */
 export { applyStateUpdate } from '../store/stateUpdate';

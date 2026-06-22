@@ -10,6 +10,7 @@
  *
  * @template TArgs - The argument types of the function to schedule
  * @param fn - The function to schedule for microtask execution
+ * @param enqueue - The queue that should run the scheduled task
  * @returns A scheduler function with the same signature as the input function
  *
  * @example
@@ -24,18 +25,23 @@
  * // Logs "Updated: 3" once in the next microtask
  * ```
  */
-export function createMicrotaskScheduler<Args extends unknown[]>(fn: (...args: Args) => void): (...args: Args) => void {
+export function createMicrotaskScheduler<Args extends unknown[]>(
+  fn: (...args: Args) => void,
+  enqueue: (task: () => void) => void = queueMicrotask
+): (...args: Args) => void {
   let isScheduled = false;
   let latestArgs: Args;
+
+  function flush(): void {
+    isScheduled = false;
+    fn(...latestArgs);
+  }
 
   function schedule(...args: Args): void {
     latestArgs = args;
     if (isScheduled) return;
     isScheduled = true;
-    queueMicrotask(() => {
-      isScheduled = false;
-      fn(...latestArgs);
-    });
+    enqueue(flush);
   }
 
   return schedule;

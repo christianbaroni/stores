@@ -3,21 +3,28 @@ import { nullObject } from '../utils/core';
 
 // ============ Query Keys ===================================================== //
 
-export function getQueryKey<TParams extends Record<string, unknown>>(params: TParams): string {
-  return JSON.stringify(sortParamKeys(params));
+/**
+ * Generates a deterministic query store `queryKey` from the given
+ * key payload, consistent with internally generated keys.
+ */
+export function getQueryKey<TKeyPayload extends Record<string, unknown>>(keyPayload: TKeyPayload): string {
+  return JSON.stringify(sortParamKeys(keyPayload));
 }
 
-export function parseQueryKey<TParams extends Record<string, unknown>>(queryKey: string): TParams {
+/**
+ * Parses a query store `queryKey` into the key payload it encodes.
+ */
+export function parseQueryKey<TKeyPayload extends Record<string, unknown> = Record<string, unknown>>(queryKey: string): TKeyPayload {
   return JSON.parse(queryKey);
 }
 
-function sortParamKeys<TParams extends Record<string, unknown>>(params: TParams): Record<string, unknown> {
-  if (typeof params !== 'object' || params === null) return params;
+function sortParamKeys<TKeyPayload extends Record<string, unknown>>(keyPayload: TKeyPayload): Record<string, unknown> {
+  if (typeof keyPayload !== 'object' || keyPayload === null) return keyPayload;
 
-  return Object.keys(params)
+  return Object.keys(keyPayload)
     .sort()
     .reduce<Record<string, unknown>>((acc, key) => {
-      const value = params[key];
+      const value = keyPayload[key];
       acc[key] = isPlainObject(value) ? sortParamKeys(value) : value;
       return acc;
     }, nullObject());
