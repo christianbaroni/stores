@@ -33,8 +33,8 @@ async function build(): Promise<void> {
   const spin = spinner(' exports · types · vanilla · web · native');
   write('\n');
 
-  const [exports, types, vanilla, web, native] = await Promise.all([
-    generateExports(),
+  const exports = await generateExports();
+  const [types, vanilla, web, native] = await Promise.all([
     buildTypes(),
     buildOutput('vanilla'),
     buildOutput('web'),
