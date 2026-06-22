@@ -4,14 +4,13 @@
 
 import { act, createElement, memo } from 'react';
 import type { ReactElement } from 'react';
-import { createRoot, hydrateRoot } from 'react-dom/client';
+import { hydrateRoot } from 'react-dom/client';
 import type { Root } from 'react-dom/client';
 import { renderToString } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createMountedRoot } from '../react.testUtils';
 import type { SubscribeArgs, SubscribeOverloads, UnsubscribeFn } from '../types';
 import { useSyncExternalStoreWithSelector } from './useSyncExternalStoreWithSelector';
-
-Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 type StoreListener<State> = (state: State, previous: State) => void;
 
@@ -29,12 +28,6 @@ type TestStore<State> = {
   publish: (nextState: State) => void;
   replace: (nextState: State) => void;
   subscribe: SubscribeOverloads<State>;
-};
-
-type MountedRoot = {
-  container: HTMLDivElement;
-  render: (element: ReactElement) => void;
-  unmount: () => void;
 };
 
 afterEach(() => {
@@ -331,24 +324,6 @@ describe('useSyncExternalStoreWithSelector', () => {
     }
   });
 });
-
-function createMountedRoot(): MountedRoot {
-  const container = document.createElement('div');
-  const root = createRoot(container);
-
-  document.body.appendChild(container);
-
-  return {
-    container,
-    render: element => {
-      act(() => root.render(element));
-    },
-    unmount: () => {
-      act(() => root.unmount());
-      container.remove();
-    },
-  };
-}
 
 function createExternalStore<State>(initialState: State): TestStore<State> {
   let state = initialState;

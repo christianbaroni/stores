@@ -1,3 +1,4 @@
+import type { InternalSubscribeOptions } from '../internal/types/internalSubscribeTypes';
 import { createStore } from './createStore';
 import type { StoreApi } from './types';
 
@@ -144,5 +145,30 @@ describe('createStore', () => {
 
     expect(listener).toHaveBeenCalledTimes(1);
     expect(listener).toHaveBeenCalledWith(1, 1);
+  });
+
+  it('notifies cascade participants before ordinary listeners', () => {
+    const store = createStore(() => ({ count: 0 }));
+    let participantValue = 0;
+
+    const listener = vi.fn(() => {
+      expect(participantValue).toBe(1);
+    });
+
+    const subscribeOptions: InternalSubscribeOptions<unknown> = { isCascadeParticipant: true };
+
+    store.subscribe(
+      state => state.count,
+      count => {
+        participantValue = count;
+      },
+      subscribeOptions
+    );
+    store.subscribe(listener);
+
+    store.setState({ count: 1 });
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledWith({ count: 1 }, { count: 0 });
   });
 });

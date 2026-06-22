@@ -1,6 +1,7 @@
 import { RefObject, useLayoutEffect } from 'react';
-import { useLazyRef as useRef } from './useLazyRef';
 import { BaseStore, EqualityFn, InferStoreState, Selector } from '../types';
+import { noop } from '../utils/core';
+import { useLazyRef as useRef } from './useLazyRef';
 
 // ============ Types ========================================================== //
 
@@ -184,13 +185,9 @@ function detachListener<S, Selected>(listenerRef: RefObject<ListenerRef<S, Selec
   if (listenerRef.current.options.debugMode) {
     console.log('[🗑️ useListen 🗑️] Detaching listener');
   }
-  listenerRef.current.resubscribe = () => {
-    return;
-  };
+  listenerRef.current.resubscribe = noop;
   listenerRef.current.unsubscribe();
-  listenerRef.current.unsubscribe = () => {
-    return;
-  };
+  listenerRef.current.unsubscribe = noop;
   listenerRef.current.isActive = false;
 }
 
@@ -204,12 +201,8 @@ function createListenerRef<S, Selected>(
     react,
     isActive: false,
     options: buildOptionsObject(optionsOrEqualityFn),
-    resubscribe: () => {
-      return;
-    },
-    unsubscribe: () => {
-      return;
-    },
+    resubscribe: noop,
+    unsubscribe: noop,
   };
 }
 

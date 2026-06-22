@@ -912,6 +912,93 @@ describe('createDerivedStore', () => {
       expect(deriveCount).toBe(2);
     });
 
+    it('should keep a keepAlive store live after snapshot initialization', async () => {
+      const baseStore = createBaseStore(() => ({ val: 0 }));
+
+      let deriveCount = 0;
+      const useDerived = createDerivedStore(
+        $ => {
+          deriveCount += 1;
+          return $(baseStore).val;
+        },
+        { keepAlive: true }
+      );
+
+      if (!hasGetSnapshot(useDerived)) throw new Error('derived store test requires getSnapshot');
+
+      expect(useDerived.getSnapshot()).toBe(0);
+      expect(deriveCount).toBe(1);
+
+      baseStore.setState({ val: 1 });
+      await flushMicrotasks();
+
+      expect(deriveCount).toBe(2);
+      expect(useDerived.getState()).toBe(1);
+    });
+
+    it('should rebuild dependencies when a keepAlive store is snapshotted after explicit destroy', async () => {
+      const baseStore = createBaseStore(() => ({ val: 0 }));
+
+      let deriveCount = 0;
+      const useDerived = createDerivedStore(
+        $ => {
+          deriveCount += 1;
+          return { val: $(baseStore).val };
+        },
+        { keepAlive: true }
+      );
+
+      if (!hasGetSnapshot(useDerived)) throw new Error('derived store test requires getSnapshot');
+
+      expect(useDerived.getSnapshot()).toEqual({ val: 0 });
+      expect(deriveCount).toBe(1);
+
+      useDerived.destroy();
+      expect(useDerived.getSnapshot()).toEqual({ val: 0 });
+      expect(deriveCount).toBe(2);
+
+      const watcher = vi.fn();
+      const unsubscribe = useDerived.subscribe(state => state.val, watcher);
+
+      baseStore.setState({ val: 1 });
+      await flushMicrotasks();
+
+      expect(deriveCount).toBe(3);
+      expect(watcher).toHaveBeenCalledTimes(1);
+      expect(watcher).toHaveBeenLastCalledWith(1, 0);
+
+      unsubscribe();
+    });
+
+    it('should initialize a keepAlive store on first subscription', async () => {
+      const baseStore = createBaseStore(() => ({ val: 0 }));
+
+      let deriveCount = 0;
+      const useDerived = createDerivedStore(
+        $ => {
+          deriveCount += 1;
+          return $(baseStore).val;
+        },
+        { keepAlive: true }
+      );
+
+      const watcher = vi.fn();
+      const unsubscribe = useDerived.subscribe(watcher);
+      await flushMicrotasks();
+
+      expect(deriveCount).toBe(1);
+      expect(watcher).toHaveBeenCalledTimes(0);
+
+      baseStore.setState({ val: 1 });
+      await flushMicrotasks();
+
+      expect(deriveCount).toBe(2);
+      expect(watcher).toHaveBeenCalledTimes(1);
+      expect(watcher).toHaveBeenLastCalledWith(1, 0);
+
+      unsubscribe();
+    });
+
     it('should keep pending debounced invalidation alive across a same-turn resubscribe', async () => {
       const baseStore = createBaseStore(() => ({ val: 0 }));
 

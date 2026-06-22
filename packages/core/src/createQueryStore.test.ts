@@ -1,6 +1,7 @@
-import { flushMacrotask } from './async.testUtils';
+import { flushMacrotask, flushMicrotasks } from './async.testUtils';
 import { createBaseStore } from './createBaseStore';
-import { createQueryStore, getQueryKey } from './createQueryStore';
+import { createDerivedStore } from './createDerivedStore';
+import { createQueryStore, getQueryKey, parseQueryKey, queryParam } from './createQueryStore';
 import { createAsyncStorageMock } from './internal/storage/storageMocks.testUtils';
 import { QueryStatuses } from './queryStore/types';
 import { time } from './utils/time';
@@ -109,6 +110,37 @@ describe('createQueryStore', () => {
       expect(cacheEntry?.errorInfo?.retryCount).toBe(maxRetries);
       vi.useRealTimers();
     });
+
+    it('should not run a scheduled retry after the store is disabled', async () => {
+      vi.useFakeTimers();
+
+      const fetcher = vi.fn(async () => {
+        throw new Error('Fetch failed');
+      });
+      const store = createQueryStore<TestData, TestParams>({
+        fetcher,
+        params: { id: 1 },
+        retryDelay: 100,
+      });
+
+      const unsubscribe = store.subscribe(() => {
+        return;
+      });
+
+      try {
+        await flushMicrotasks();
+        expect(fetcher).toHaveBeenCalledTimes(1);
+
+        store.setState({ enabled: false });
+        await vi.advanceTimersByTimeAsync(100);
+        await flushMicrotasks();
+
+        expect(fetcher).toHaveBeenCalledTimes(1);
+      } finally {
+        unsubscribe();
+        vi.useRealTimers();
+      }
+    });
   });
 
   // ──────────────────────────────────────────────
@@ -162,6 +194,48 @@ describe('createQueryStore', () => {
         expect(store.getState().getData()).toBe('data-2');
       } finally {
         unsubscribe();
+      }
+    });
+
+    it('should not let an aborted fetch clear a same-key replacement fetch', async () => {
+      vi.useFakeTimers();
+
+      const fetcher = vi.fn((params: TestParams) => {
+        return new Promise<TestData>(resolve => {
+          setTimeout(() => resolve(`data-${params.id}`), 100);
+        });
+      });
+
+      const store = createQueryStore<TestData, TestParams>({
+        fetcher,
+        params: { id: 1 },
+      });
+
+      const unsubscribeFirst = store.subscribe(() => {
+        return;
+      });
+      expect(fetcher).toHaveBeenCalledTimes(1);
+
+      unsubscribeFirst();
+
+      const unsubscribeSecond = store.subscribe(() => {
+        return;
+      });
+
+      try {
+        expect(fetcher).toHaveBeenCalledTimes(2);
+
+        await Promise.resolve();
+
+        const activeFetchPromise = store.getState().fetch(undefined, { updateQueryKey: true });
+        expect(fetcher).toHaveBeenCalledTimes(2);
+
+        await vi.advanceTimersByTimeAsync(100);
+        await activeFetchPromise;
+        expect(store.getState().getData()).toBe('data-1');
+      } finally {
+        unsubscribeSecond();
+        vi.useRealTimers();
       }
     });
   });
@@ -505,6 +579,391 @@ describe('createQueryStore', () => {
       await flushMacrotask();
       expect(fetcher).toHaveBeenCalledTimes(1);
       unsubscribe2();
+    });
+
+    it('should track reactive params returned by store method invocations', async () => {
+      type SourceState = {
+        id: number;
+        getId(): number;
+        setId: (id: number) => void;
+      };
+
+      const paramsStore = createBaseStore<SourceState>(set => ({
+        id: 1,
+        getId() {
+          return this.id;
+        },
+        setId: id => set({ id }),
+      }));
+
+      const fetcher = vi.fn(async (params: TestParams) => {
+        return `data-${params.id}`;
+      });
+
+      const store = createQueryStore<TestData, TestParams>({
+        fetcher,
+        params: { id: $ => $(paramsStore).getId() },
+        staleTime: 0,
+      });
+
+      const unsubscribe = store.subscribe(() => {
+        return;
+      });
+
+      try {
+        await flushMacrotask();
+        expect(fetcher).toHaveBeenCalledWith({ id: 1 }, expect.any(AbortController));
+
+        fetcher.mockClear();
+        paramsStore.getState().setId(2);
+        await flushMacrotask();
+
+        expect(fetcher).toHaveBeenCalledTimes(1);
+        expect(fetcher).toHaveBeenCalledWith({ id: 2 }, expect.any(AbortController));
+        expect(store.getState().queryKey).toBe(getQueryKey({ id: 2 }));
+        expect(store.getState().getData()).toBe('data-2');
+      } finally {
+        unsubscribe();
+      }
+    });
+
+    it('should track reactive params that return a proxied source snapshot', async () => {
+      type Params = { source: { id: number } };
+
+      const paramsStore = createBaseStore<{ id: number }>(() => ({ id: 1 }));
+      const store = createQueryStore<TestData, Params>({
+        enabled: false,
+        fetcher: async params => `data-${params.source.id}`,
+        params: { source: $ => $(paramsStore) },
+      });
+
+      paramsStore.setState({ id: 2 });
+      await flushMacrotask();
+
+      expect(store.getState().queryKey).toBe(getQueryKey({ source: { id: 2 } }));
+    });
+
+    it('should publish cached reactive param updates from multiple query stores in one queued flush', async () => {
+      const realQueueMicrotask = globalThis.queueMicrotask;
+      let microtaskJob = 0;
+      const unsubscribes: Array<() => void> = [];
+
+      globalThis.queueMicrotask = callback => {
+        realQueueMicrotask(() => {
+          microtaskJob += 1;
+          callback();
+        });
+      };
+
+      try {
+        const paramsStore = createBaseStore<{ id: number; setId: (id: number) => void }>(set => ({
+          id: 1,
+          setId: id => set({ id }),
+        }));
+
+        const fetchCalls: string[] = [];
+
+        function createNamedStore(name: string) {
+          return createQueryStore<TestData, TestParams>({
+            fetcher: async params => {
+              fetchCalls.push(`${name}:${params.id}`);
+              return `${name}-data-${params.id}`;
+            },
+            keepPreviousData: true,
+            params: { id: $ => $(paramsStore, state => state.id) },
+            staleTime: Infinity,
+          });
+        }
+
+        const firstStore = createNamedStore('first');
+        const secondStore = createNamedStore('second');
+        const events: Array<{ job: number; next: TestData | null; prev: TestData | null; store: string }> = [];
+
+        unsubscribes.push(
+          firstStore.subscribe(
+            state => state.getData(),
+            (next, prev) => events.push({ job: microtaskJob, next, prev, store: 'first' })
+          ),
+          secondStore.subscribe(
+            state => state.getData(),
+            (next, prev) => events.push({ job: microtaskJob, next, prev, store: 'second' })
+          )
+        );
+
+        await flushMacrotask();
+
+        await firstStore.getState().fetch({ id: 2 }, { skipStoreUpdates: 'withCache' });
+        await secondStore.getState().fetch({ id: 2 }, { skipStoreUpdates: 'withCache' });
+
+        events.length = 0;
+        fetchCalls.length = 0;
+
+        paramsStore.getState().setId(2);
+        await flushMacrotask();
+
+        expect(fetchCalls).toEqual([]);
+        expect(events.map(event => ({ next: event.next, prev: event.prev, store: event.store }))).toEqual([
+          { next: 'first-data-2', prev: 'first-data-1', store: 'first' },
+          { next: 'second-data-2', prev: 'second-data-1', store: 'second' },
+        ]);
+        expect(new Set(events.map(event => event.job)).size).toBe(1);
+      } finally {
+        for (const unsubscribe of unsubscribes) unsubscribe();
+        globalThis.queueMicrotask = realQueueMicrotask;
+      }
+    });
+
+    it('should keep reactive params live without fetching while unsubscribed', async () => {
+      const paramsStore = createBaseStore<{ id: number; setId: (id: number) => void }>(set => ({
+        id: 1,
+        setId: id => set({ id }),
+      }));
+
+      const fetcher = vi.fn(async (params: TestParams) => {
+        return `data-${params.id}`;
+      });
+
+      const store = createQueryStore<TestData, TestParams>({
+        fetcher,
+        params: { id: $ => $(paramsStore).id },
+        staleTime: 0,
+      });
+
+      paramsStore.getState().setId(2);
+      await flushMacrotask();
+
+      expect(store.getState().queryKey).toBe(getQueryKey({ id: 2 }));
+      expect(fetcher).not.toHaveBeenCalled();
+
+      const unsubscribe = store.subscribe(() => {
+        return;
+      });
+
+      try {
+        await flushMacrotask();
+        expect(fetcher).toHaveBeenCalledTimes(1);
+        expect(fetcher).toHaveBeenCalledWith({ id: 2 }, expect.any(AbortController));
+      } finally {
+        unsubscribe();
+      }
+    });
+
+    it('should let reactive params track the query store without activating it', async () => {
+      type CustomState = {
+        id: number;
+        setId: (id: number) => void;
+      };
+
+      const fetcher = vi.fn(async (params: TestParams) => {
+        return `data-${params.id}`;
+      });
+
+      const store = createQueryStore<TestData, TestParams, CustomState>(
+        {
+          fetcher,
+          params: { id: ($, store) => $(store).id },
+          staleTime: 0,
+        },
+        set => ({
+          id: 1,
+          setId: id => set({ id }),
+        })
+      );
+
+      store.getState().setId(2);
+      await flushMacrotask();
+
+      expect(store.getState().queryKey).toBe(getQueryKey({ id: 2 }));
+      expect(fetcher).not.toHaveBeenCalled();
+
+      const unsubscribe = store.subscribe(() => {
+        return;
+      });
+
+      try {
+        await flushMacrotask();
+        expect(fetcher).toHaveBeenCalledTimes(1);
+        expect(fetcher).toHaveBeenCalledWith({ id: 2 }, expect.any(AbortController));
+      } finally {
+        unsubscribe();
+      }
+    });
+
+    it('should not fetch when reactive enabled becomes true without subscribers', async () => {
+      const enabledStore = createBaseStore<{ enabled: boolean; setEnabled: (enabled: boolean) => void }>(set => ({
+        enabled: false,
+        setEnabled: enabled => set({ enabled }),
+      }));
+
+      const fetcher = vi.fn(async (params: TestParams) => {
+        return `data-${params.id}`;
+      });
+
+      const store = createQueryStore<TestData, TestParams>({
+        enabled: $ => $(enabledStore).enabled,
+        fetcher,
+        params: { id: 1 },
+        staleTime: 0,
+      });
+
+      enabledStore.getState().setEnabled(true);
+      await flushMacrotask();
+
+      expect(store.getState().enabled).toBe(true);
+      expect(fetcher).not.toHaveBeenCalled();
+
+      const unsubscribe = store.subscribe(() => {
+        return;
+      });
+
+      try {
+        await flushMacrotask();
+        expect(fetcher).toHaveBeenCalledTimes(1);
+      } finally {
+        unsubscribe();
+      }
+    });
+
+    it('should not fetch when reactive staleTime changes without subscribers', async () => {
+      const staleTimeStore = createBaseStore<{ staleTime: number; setStaleTime: (staleTime: number) => void }>(set => ({
+        staleTime: time.minutes(2),
+        setStaleTime: staleTime => set({ staleTime }),
+      }));
+
+      const fetcher = vi.fn(async (params: TestParams) => {
+        return `data-${params.id}`;
+      });
+
+      createQueryStore<TestData, TestParams>({
+        fetcher,
+        params: { id: 1 },
+        staleTime: $ => $(staleTimeStore).staleTime,
+      });
+
+      staleTimeStore.getState().setStaleTime(0);
+      await flushMacrotask();
+
+      expect(fetcher).not.toHaveBeenCalled();
+    });
+
+    it('should publish query keys atomically with derived params', async () => {
+      const sourceStore = createBaseStore<{ id: number; setId: (id: number) => void }>(set => ({
+        id: 1,
+        setId: id => set({ id }),
+      }));
+
+      const derivedParamStore = createDerivedStore($ => $(sourceStore).id);
+      const store = createQueryStore<TestData, TestParams>({
+        enabled: false,
+        fetcher: async params => `data-${params.id}`,
+        params: { id: $ => $(derivedParamStore) },
+      });
+
+      const combinedStore = createDerivedStore($ => ({
+        id: $(derivedParamStore),
+        queryKey: $(store).queryKey,
+      }));
+      const childStore = createDerivedStore($ => {
+        const { id, queryKey } = $(combinedStore);
+        return `${id}:${queryKey}`;
+      });
+
+      const values: string[] = [];
+      const unsubscribe = childStore.subscribe(
+        value => value,
+        value => {
+          values.push(value);
+        }
+      );
+
+      try {
+        sourceStore.getState().setId(2);
+        await flushMacrotask();
+
+        const expectedQueryKey = getQueryKey({ id: 2 });
+        expect(values).toEqual([`2:${expectedQueryKey}`]);
+        expect(childStore.getState()).toBe(`2:${expectedQueryKey}`);
+        expect(store.getState().queryKey).toBe(expectedQueryKey);
+      } finally {
+        unsubscribe();
+        store.getState().reset();
+      }
+    });
+
+    it('should publish enabled atomically with derived enabled sources', async () => {
+      const sourceStore = createBaseStore<{ enabled: boolean; setEnabled: (enabled: boolean) => void }>(set => ({
+        enabled: false,
+        setEnabled: enabled => set({ enabled }),
+      }));
+
+      const derivedEnabledStore = createDerivedStore($ => $(sourceStore).enabled);
+      const store = createQueryStore<TestData, TestParams>({
+        enabled: $ => $(derivedEnabledStore),
+        fetcher: async params => `data-${params.id}`,
+        params: { id: 1 },
+      });
+
+      const combinedStore = createDerivedStore($ => ({
+        enabled: $(derivedEnabledStore),
+        queryEnabled: $(store).enabled,
+      }));
+      const childStore = createDerivedStore($ => {
+        const { enabled, queryEnabled } = $(combinedStore);
+        return `${enabled}:${queryEnabled}`;
+      });
+
+      const values: string[] = [];
+      const unsubscribe = childStore.subscribe(
+        value => value,
+        value => {
+          values.push(value);
+        }
+      );
+
+      try {
+        sourceStore.getState().setEnabled(true);
+        await flushMacrotask();
+
+        expect(values).toEqual(['true:true']);
+        expect(childStore.getState()).toBe('true:true');
+        expect(store.getState().enabled).toBe(true);
+      } finally {
+        unsubscribe();
+        store.getState().reset();
+      }
+    });
+
+    it('should support query params with projected or excluded key values', async () => {
+      type LargeParam = { id: string; body: string };
+      type Params = { id: number; payload: LargeParam; token: string };
+
+      const payload = { id: 'payload-1', body: 'large-body' };
+      const fetcher = vi.fn(async (params: Params) => {
+        return `${params.id}:${params.payload.body}:${params.token}`;
+      });
+
+      const store = createQueryStore<TestData, Params>({
+        fetcher,
+        params: {
+          id: 1,
+          payload: queryParam(payload, { key: value => value.id }),
+          token: queryParam('secret-token', { key: false }),
+        },
+      });
+
+      expect(store.getState().queryKey).toBe(getQueryKey({ id: 1, payload: 'payload-1' }));
+      expect(parseQueryKey(store.getState().queryKey)).toEqual({ id: 1, payload: 'payload-1' });
+
+      await store.getState().fetch();
+
+      expect(fetcher).toHaveBeenCalledWith({ id: 1, payload, token: 'secret-token' }, expect.any(AbortController));
+      expect(
+        store.getState().getData({
+          id: 1,
+          payload: { id: 'payload-1', body: 'different-body' },
+          token: 'different-token',
+        })
+      ).toBe('1:large-body:secret-token');
     });
   });
 
