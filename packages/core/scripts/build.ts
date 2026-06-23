@@ -5,15 +5,16 @@ import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { promisify } from 'util';
 import { bold, formatSize, handleError, spinner, summary, timedRow, write } from '@/cli';
-import { pluginBuildEntries, pluginDeclarationEntries, type Platform } from '../build/plugins';
+import { pluginBuildEntries, type Platform } from '../build/plugins';
 
 // ============ Script ========================================================= //
 
 const execAsync = promisify(exec);
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const typesOnly = process.argv.includes('--types-only');
+const output = outputArg();
 
-(typesOnly ? buildTypesOnly() : build()).catch(e => {
+(output ? buildOutputOnly(output) : typesOnly ? buildTypesOnly() : build()).catch(e => {
   write(summary('build', { success: false }));
   handleError(e);
 });
@@ -29,6 +30,11 @@ type TimedResult = { time: number };
 async function buildTypesOnly(): Promise<void> {
   prepareBuild();
   await buildTypes();
+}
+
+async function buildOutputOnly(output: BuildOutput): Promise<void> {
+  rmSync(join(root, 'dist', output), { recursive: true, force: true });
+  await buildOutput(output, process.env.NODE_ENV);
 }
 
 async function build(): Promise<void> {
@@ -60,13 +66,7 @@ async function build(): Promise<void> {
 // ============ Build Helpers ================================================== //
 
 async function buildTypes(): Promise<TimedResult> {
-  return timed(async () => {
-    await Promise.all([
-      buildDeclarations('src/index.ts', 'dist', 'tsconfig.build.dts.json'),
-      buildDeclarations('src/index.vanilla.ts', 'dist/vanilla', 'tsconfig.build.vanilla.dts.json'),
-      ...pluginDeclarationEntries().map(({ entry, outDir }) => buildDeclarations(entry, outDir, 'tsconfig.build.dts.json')),
-    ]);
-  });
+  return timed(() => runCommand('tsdown --config tsdown.config.ts --no-clean', { env: { ...process.env, STORES_TSDOWN_CONFIG: 'types' } }));
 }
 
 async function timed(action: () => Promise<void>): Promise<TimedResult> {
@@ -79,25 +79,34 @@ async function runCommand(command: string, options?: BuildCommandOptions): Promi
   await execAsync(command, { cwd: root, env: options?.env });
 }
 
-function buildDeclarations(entry: string, outDir: string, tsconfig: string): Promise<void> {
-  return runCommand(`tsup ${entry} --dts-only --format cjs --out-dir ${outDir} --tsconfig ${tsconfig} --silent --no-clean`);
-}
-
-function buildOutput(output: BuildOutput): Promise<TimedResult> {
-  return timed(() => runCommand(`tsup --config tsup.config.ts --out-dir dist/${output} --no-clean`, { env: productionEnv(output) }));
+function buildOutput(output: BuildOutput, nodeEnv = 'production'): Promise<TimedResult> {
+  return timed(() =>
+    runCommand(`tsdown --config tsdown.config.ts --out-dir dist/${output} --no-clean`, { env: buildEnv(output, nodeEnv) })
+  );
 }
 
 function generateExports(): Promise<TimedResult> {
   return timed(() => runCommand('tsx --tsconfig scripts/tsconfig.json scripts/generate-exports.ts'));
 }
 
-function productionEnv(output: BuildOutput): NodeJS.ProcessEnv {
+function buildEnv(output: BuildOutput, nodeEnv: string): NodeJS.ProcessEnv {
   return {
     ...process.env,
-    NODE_ENV: 'production',
+    NODE_ENV: nodeEnv,
+    STORES_TSDOWN_CONFIG: 'bundle',
     ...(output === 'native' ? { BUILD_TARGET: 'native' } : undefined),
     ...(output === 'vanilla' ? { BUILD_MODE: 'vanilla' } : undefined),
   };
+}
+
+function outputArg(): BuildOutput | undefined {
+  const prefix = '--output=';
+  const arg = process.argv.find(value => value.startsWith(prefix));
+  const output = arg?.slice(prefix.length);
+
+  if (output === undefined) return undefined;
+  if (output === 'native' || output === 'vanilla' || output === 'web') return output;
+  throw new Error(`Unknown build output: ${output}`);
 }
 
 // ============ Summary Utilities ============================================== //

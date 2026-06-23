@@ -7,10 +7,11 @@
     "lib": ["ES2021", "DOM", "DOM.Iterable"],
     "types": ["node", "vitest/globals"],
     "noEmit": true,
+    "allowImportingTsExtensions": true,
     "esModuleInterop": true,
     "strict": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src/**/*", "build/**/*", "tsup.config.ts"]
+  "include": ["src/**/*", "build/**/*", "tsdown.config.ts"]
 }

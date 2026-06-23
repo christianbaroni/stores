@@ -8,7 +8,15 @@ import { getStorageConfig } from '../config';
 import { StoresError } from '../errors';
 import { logger } from '../logger';
 
-// ============ Sync Enhancer =================================================== //
+// ============ Constants ====================================================== //
+
+/** Index of `timestamp` in `FieldMetadata` tuples. */
+export const TIMESTAMP = 0;
+
+/** Index of `sessionId` in `FieldMetadata` tuples. */
+export const SESSION_ID = 1;
+
+// ============ Sync Enhancer ================================================== //
 
 export type SyncContext = {
   isAsync: boolean;
@@ -113,7 +121,9 @@ export function createSyncedStateCreator<T extends Record<string, unknown>>(
       let publishKeys: SyncStateKey<T>[] = [];
       let publishValues: SyncValues<T> = nullObject();
 
-      const wrappedUpdate = (state: T): T => {
+      const maybePromise: void | Promise<void> = replace ? set(wrappedUpdate, true) : set(wrappedUpdate);
+
+      function wrappedUpdate(state: T): T {
         const newState = applyStateUpdate(state, update, replace);
 
         for (const key of syncKeys) {
@@ -125,9 +135,7 @@ export function createSyncedStateCreator<T extends Record<string, unknown>>(
 
         if (publishKeys.length) setPersistMetadata(timestamp, publishKeys);
         return newState;
-      };
-
-      const maybePromise: void | Promise<void> = replace ? set(wrappedUpdate, true) : set(wrappedUpdate);
+      }
 
       function publish(): void {
         if (!publishKeys.length) return;
@@ -253,6 +261,7 @@ export function createSyncedStateCreator<T extends Record<string, unknown>>(
         }
         scheduleProcessUpdate(update);
       },
+      delta: config.delta,
       fields: syncKeys,
       getState: get,
       key: config.key,
@@ -379,11 +388,6 @@ function buildSyncContext(isAsync: boolean): SyncContext {
 // ============ Utilities ====================================================== //
 
 /**
- * Readable indices for `FieldMetadata` tuples.
- */
-export const [TIMESTAMP, SESSION_ID]: [0, 1] = [0, 1];
-
-/**
  * Determines whether an incoming update supersedes the last known write.
  * Compares timestamp first and falls back to lexicographical sessionId comparison for ties.
  * @returns `true` when the update should be applied, `false` if it should be ignored.
@@ -403,21 +407,15 @@ function shouldApplyUpdate(current: FieldMetadata | undefined, updateTimestamp: 
 
 function deriveDataKeys<T extends Record<string, unknown>>(state: T): SyncStateKey<T>[] {
   const keys: SyncStateKey<T>[] = [];
-  for (const entry of Object.entries(state)) {
-    const value = entry[1];
-    if (typeof value === 'function') continue;
-    const key = entry[0];
-    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-    keys.push(key as SyncStateKey<T>);
-  }
+  for (const key of Object.keys(state)) if (isSyncStateKey(state, key)) keys.push(key);
   return keys;
 }
 
-function hasSyncValue<T extends Record<string, unknown>, K extends SyncStateKey<T>>(
-  key: K,
-  values: SyncValues<T>
-): values is SyncValues<T> & Record<K, T[K]> {
-  return Object.prototype.hasOwnProperty.call(values, key);
+function describeType(value: unknown): string {
+  if (value === null) return 'null';
+  const valueType = typeof value;
+  if (valueType === 'object') return Object.prototype.toString.call(value);
+  return valueType;
 }
 
 function isSameType(a: unknown, b: unknown): boolean {
@@ -432,9 +430,15 @@ function isSameType(a: unknown, b: unknown): boolean {
   return tagA === tagB;
 }
 
-function describeType(value: unknown): string {
-  if (value === null) return 'null';
-  const valueType = typeof value;
-  if (valueType === 'object') return Object.prototype.toString.call(value);
-  return valueType;
+// ============ Type Guards ==================================================== //
+
+function isSyncStateKey<T extends Record<string, unknown>>(state: T, key: string): key is SyncStateKey<T> {
+  return typeof state[key] !== 'function';
+}
+
+function hasSyncValue<T extends Record<string, unknown>, K extends SyncStateKey<T>>(
+  key: K,
+  values: SyncValues<T>
+): values is SyncValues<T> & Record<K, T[K]> {
+  return Object.prototype.hasOwnProperty.call(values, key);
 }

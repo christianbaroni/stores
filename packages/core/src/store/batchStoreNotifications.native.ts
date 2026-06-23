@@ -1,3 +1,3 @@
 import { unstable_batchedUpdates } from 'react-native';
 
-export const batchStoreNotifications = unstable_batchedUpdates;
+export const batchStoreNotifications: typeof unstable_batchedUpdates = unstable_batchedUpdates;

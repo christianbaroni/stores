@@ -4,7 +4,7 @@ import type { NonFunction } from '../types/functions';
 
 // ============ Constants ====================================================== //
 
-const QUERY_PARAM_CONFIG = Symbol('stores.queryParamConfig');
+const QUERY_PARAM_CONFIG: unique symbol = Symbol('stores.queryParamConfig');
 
 // ============ Types ========================================================== //
 

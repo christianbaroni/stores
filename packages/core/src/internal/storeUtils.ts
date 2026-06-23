@@ -2,7 +2,7 @@ import type { QueryStore, QueryStoreState } from '../queryStore/types';
 import type { StoreApi } from '../store/types';
 import type { BaseStore, InferStoreState, PersistedStore } from '../types';
 
-export const StoreTags = Object.freeze({
+export const StoreTags: Readonly<{ QueryStore: symbol; VirtualStore: symbol }> = Object.freeze({
   QueryStore: Symbol('queryStore'),
   VirtualStore: Symbol('virtualStore'),
 });

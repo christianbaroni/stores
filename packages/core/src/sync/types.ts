@@ -1,4 +1,4 @@
-import { UnknownFunction } from '../types/functions';
+import type { UnknownFunction } from '../types/functions';
 
 // ============ Field Metadata ================================================= //
 
@@ -8,9 +8,7 @@ import { UnknownFunction } from '../types/functions';
 export type FieldMetadata = readonly [timestamp: number, sessionId: string];
 
 export type SyncStateKey<T extends Record<string, unknown>> = Extract<
-  {
-    [K in keyof T]-?: T[K] extends UnknownFunction ? never : K;
-  }[keyof T],
+  { [K in keyof T]-?: T[K] extends UnknownFunction ? never : K }[keyof T],
   string
 >;
 

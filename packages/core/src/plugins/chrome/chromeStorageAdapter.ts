@@ -21,8 +21,8 @@ export class ChromeStorageAdapter implements AsyncStorageInterface {
   readonly storageKeyPrefix: string;
 
   readonly async = true;
-  readonly deserializer = deserializeChromeStorageValue;
-  readonly serializer = serializeChromeStorageValue;
+  readonly deserializer: typeof deserializeChromeStorageValue = deserializeChromeStorageValue;
+  readonly serializer: typeof serializeChromeStorageValue = serializeChromeStorageValue;
 
   constructor(options?: ChromeStorageAdapterOptions) {
     this.area = options?.area ?? 'local';
@@ -108,7 +108,7 @@ export class ChromeStorageAdapter implements AsyncStorageInterface {
     return this.invokeWithCallbackSupport<Record<string, unknown>>(callback => storage.get(keys, callback));
   }
 
-  private async execute(storage: chrome.storage.StorageArea, operation: (done: () => void) => void | Promise<void>): Promise<void> {
+  private async execute(_: chrome.storage.StorageArea, operation: (done: () => void) => void | Promise<void>): Promise<void> {
     await this.invokeWithCallbackSupport<void>(operation);
   }
 
