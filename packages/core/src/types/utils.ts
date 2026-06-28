@@ -3,7 +3,7 @@ const hasOwnProperty = Object.prototype.hasOwnProperty;
 /**
  * Typed `hasOwnProperty` alias.
  */
-export function hasOwn<T extends Record<string, unknown>, K extends string>(value: T, key: K): value is T & Record<K, unknown> {
+export function hasOwn<T extends object, K extends PropertyKey>(value: T, key: K): key is K & keyof T {
   return hasOwnProperty.call(value, key);
 }
 

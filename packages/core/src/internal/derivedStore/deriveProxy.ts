@@ -1,5 +1,5 @@
 import type { StoreApi } from '../../store/types';
-import { isPlainObject } from '../../types/utils';
+import { hasOwn, isPlainObject } from '../../types/utils';
 import { hasGetSnapshot } from '../storeUtils';
 import { TrackPathFn } from './pathFinder';
 
@@ -73,7 +73,7 @@ function buildProxy<T extends object, S>(
 
       // -- Handle functions
       if (typeof childValue === 'function') {
-        const isStoreMethod = Object.prototype.hasOwnProperty.call(target, propKey);
+        const isStoreMethod = hasOwn(target, propKey);
 
         if (isStoreMethod) {
           // Return a wrapped function that tracks invocation when called. This allows

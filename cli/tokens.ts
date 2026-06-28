@@ -1,4 +1,4 @@
-export enum Ansi {
+export const enum Ansi {
   Blue = '\x1b[34m',
   Bold = '\x1b[1m',
   Dim = '\x1b[2m',
@@ -10,15 +10,15 @@ export enum Ansi {
   Yellow = '\x1b[33m',
 }
 
-export enum Symbol {
+export const enum Layout {
+  Indent = '  ',
+  NameWidth = 8,
+}
+
+export const enum Symbol {
   Bullet = '·',
   Check = '✓',
   Cross = '✗',
   Info = 'ℹ',
   Warn = '⚠',
 }
-
-export const Layout = {
-  Indent: '  ',
-  NameWidth: 8,
-} as const;

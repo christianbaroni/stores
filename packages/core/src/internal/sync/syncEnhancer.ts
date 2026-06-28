@@ -2,6 +2,7 @@ import { IS_DEV } from '#env';
 import { applyStateUpdate } from '../../store/stateUpdate';
 import { FieldMetadata, NormalizedSyncConfig, SyncHandle, SyncStateKey, SyncUpdate, SyncValues } from '../../sync/types';
 import { StateCreator, SubscribeArgs, SubscribeOverloads } from '../../types';
+import { hasOwn } from '../../types/utils';
 import { nullObject } from '../../utils/core';
 import { isPromiseLike } from '../../utils/promiseUtils';
 import { getStorageConfig } from '../config';
@@ -165,7 +166,7 @@ export function createSyncedStateCreator<T extends Record<string, unknown>>(
 
       if (update.replace) {
         for (const key of syncKeys) {
-          if (hasSyncValue(key, update.values)) continue;
+          if (hasOwn(update.values, key)) continue;
           const current = lastWrites.get(key);
           if (!shouldApplyUpdate(current, updateTimestamp, update.sessionId)) continue;
           (keysToClear ??= []).push(key);
@@ -173,8 +174,7 @@ export function createSyncedStateCreator<T extends Record<string, unknown>>(
       }
 
       for (const key of syncKeys) {
-        if (!hasSyncValue(key, update.values)) continue;
-        if (!syncKeySet?.has(key)) continue;
+        if (!hasSyncValue(update.values, key) || !syncKeySet?.has(key)) continue;
 
         const current = lastWrites.get(key);
         if (!shouldApplyUpdate(current, updateTimestamp, update.sessionId)) continue;
@@ -222,7 +222,7 @@ export function createSyncedStateCreator<T extends Record<string, unknown>>(
           }
 
           for (const key in updates) {
-            if (!Object.prototype.hasOwnProperty.call(updates, key)) continue;
+            if (!hasOwn(updates, key)) continue;
             const value = updates[key];
             if (value === undefined) continue;
             if (!Object.is(nextState[key], value)) mutated = true;
@@ -432,13 +432,13 @@ function isSameType(a: unknown, b: unknown): boolean {
 
 // ============ Type Guards ==================================================== //
 
-function isSyncStateKey<T extends Record<string, unknown>>(state: T, key: string): key is SyncStateKey<T> {
-  return typeof state[key] !== 'function';
+function hasSyncValue<T extends Record<string, unknown>, K extends SyncStateKey<T>>(
+  values: SyncValues<T>,
+  key: K
+): values is SyncValues<T> & Record<K, T[K]> {
+  return hasOwn(values, key);
 }
 
-function hasSyncValue<T extends Record<string, unknown>, K extends SyncStateKey<T>>(
-  key: K,
-  values: SyncValues<T>
-): values is SyncValues<T> & Record<K, T[K]> {
-  return Object.prototype.hasOwnProperty.call(values, key);
+function isSyncStateKey<T extends Record<string, unknown>>(state: T, key: string): key is SyncStateKey<T> {
+  return typeof state[key] !== 'function';
 }

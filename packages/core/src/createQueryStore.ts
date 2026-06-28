@@ -241,5 +241,5 @@ export function createQueryStore<
   | Store<QueryStoreState<TData, TParams, CustomState>>
   | Store<QueryStoreState<TData, TParams, CustomState>, PersistedState, PersistReturn> {
   const store = queryStore(config, creatorOrOptions, maybeOptions);
-  return attachStoreHook(store, store.getState, store.getInitialState, Object.is);
+  return attachStoreHook(store, store.getState, store.getInitialState);
 }

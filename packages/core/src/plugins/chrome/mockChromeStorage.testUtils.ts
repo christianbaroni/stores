@@ -1,6 +1,6 @@
 /// <reference types="chrome" />
 
-import { isPlainObject } from '../../types/utils';
+import { hasOwn, isPlainObject } from '../../types/utils';
 import { deepEqual } from '../../utils/equality';
 
 /**
@@ -98,7 +98,7 @@ class MockStorageArea {
       const changes: Record<string, chrome.storage.StorageChange> = {};
 
       for (const [key, newValue] of Object.entries(items)) {
-        const hasExistingValue = Object.prototype.hasOwnProperty.call(this.data, key);
+        const hasExistingValue = hasOwn(this.data, key);
         const currentValue = this.data[key];
 
         if (hasExistingValue && deepEqual(currentValue, newValue)) {
@@ -126,7 +126,7 @@ class MockStorageArea {
       const changes: Record<string, chrome.storage.StorageChange> = {};
 
       for (const key of keysArray) {
-        if (Object.prototype.hasOwnProperty.call(this.data, key)) {
+        if (hasOwn(this.data, key)) {
           const change: chrome.storage.StorageChange = {};
           change.oldValue = cloneStorageValue(this.data[key]);
           changes[key] = change;

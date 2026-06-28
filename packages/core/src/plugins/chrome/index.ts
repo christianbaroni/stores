@@ -1,5 +1,3 @@
-export { ChromeExtensionSyncEngine } from './chromeExtensionSyncEngine';
-export type { ChromeExtensionSyncEngineOptions } from './chromeExtensionSyncEngine';
-export { ChromeStorageAdapter } from './chromeStorageAdapter';
-export type { AreaName, ChromeStorageAdapterOptions } from './chromeStorageAdapter';
+export { ChromeExtensionSyncEngine, type ChromeExtensionSyncEngineOptions } from './chromeExtensionSyncEngine';
+export { ChromeStorageAdapter, type AreaName, type ChromeStorageAdapterOptions } from './chromeStorageAdapter';
 export { createSyncedChromeStorage } from './createSyncedChromeStorage';

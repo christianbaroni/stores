@@ -64,5 +64,5 @@ export function createBaseStore<S, PersistedState extends Partial<S>, PersistRet
   options?: BaseStoreOptions<S, PersistedState, PersistReturn>
 ): Store<S> | Store<S, PersistedState, PersistReturn> {
   const store = baseStore(createState, options);
-  return attachStoreHook(store, store.getState, store.getInitialState, Object.is);
+  return attachStoreHook(store, store.getState, store.getInitialState);
 }

@@ -1,7 +1,7 @@
 import { DEFAULT_STORAGE_KEY_PREFIX } from '../../internal/runtime';
 import { StorageValue } from '../../storage/storageTypes';
 import { AsyncStorageInterface } from '../../types';
-import { isPlainObject } from '../../types/utils';
+import { hasOwn, isPlainObject } from '../../types/utils';
 import { isPromiseLike } from '../../utils/promiseUtils';
 import { replacer, reviver } from '../../utils/serialization';
 
@@ -45,7 +45,7 @@ export class ChromeStorageAdapter implements AsyncStorageInterface {
     if (!storage) return false;
     const storageKey = this.toStorageKey(key);
     const result = await this.getFromStorage(storage, storageKey);
-    return Object.prototype.hasOwnProperty.call(result, storageKey);
+    return hasOwn(result, storageKey);
   }
 
   async delete(key: string): Promise<void> {
@@ -190,7 +190,7 @@ function parseChromeStorageValue(value: unknown): StorageValue<unknown> | null {
 
 function isChromeStorageValue(value: unknown): value is StorageValue<unknown> {
   if (!value || typeof value !== 'object') return false;
-  return Object.prototype.hasOwnProperty.call(value, 'state');
+  return hasOwn(value, 'state');
 }
 
 function applyReplacerToState(value: unknown, replacerFn = replacer): unknown {

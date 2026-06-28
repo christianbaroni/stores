@@ -102,7 +102,7 @@ export type WithFlushUpdates<Store extends StoreApi<unknown>> = Store & {
    *
    * Derived stores automatically clean up internal resources and subscriptions
    * when no subscribers exist. So calling `destroy()` is usually unnecessary,
-   * unless `keepAlive: true` is specified and explict teardown is desired.
+   * unless `keepAlive: true` is specified and explicit teardown is desired.
    */
   destroy: () => void;
   /**

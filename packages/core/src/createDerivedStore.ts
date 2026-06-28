@@ -69,5 +69,5 @@ export function createDerivedStore<Derived>(
   optionsOrEqualityFn: DeriveOptions<Derived> = Object.is
 ): DerivedStore<Derived> {
   const store = derivedStore(deriveFunction, optionsOrEqualityFn);
-  return attachStoreHook(store, store.getSnapshot);
+  return attachStoreHook(store, store.getSnapshot, undefined);
 }
