@@ -102,7 +102,7 @@ export function trackQueryValue<T, State>(getValue: ReactiveParam<T, State>, own
     if (!selector) {
       proxyPaths ??= createPathFinder();
       rootProxyCache ??= new WeakMap();
-      return getOrCreateProxy(store, rootProxyCache, proxyPaths.trackPath);
+      return getOrCreateProxy(store, readStore(store), rootProxyCache, proxyPaths.trackPath);
     }
 
     selectorDependencies.push(listener => {

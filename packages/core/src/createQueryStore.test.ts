@@ -4,6 +4,7 @@ import { createDerivedStore } from './createDerivedStore';
 import { createQueryStore, getQueryKey, parseQueryKey, queryParam } from './createQueryStore';
 import { createAsyncStorageMock } from './internal/storage/storageMocks.testUtils';
 import { QueryStatuses } from './queryStore/types';
+import { hasCascadeStateSubscription, SUBSCRIBE_CASCADE_STATE } from './store/internalSubscriptions';
 import { time } from './utils/time';
 
 type TestData = string;
@@ -743,6 +744,30 @@ describe('createQueryStore', () => {
         await flushMacrotask();
         expect(fetcher).toHaveBeenCalledTimes(1);
         expect(fetcher).toHaveBeenCalledWith({ id: 2 }, expect.any(AbortController));
+      } finally {
+        unsubscribe();
+      }
+    });
+
+    it('should count internal full-state cascade subscriptions as active query subscribers', async () => {
+      const fetcher = vi.fn(async (params: TestParams) => {
+        return `data-${params.id}`;
+      });
+
+      const store = createQueryStore<TestData, TestParams>({
+        fetcher,
+        params: { id: 1 },
+        staleTime: 0,
+      });
+      if (!hasCascadeStateSubscription(store)) throw new Error('Expected query store to expose cascade-state subscriptions.');
+
+      const unsubscribe = store[SUBSCRIBE_CASCADE_STATE](() => undefined);
+
+      try {
+        await flushMacrotask();
+
+        expect(fetcher).toHaveBeenCalledTimes(1);
+        expect(fetcher).toHaveBeenCalledWith({ id: 1 }, expect.any(AbortController));
       } finally {
         unsubscribe();
       }

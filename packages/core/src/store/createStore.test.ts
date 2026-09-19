@@ -1,5 +1,6 @@
 import type { InternalSubscribeOptions } from '../internal/types/internalSubscribeTypes';
 import { createStore } from './createStore';
+import { hasCascadeStateSubscription, SUBSCRIBE_CASCADE_STATE } from './internalSubscriptions';
 import type { StoreApi } from './types';
 
 describe('createStore', () => {
@@ -170,5 +171,28 @@ describe('createStore', () => {
 
     expect(listener).toHaveBeenCalledTimes(1);
     expect(listener).toHaveBeenCalledWith({ count: 1 }, { count: 0 });
+  });
+
+  it('notifies internal full-state cascade subscribers before ordinary listeners', () => {
+    const store = createStore(() => ({ count: 0, label: 'initial' }));
+    if (!hasCascadeStateSubscription(store)) throw new Error('Expected createStore to expose cascade-state subscriptions.');
+
+    const calls: string[] = [];
+    const cascadeListener = vi.fn((nextState, previousState) => {
+      calls.push('cascade');
+      expect(nextState).toEqual({ count: 0, label: 'updated' });
+      expect(previousState).toEqual({ count: 0, label: 'initial' });
+    });
+    const ordinaryListener = vi.fn(() => {
+      calls.push('ordinary');
+    });
+
+    store[SUBSCRIBE_CASCADE_STATE](cascadeListener);
+    store.subscribe(ordinaryListener);
+    store.setState({ label: 'updated' });
+
+    expect(calls).toEqual(['cascade', 'ordinary']);
+    expect(cascadeListener).toHaveBeenCalledTimes(1);
+    expect(ordinaryListener).toHaveBeenCalledTimes(1);
   });
 });

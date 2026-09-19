@@ -90,6 +90,38 @@ describe('createVirtualStore cascade consistency', () => {
     }
   });
 
+  it('rebinds full-state cascade subscriptions before ordinary virtual listeners observe downstream state', async () => {
+    const selectorStore = createBaseStore(() => ({ useSecond: false }));
+    const firstStore = createBaseStore(() => 'a');
+    const secondStore = createBaseStore(() => 'b');
+    const virtualStore = createVirtualStore($ => ($(selectorStore).useSecond ? secondStore : firstStore));
+    const downstreamStore = createDerivedStore($ => `${$(virtualStore)}!`);
+    const observations: string[] = [];
+    const events: string[] = [];
+
+    const unsubscribeVirtual = virtualStore.subscribe(value => {
+      observations.push(`virtual:${value}:downstream=${downstreamStore.getState()}`);
+    });
+    const unsubscribeDownstream = downstreamStore.subscribe((next, prev) => {
+      events.push(`${prev}->${next}`);
+    });
+
+    try {
+      expect(downstreamStore.getState()).toBe('a!');
+
+      selectorStore.setState({ useSecond: true });
+
+      await flushMicrotasks();
+
+      expect(observations).toEqual(['virtual:b:downstream=b!']);
+      expect(events).toEqual(['a!->b!']);
+      expect(downstreamStore.getState()).toBe('b!');
+    } finally {
+      unsubscribeDownstream();
+      unsubscribeVirtual();
+    }
+  });
+
   it('keeps a base parent and virtual child consistent when the child renders with the parent update', async () => {
     const baseStore = createBaseStore(() => ({ value: 'a' }));
     const virtualStore = createVirtualStore($ => {

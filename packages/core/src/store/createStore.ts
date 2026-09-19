@@ -1,6 +1,9 @@
-import type { Listener, Selector, SetStateArgs, UnsubscribeFn } from '../types';
 import type { InternalSubscribeArgs, InternalSubscribeOptions } from '../internal/types/internalSubscribeTypes';
+import type { Listener, Selector, SetStateArgs, UnsubscribeFn } from '../types';
+import { notifyListener } from '../utils/core';
+import { addToSingleOrSet, deleteFromSingleOrSet, forEachSingleOrSet, type SingleOrSet } from '../utils/singleOrSet';
 import { activateCascade, flushCascade } from './cascadeScheduler';
+import { SUBSCRIBE_CASCADE_STATE, type CascadeStateSubscribable } from './internalSubscriptions';
 import { applyStateUpdate } from './stateUpdate';
 import type { Mutate, StateCreator, StoreApi, StoreMutators } from './types';
 
@@ -14,8 +17,9 @@ export function createStore<State, Mutators extends StoreMutators = []>(
 export function createStore<State>(createState: StateCreator<State>): StoreApi<State> {
   let state: State;
 
-  const listeners = new Set<Listener<State>>();
-  let cascadeListeners: Set<Listener<State>> | undefined;
+  let listeners: Set<Listener<State>> | undefined;
+  let cascadeListeners: SingleOrSet<Listener<State>>;
+  let cascadeListenerCount = 0;
 
   function setState(...args: SetStateArgs<State>): void {
     const nextState = applyStateUpdate(state, ...args);
@@ -24,10 +28,12 @@ export function createStore<State>(createState: StateCreator<State>): StoreApi<S
     const previousState = state;
     state = nextState;
 
-    if (cascadeListeners) for (const listener of cascadeListeners) listener(state, previousState);
-    if (listeners.size) flushCascade();
+    forEachSingleOrSet(cascadeListeners, cascadeListenerCount, notifyListener, state, previousState);
 
-    for (const listener of listeners) listener(state, previousState);
+    if (listeners) {
+      flushCascade();
+      for (const listener of listeners) listener(state, previousState);
+    }
   }
 
   function getState(): State {
@@ -43,24 +49,50 @@ export function createStore<State>(createState: StateCreator<State>): StoreApi<S
     return createSelectorSubscription(args[0], args[1], args[2]);
   }
 
-  const api: StoreApi<State> = { getInitialState, getState, setState, subscribe };
-  const initialState = (state = createState(setState, getState, api));
+  const api: StoreApi<State> & CascadeStateSubscribable<State> = {
+    [SUBSCRIBE_CASCADE_STATE]: subscribeCascadeState,
+    getInitialState,
+    getState,
+    setState,
+    subscribe,
+  };
 
+  const initialState = (state = createState(setState, getState, api));
   return api;
 
   function createSubscription(listener: Listener<State>): UnsubscribeFn {
-    listeners.add(listener);
+    (listeners ??= new Set()).add(listener);
     return () => {
-      listeners.delete(listener);
+      listeners?.delete(listener);
+      if (listeners?.size === 0) listeners = undefined;
     };
   }
 
   function createCascadeSubscription(listener: Listener<State>): UnsubscribeFn {
-    (cascadeListeners ??= new Set()).add(listener);
-    return () => {
-      cascadeListeners?.delete(listener);
-      if (cascadeListeners?.size === 0) cascadeListeners = undefined;
-    };
+    const nextListeners = addToSingleOrSet(cascadeListeners, cascadeListenerCount, listener);
+    if (nextListeners !== null) {
+      cascadeListeners = nextListeners;
+      cascadeListenerCount += 1;
+    }
+
+    return () => removeCascadeSubscription(listener);
+  }
+
+  function subscribeCascadeState(listener: Listener<State>): UnsubscribeFn {
+    function cascadeStateListener(nextState: State, previousState: State): void {
+      activateCascade();
+      listener(nextState, previousState);
+    }
+
+    return createCascadeSubscription(cascadeStateListener);
+  }
+
+  function removeCascadeSubscription(listener: Listener<State>): void {
+    const nextListeners = deleteFromSingleOrSet(cascadeListeners, cascadeListenerCount, listener);
+    if (nextListeners === null) return;
+
+    cascadeListeners = nextListeners;
+    cascadeListenerCount -= 1;
   }
 
   function createSelectorSubscription<Selected>(

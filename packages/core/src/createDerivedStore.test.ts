@@ -7,6 +7,33 @@ import { QueryStatuses } from './queryStore/types';
 import { SubscribeArgs, SubscribeOverloads } from './types';
 import { deepEqual } from './utils/equality';
 
+function trackSubscriptions<State>(store: { subscribe: SubscribeOverloads<State> }): {
+  readonly created: number;
+  readonly removed: number;
+} {
+  let created = 0;
+  let removed = 0;
+  const originalSubscribe: SubscribeOverloads<State> = store.subscribe.bind(store);
+
+  store.subscribe = (...args: SubscribeArgs<State>) => {
+    created += 1;
+    const unsubscribe = args.length === 1 ? originalSubscribe(args[0]) : originalSubscribe(args[0], args[1], args[2]);
+    return () => {
+      removed += 1;
+      unsubscribe();
+    };
+  };
+
+  return {
+    get created() {
+      return created;
+    },
+    get removed() {
+      return removed;
+    },
+  };
+}
+
 describe('createDerivedStore', () => {
   // ──────────────────────────────────────────────
   // Basic Usage (Single Dependency)
@@ -98,6 +125,32 @@ describe('createDerivedStore', () => {
       expect(watcher).toHaveBeenLastCalledWith('odd', 'even');
 
       unsubscribe();
+    });
+
+    it('should keep watcher bookkeeping stable when an unsubscribe is called more than once', async () => {
+      const baseStore = createBaseStore(() => ({
+        count: 0,
+      }));
+
+      const useDerived = createDerivedStore($ => $(baseStore).count);
+      const firstWatcher = vi.fn();
+      const unsubscribeFirst = useDerived.subscribe(firstWatcher);
+      await flushMicrotasks();
+
+      unsubscribeFirst();
+      unsubscribeFirst();
+
+      const secondWatcher = vi.fn();
+      const unsubscribeSecond = useDerived.subscribe(secondWatcher);
+      await flushMicrotasks();
+
+      baseStore.setState({ count: 1 });
+      await flushMicrotasks();
+
+      expect(secondWatcher).toHaveBeenCalledTimes(1);
+      expect(secondWatcher).toHaveBeenLastCalledWith(1, 0);
+
+      unsubscribeSecond();
     });
   });
 
@@ -229,6 +282,214 @@ describe('createDerivedStore', () => {
       expect(useDerived.getState().state.count).toBe(2);
 
       unsubscribe();
+    });
+
+    it('should rebuild object root proxy dependencies across re-derives without leaking', async () => {
+      type SourceState = { count: number };
+
+      const baseStore = createBaseStore<SourceState>(() => ({
+        count: 1,
+      }));
+
+      const subscriptions = trackSubscriptions(baseStore);
+
+      let deriveCount = 0;
+      const useDerived = createDerivedStore($ => {
+        deriveCount += 1;
+        const state = $(baseStore);
+        return { state };
+      });
+
+      const unsubscribe = useDerived.subscribe(() => {});
+      await flushMicrotasks();
+
+      expect(useDerived.getState().state).toBe(baseStore.getState());
+      expect(subscriptions.created).toBe(1);
+      expect(subscriptions.removed).toBe(0);
+      expect(deriveCount).toBe(1);
+
+      for (let count = 2; count <= 3; count++) {
+        baseStore.setState({ count });
+        await flushMicrotasks();
+
+        expect(useDerived.getState().state).toBe(baseStore.getState());
+        expect(useDerived.getState().state.count).toBe(count);
+      }
+
+      expect(subscriptions.created).toBe(3);
+      expect(subscriptions.removed).toBe(2);
+      expect(deriveCount).toBe(3);
+
+      unsubscribe();
+
+      expect(subscriptions.removed).toBe(3);
+    });
+
+    it('should rebuild non-root proxy dependencies across re-derives without leaking', async () => {
+      type SourceState = { nested: { count: number }; other: number };
+
+      const baseStore = createBaseStore<SourceState>(() => ({
+        nested: { count: 1 },
+        other: 0,
+      }));
+
+      const subscriptions = trackSubscriptions(baseStore);
+
+      let deriveCount = 0;
+      const useDerived = createDerivedStore($ => {
+        deriveCount += 1;
+        return $(baseStore).nested.count;
+      });
+
+      const unsubscribe = useDerived.subscribe(() => {});
+      await flushMicrotasks();
+
+      expect(useDerived.getState()).toBe(1);
+      expect(subscriptions.created).toBe(1);
+      expect(subscriptions.removed).toBe(0);
+
+      for (let count = 2; count <= 3; count++) {
+        baseStore.setState({ nested: { count }, other: count });
+        await flushMicrotasks();
+
+        expect(useDerived.getState()).toBe(count);
+      }
+
+      expect(subscriptions.created).toBe(3);
+      expect(subscriptions.removed).toBe(2);
+      expect(deriveCount).toBe(3);
+
+      unsubscribe();
+
+      expect(subscriptions.removed).toBe(3);
+    });
+
+    it('should rebuild stable selector dependencies across re-derives without leaking', async () => {
+      type SourceState = { count: number; other: number };
+
+      const baseStore = createBaseStore<SourceState>(() => ({
+        count: 1,
+        other: 0,
+      }));
+      const selectCount = (state: SourceState) => state.count;
+
+      const subscriptions = trackSubscriptions(baseStore);
+
+      const useDerived = createDerivedStore($ => $(baseStore, selectCount));
+
+      const unsubscribe = useDerived.subscribe(() => {});
+      await flushMicrotasks();
+
+      expect(useDerived.getState()).toBe(1);
+      expect(subscriptions.created).toBe(1);
+      expect(subscriptions.removed).toBe(0);
+
+      for (let count = 2; count <= 3; count++) {
+        baseStore.setState({ count, other: count });
+        await flushMicrotasks();
+
+        expect(useDerived.getState()).toBe(count);
+      }
+
+      expect(subscriptions.created).toBe(3);
+      expect(subscriptions.removed).toBe(2);
+
+      unsubscribe();
+
+      expect(subscriptions.removed).toBe(3);
+    });
+
+    it('should drop stale selector dependencies when the selected stable selector changes', async () => {
+      type SourceState = { a: number; b: number };
+
+      const sourceStore = createBaseStore<SourceState>(() => ({ a: 1, b: 10 }));
+      const modeStore = createBaseStore(() => ({ useA: true }));
+      const selectA = (state: SourceState) => state.a;
+      const selectB = (state: SourceState) => state.b;
+      const subscriptions = trackSubscriptions(sourceStore);
+
+      let deriveCount = 0;
+      const useDerived = createDerivedStore($ => {
+        deriveCount += 1;
+        return $(modeStore).useA ? $(sourceStore, selectA) : $(sourceStore, selectB);
+      });
+
+      const unsubscribe = useDerived.subscribe(() => {});
+      await flushMicrotasks();
+
+      expect(useDerived.getState()).toBe(1);
+      expect(subscriptions.created).toBe(1);
+
+      modeStore.setState({ useA: false });
+      await flushMicrotasks();
+
+      expect(useDerived.getState()).toBe(10);
+      expect(subscriptions.created).toBe(2);
+      expect(subscriptions.removed).toBe(1);
+
+      sourceStore.setState({ a: 2, b: 10 });
+      await flushMicrotasks();
+
+      expect(deriveCount).toBe(2);
+
+      sourceStore.setState({ a: 2, b: 11 });
+      await flushMicrotasks();
+
+      expect(useDerived.getState()).toBe(11);
+      expect(subscriptions.created).toBe(3);
+      expect(subscriptions.removed).toBe(2);
+
+      unsubscribe();
+
+      expect(subscriptions.removed).toBe(3);
+    });
+
+    it('should drop stale dynamic proxy dependencies while rebuilding active paths', async () => {
+      type SourceState = { useA: boolean; a: { value: number }; b: { value: number } };
+
+      const baseStore = createBaseStore<SourceState>(() => ({
+        useA: true,
+        a: { value: 1 },
+        b: { value: 10 },
+      }));
+
+      const subscriptions = trackSubscriptions(baseStore);
+
+      let deriveCount = 0;
+      const useDerived = createDerivedStore($ => {
+        deriveCount += 1;
+        const state = $(baseStore);
+        return state.useA ? state.a.value : state.b.value;
+      });
+
+      const unsubscribe = useDerived.subscribe(() => {});
+      await flushMicrotasks();
+
+      expect(useDerived.getState()).toBe(1);
+      expect(subscriptions.created).toBe(2);
+
+      baseStore.setState({ useA: false, a: { value: 2 }, b: { value: 10 } });
+      await flushMicrotasks();
+
+      expect(useDerived.getState()).toBe(10);
+      expect(subscriptions.created).toBe(4);
+      expect(subscriptions.removed).toBe(2);
+
+      baseStore.setState({ useA: false, a: { value: 3 }, b: { value: 10 } });
+      await flushMicrotasks();
+
+      expect(deriveCount).toBe(2);
+
+      baseStore.setState({ useA: false, a: { value: 3 }, b: { value: 11 } });
+      await flushMicrotasks();
+
+      expect(useDerived.getState()).toBe(11);
+      expect(subscriptions.created).toBe(6);
+      expect(subscriptions.removed).toBe(4);
+
+      unsubscribe();
+
+      expect(subscriptions.removed).toBe(6);
     });
 
     it('should subscribe when a root tracking proxy is embedded in a nested derived object', async () => {
@@ -910,6 +1171,21 @@ describe('createDerivedStore', () => {
       expect(deriveCount).toBe(1);
       expect(useDerived.getSnapshot()).toBe(1);
       expect(deriveCount).toBe(2);
+    });
+
+    it('should return a valid snapshot when read again before no-watcher cleanup', () => {
+      const baseStore = createBaseStore(() => ({ val: 0 }));
+
+      const useDerived = createDerivedStore($ => $(baseStore).val);
+
+      if (!hasGetSnapshot(useDerived)) throw new Error('derived store test requires getSnapshot');
+
+      expect(useDerived.getSnapshot()).toBe(0);
+
+      baseStore.setState({ val: 1 });
+
+      expect(useDerived.getSnapshot()).toBe(1);
+      expect(useDerived.getSnapshot()).toBe(1);
     });
 
     it('should keep a keepAlive store live after snapshot initialization', async () => {

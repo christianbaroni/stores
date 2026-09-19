@@ -1,4 +1,5 @@
 import { IS_REACT_NATIVE } from '#env';
+import { Listener } from '../types';
 
 // ============ Constants ====================================================== //
 
@@ -43,4 +44,11 @@ export function buildNullObject<A extends object, B>(a: A, b?: B): A & B {
  */
 export function noop(): void {
   return;
+}
+
+/**
+ * Notifies a listener with the current and previous state.
+ */
+export function notifyListener<State>(listener: Listener<State>, state: State, previousState: State): void {
+  listener(state, previousState);
 }

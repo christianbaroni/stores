@@ -1,4 +1,5 @@
 import { flushMicrotasks } from '../../async.testUtils';
+import { SUBSCRIBE_CASCADE_STATE, type CascadeStateSubscribable } from '../../store/internalSubscriptions';
 import { applyStateUpdate } from '../../store/stateUpdate';
 import { StoreApi } from '../../store/types';
 import { NormalizedSyncConfig, SyncEngine, SyncHandle, SyncRegistration, SyncUpdate } from '../../sync/types';
@@ -11,7 +12,7 @@ type HydratableSyncHandle = SyncHandle<Record<string, unknown>> & {
 };
 
 type StoreApiHarness<S> = {
-  api: StoreApi<S>;
+  api: StoreApi<S> & CascadeStateSubscribable<S>;
   state: { current: S };
 };
 
@@ -27,6 +28,7 @@ function registerStore<T extends Record<string, unknown>>(
   stateCreator: StateCreator<T>,
   initialState: T,
   overrides: {
+    handle?: Partial<HydratableSyncHandle>;
     isAsync?: boolean;
   } = {}
 ): {
@@ -36,7 +38,7 @@ function registerStore<T extends Record<string, unknown>>(
   context: SyncContext;
   handle: HydratableSyncHandle;
 } {
-  const { engine, getRegistration, handle, publishedUpdates } = createSyncEngineHarness();
+  const { engine, getRegistration, handle, publishedUpdates } = createSyncEngineHarness(overrides.handle);
   const middleware = createSyncedStateCreator(stateCreator, { ...config, engine }, overrides.isAsync ?? false);
   const store = createStoreApiHarness<T>(initialState);
   const resolvedState = middleware.stateCreator(store.api.setState, store.api.getState, store.api);
@@ -62,7 +64,12 @@ function createStoreApiHarness<S>(initialState: S): StoreApiHarness<S> {
     state.current = applyStateUpdate(state.current, ...args);
   }
 
-  const api: StoreApi<S> = {
+  function subscribeCascadeState(): (skipAbortFetch?: boolean) => void {
+    return () => undefined;
+  }
+
+  const api: StoreApi<S> & CascadeStateSubscribable<S> = {
+    [SUBSCRIBE_CASCADE_STATE]: subscribeCascadeState,
     setState: set,
     getState: get,
     getInitialState: get,
@@ -72,8 +79,8 @@ function createStoreApiHarness<S>(initialState: S): StoreApiHarness<S> {
   return { api, state };
 }
 
-function createSyncEngineHarness(): SyncEngineHarness {
-  const handle = createHydratableSyncHandle();
+function createSyncEngineHarness(handleOverrides?: Partial<HydratableSyncHandle>): SyncEngineHarness {
+  const handle = createHydratableSyncHandle(handleOverrides);
   const publishedUpdates: SyncUpdate<Record<string, unknown>>[] = [];
   let registration: SyncRegistration<Record<string, unknown>> | undefined;
 
@@ -102,7 +109,7 @@ function createSyncEngineHarness(): SyncEngineHarness {
   }
 }
 
-function createHydratableSyncHandle(): HydratableSyncHandle {
+function createHydratableSyncHandle(overrides: Partial<HydratableSyncHandle> = {}): HydratableSyncHandle {
   let hydrationCallback: (() => void) | undefined;
 
   return {
@@ -114,6 +121,7 @@ function createHydratableSyncHandle(): HydratableSyncHandle {
     triggerHydrated: () => {
       hydrationCallback?.();
     },
+    ...overrides,
   };
 }
 
@@ -207,6 +215,25 @@ describe('createSyncedStateCreator', () => {
 
       const { registration } = registerStore(config, baseCreator, { a: 1, b: 2, c: 3 });
       expect(registration.fields).toEqual(['a', 'c']);
+    });
+  });
+
+  describe('subscription lifecycle', () => {
+    it('tracks internal full-state cascade subscriptions', async () => {
+      const onFirstSubscribe = vi.fn();
+      const onLastUnsubscribe = vi.fn();
+      const config: NormalizedSyncConfig<CounterState> = { key: 'cascade-subscription-lifecycle' };
+      const { store } = registerStore(config, () => ({ count: 0 }), { count: 0 }, { handle: { onFirstSubscribe, onLastUnsubscribe } });
+
+      const unsubscribe = store.api[SUBSCRIBE_CASCADE_STATE](() => undefined);
+
+      expect(onFirstSubscribe).toHaveBeenCalledTimes(1);
+      expect(onLastUnsubscribe).not.toHaveBeenCalled();
+
+      unsubscribe();
+      await flushMicrotasks();
+
+      expect(onLastUnsubscribe).toHaveBeenCalledTimes(1);
     });
   });
 

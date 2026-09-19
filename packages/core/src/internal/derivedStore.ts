@@ -22,37 +22,23 @@ import {
   joinCascade,
   settleCascadeDerivations,
 } from '../store/cascadeScheduler';
+import { SUBSCRIBE_CASCADE_STATE } from '../store/internalSubscriptions';
+import { CASCADE_PARTICIPANT_SUBSCRIBE_OPTIONS, DependencySubscriptions } from './derivedStore/dependencySubscriptions';
+import { DerivedSubscribers, type DerivedWatcher } from './derivedStore/derivedSubscribers';
 import { getOrCreateProxy, stripProxies } from './derivedStore/deriveProxy';
-import { PathFinder, createPathFinder } from './derivedStore/pathFinder';
-import { hasGetSnapshot } from './storeUtils';
+import { createPathFinder, type PathFinder } from './derivedStore/pathFinder';
 
 // ============ Types ========================================================== //
 
-/**
- * A `Watcher` is either:
- * - Plain listener (state, prevState)
- * - Selector-based listener
- */
-type Watcher<DerivedState, Selected = unknown> =
-  | Listener<DerivedState>
-  | {
-      currentSlice: Selected;
-      equalityFn: EqualityFn<Selected>;
-      isCascadeParticipant: boolean;
-      listener: Listener<Selected>;
-      selector: Selector<DerivedState, Selected>;
-    };
+type MaybeDerivedStore<State> = StoreApi<State> & { readonly [READ_DEPENDENCY_STATE]?: () => State };
+type UninitializedState = typeof UNINITIALIZED;
+type CascadeFlushState<State> = State | UninitializedState | typeof NO_CASCADE_FLUSH;
 
 // ============ Constants ====================================================== //
 
-/**
- * Sentinel value that indicates the store state is uninitialized.
- */
 const UNINITIALIZED = Symbol();
-
-const CASCADE_PARTICIPANT_SUBSCRIBE_OPTIONS = Object.freeze({ equalityFn: Object.is, isCascadeParticipant: true });
-
-type UninitializedState = typeof UNINITIALIZED;
+const NO_CASCADE_FLUSH = Symbol();
+const READ_DEPENDENCY_STATE = Symbol('stores.derivedStore.readDependencyState');
 
 // ============ Store Creator ================================================== //
 
@@ -60,14 +46,30 @@ export function derivedStore<DerivedState>(
   deriveFunction: ($: DeriveGetter) => DerivedState,
   optionsOrEqualityFn: DeriveOptions<DerivedState> = Object.is
 ): WithGetSnapshot<WithFlushUpdates<StoreApi<DerivedState>>> {
-  const { debounceOptions, debugMode, equalityFn, keepAlive, lockDependencies } = parseOptions(optionsOrEqualityFn);
+  let debounceOptions: number | DebounceOptions | undefined;
+  let debugMode: boolean | 'verbose' = false;
+  let equalityFn: EqualityFn<DerivedState>;
+  let keepAlive = false;
+  let lockDependencies = false;
+
+  if (typeof optionsOrEqualityFn === 'function') {
+    equalityFn = optionsOrEqualityFn;
+  } else {
+    debounceOptions = optionsOrEqualityFn.debounce;
+    debugMode = IS_DEV ? (optionsOrEqualityFn.debugMode ?? false) : false;
+    equalityFn = optionsOrEqualityFn.equalityFn ?? Object.is;
+    keepAlive = optionsOrEqualityFn.keepAlive ?? false;
+    lockDependencies = optionsOrEqualityFn.lockDependencies ?? false;
+  }
 
   // Active subscriptions *to* the derived store
-  const watchers = new Set<Watcher<DerivedState>>();
-  if (keepAlive) watchers.add(dummyWatcher);
+  const subscribers = new DerivedSubscribers<DerivedState>();
 
-  // For subscriptions created by `$` within `deriveFunction`
-  const unsubscribes = new Set<InternalUnsubscribeFn>();
+  // Subscriptions created by `$` within `deriveFunction`
+  const dependencies = new DependencySubscriptions(invalidate);
+
+  // Dictates whether dependency subscriptions are built and retained
+  let dependencyConsumerCount = keepAlive ? 1 : 0;
 
   // Proxy tracking
   let rootProxyCache: WeakMap<object, unknown> | undefined;
@@ -81,10 +83,10 @@ export function derivedStore<DerivedState>(
   let shouldRebuildSubscriptions = true;
 
   // Cascade coordination state
-  let cascadeParticipants = 0;
-  let enlistedInCascade = false;
   let enqueuedAtRank: number | null = null;
-  let prevStateForFlush: DerivedState | UninitializedState = UNINITIALIZED;
+
+  // NO_CASCADE_FLUSH means idle; UNINITIALIZED means enlisted before a previous state exists
+  let prevStateForFlush: CascadeFlushState<DerivedState> = NO_CASCADE_FLUSH;
 
   // ========== $ ==========
 
@@ -92,46 +94,55 @@ export function derivedStore<DerivedState>(
   function $<S, Selected>(store: StoreApi<S>, selector: Selector<S, Selected>, equalityFn?: EqualityFn<Selected>): Selected;
   function $<S, Selected = S>(store: StoreApi<S>, selector?: Selector<S, Selected>, equalityFn?: EqualityFn<Selected>): Selected | S {
     // -- Direct derivation, no subscription
-    if (!shouldRebuildSubscriptions || !watchers.size) {
-      return (selector ?? identity)(store.getState());
-    }
+    if (!shouldRebuildSubscriptions) return (selector ?? identity)(readDependencyState(store));
+    if (!dependencyConsumerCount) return (selector ?? identity)(store.getState());
 
     // -- Overload #1: $(store).maybe.a.path
     if (!selector) {
+      const snapshot = readDependencyState(store);
+      if (!snapshot || typeof snapshot !== 'object') {
+        dependencies.retainState(store);
+        return snapshot;
+      }
+
       if (!rootProxyCache) rootProxyCache = new WeakMap();
       if (!pathFinder) pathFinder = createPathFinder();
-      return getOrCreateProxy(store, rootProxyCache, pathFinder.trackPath);
+      return getOrCreateProxy(store, snapshot, rootProxyCache, pathFinder.trackPath);
     }
+
     // -- Overload #2: $(store, selector, equalityFn?)
     // No proxy, just a direct subscription to the store
     const subscribeOptions = equalityFn ? { equalityFn, isCascadeParticipant: true } : CASCADE_PARTICIPANT_SUBSCRIBE_OPTIONS;
-    unsubscribes.add(store.subscribe(selector, invalidate, subscribeOptions));
-    return selector(hasGetSnapshot(store) ? store.getSnapshot() : store.getState());
-  }
-
-  function unsubscribeAll(skipAbortFetch?: boolean): void {
-    for (const unsub of unsubscribes) unsub(skipAbortFetch);
-    unsubscribes.clear();
+    dependencies.addSelector(store.subscribe(selector, invalidate, subscribeOptions));
+    return selector(readDependencyState(store));
   }
 
   // ========== Derivation ==========
-
-  let didProduceNewState = true;
 
   function runDerive(): DerivedState {
     if (!invalidated && isInitialized(derivedState)) return derivedState;
     invalidated = false;
 
-    if (shouldRebuildSubscriptions) unsubscribeAll(true);
-
+    if (shouldRebuildSubscriptions) dependencies.beginRebuild(true);
+    let didProduceNewState = true;
     const prevState = derivedState;
     const hasPreviousState = isInitialized(prevState);
 
     isDeriving = true;
     try {
-      derivedState = produceNextState($);
+      const derived = deriveFunction($);
+      const newState = pathFinder ? stripProxies(derived) : derived;
+
+      if (hasPreviousState && equalityFn(prevState, newState)) {
+        if (debugMode) console.log('[🥷 Derive Complete 🥷]: No change detected');
+        didProduceNewState = false;
+        derivedState = prevState;
+      } else {
+        derivedState = newState;
+      }
     } finally {
       isDeriving = false;
+      if (shouldRebuildSubscriptions) dependencies.finishRebuild(true);
     }
 
     const shouldLogSubscriptions = debugMode && (!hasPreviousState || (debugMode === 'verbose' && shouldRebuildSubscriptions));
@@ -139,20 +150,20 @@ export function derivedStore<DerivedState>(
     if (shouldLogSubscriptions) {
       if (!hasPreviousState) console.log('[🌀 Initial Derive Complete 🌀]: Created…');
       else if (debugMode === 'verbose') console.log('[🌀 Rebuilding Subscriptions 🌀]: Created…');
-      const subscriptionCount = unsubscribes.size;
+      const subscriptionCount = dependencies.size;
       console.log(`[🎯 ${subscriptionCount} ${pluralize('Selector Subscription', subscriptionCount)} 🎯]`);
     }
 
     if (pathFinder && shouldRebuildSubscriptions) {
       // Create subscriptions for each proxy-generated dependency path
       pathFinder.buildProxySubscriptions((store, selector) => {
-        unsubscribes.add(store.subscribe(selector, invalidate, CASCADE_PARTICIPANT_SUBSCRIBE_OPTIONS));
+        dependencies.addSelector(store.subscribe(selector, invalidate, CASCADE_PARTICIPANT_SUBSCRIBE_OPTIONS));
       }, shouldLogSubscriptions);
 
       // Reset proxy tracking state
       rootProxyCache = undefined;
-      pathFinder.reset();
       if (lockDependencies) pathFinder = undefined;
+      else pathFinder.reset();
     }
 
     if (didProduceNewState && hasPreviousState) notifyWatchers(derivedState, prevState);
@@ -161,83 +172,45 @@ export function derivedStore<DerivedState>(
     return derivedState;
   }
 
-  function produceNextState($: DeriveGetter): DerivedState {
-    didProduceNewState = true;
-    const prevState = derivedState;
-    const derived = deriveFunction($);
-    const newState = pathFinder ? stripProxies(derived) : derived;
-
-    if (!isInitialized(prevState)) return newState;
-
-    if (equalityFn(prevState, newState)) {
-      if (debugMode) console.log('[🥷 Derive Complete 🥷]: No change detected');
-      didProduceNewState = false;
-      return prevState;
-    }
-    return newState;
-  }
-
   // ========== Notifications ==========
 
   function notifyWatchers(newState: DerivedState, prevState: DerivedState): void {
-    const mixedWatchers = hasMixedWatchers();
-    const hasOrdinaryWatchers = !cascadeParticipants || mixedWatchers;
+    const cascadeParticipantCount = subscribers.cascadeParticipantCount;
+    const mixedWatchers = cascadeParticipantCount > 0 && subscribers.ordinaryWatcherCount > 0;
 
     // Defer if any of the following are true:
     // - This store has mixed watchers
     // - We're currently inside a derive batch (part of active derivation chain)
     // - A cascade is active and ordinary watchers need batched notification
-    const shouldDefer = hasOrdinaryWatchers && (mixedWatchers || getCurrentDeriveRank() !== null || isCascadeActive());
+    const shouldDefer = subscribers.ordinaryWatcherCount > 0 && (mixedWatchers || getCurrentDeriveRank() !== null || isCascadeActive());
 
     // Arm early so downstream invalidations see the cascade
     if (mixedWatchers) activateCascade();
-
-    if (debugMode) console.log(`[📻 Derive Complete 📻]: Notifying ${watchers.size} ${pluralize('watcher', watchers.size)}`);
-
-    // -- Phase 1: propagate cascade participant notifications synchronously
-    for (const w of watchers) {
-      if (typeof w === 'function' || !w.isCascadeParticipant) continue;
-      const nextSlice = w.selector(newState);
-      if (!w.equalityFn(w.currentSlice, nextSlice)) {
-        const prevSlice = w.currentSlice;
-        w.currentSlice = nextSlice;
-        w.listener(nextSlice, prevSlice);
-      }
+    if (debugMode) {
+      const notifiableWatcherCount = subscribers.ordinaryWatcherCount + cascadeParticipantCount;
+      console.log(`[📻 Derive Complete 📻]: Notifying ${notifiableWatcherCount} ${pluralize('watcher', notifiableWatcherCount)}`);
     }
+
+    if (cascadeParticipantCount) {
+      // -- Phase 1: propagate cascade participant notifications synchronously
+      subscribers.notifyCascade(newState, prevState);
+    }
+
+    if (!subscribers.ordinaryWatcherCount) return;
 
     // Defer ordinary watcher notifications during a cascade
     if (shouldDefer) {
-      if (!isInitialized(prevStateForFlush)) prevStateForFlush = prevState;
-      if (!enlistedInCascade) {
-        enlistedInCascade = true;
+      if (prevStateForFlush === NO_CASCADE_FLUSH) {
+        prevStateForFlush = prevState;
         joinCascade(onCascadeFlush);
+      } else if (!isInitialized(prevStateForFlush)) {
+        prevStateForFlush = prevState;
       }
       return;
     }
 
     // -- Phase 2: immediate delivery (no cascade active)
-    notifyOrdinaryWatchers(newState, prevState);
-  }
-
-  function notifyOrdinaryWatchers(newState: DerivedState, prevState: DerivedState): void {
-    for (const w of watchers) {
-      if (typeof w === 'function') {
-        w(newState, prevState);
-      } else if (!w.isCascadeParticipant) {
-        const nextSlice = w.selector(newState);
-        if (!w.equalityFn(w.currentSlice, nextSlice)) {
-          const prevSlice = w.currentSlice;
-          w.currentSlice = nextSlice;
-          w.listener(nextSlice, prevSlice);
-        }
-      }
-    }
-  }
-
-  function hasMixedWatchers(): boolean {
-    const hasDummy = watchers.has(dummyWatcher);
-    const watcherCount = hasDummy ? watchers.size - 1 : watchers.size;
-    return cascadeParticipants > 0 && cascadeParticipants < watcherCount;
+    subscribers.notifyOrdinary(newState, prevState);
   }
 
   // ========== Cascade Flush ==========
@@ -249,14 +222,13 @@ export function derivedStore<DerivedState>(
   function onCascadeFlush(): void {
     // Stores without cascade participants may be invalidated but not yet derived
     // Derive now before flushing to ordinary watchers
-    if (watchers.size && invalidated && !cascadeParticipants) runDerive();
+    if (dependencyConsumerCount && invalidated && !subscribers.cascadeParticipantCount) runDerive();
 
     const prevState = prevStateForFlush;
-    enlistedInCascade = false;
-    prevStateForFlush = UNINITIALIZED;
+    prevStateForFlush = NO_CASCADE_FLUSH;
 
-    if (watchers.size && isInitialized(derivedState) && isInitialized(prevState)) {
-      notifyOrdinaryWatchers(derivedState, prevState);
+    if (subscribers.ordinaryWatcherCount && isInitialized(derivedState) && prevState !== NO_CASCADE_FLUSH && isInitialized(prevState)) {
+      subscribers.notifyOrdinary(derivedState, prevState);
     }
   }
 
@@ -280,8 +252,8 @@ export function derivedStore<DerivedState>(
 
   function runScheduledDerive(): void {
     deriveScheduled = false;
-    if (!watchers.size) {
-      destroy();
+    if (!dependencyConsumerCount) {
+      if (!keepAlive) destroy();
       return;
     }
     if (invalidated) runDerive();
@@ -289,46 +261,48 @@ export function derivedStore<DerivedState>(
 
   // ========== Lifecycle Helpers ==========
 
-  function handleDestroy(isCascadeParticipant: boolean): void {
-    const shouldDefer = isCascadeParticipant || (!!debouncedDerive && invalidated);
-    if (!shouldDefer) {
-      destroy();
+  function handleDestroy(isCascadeParticipant?: boolean): void {
+    // The no-argument invocation is the queued final check, avoiding per-teardown closures
+    if (isCascadeParticipant !== undefined && (isCascadeParticipant || (!!debouncedDerive && invalidated))) {
+      queueMicrotask(handleDestroy);
       return;
     }
-    queueMicrotask(() => {
-      if (!watchers.size) destroy();
-    });
+    if (!dependencyConsumerCount && !keepAlive) destroy();
   }
 
   function deriveTask(): void {
+    const rank = enqueuedAtRank;
+    if (rank !== getCurrentDeriveRank()) return;
+
     runScheduledDerive();
-    enqueuedAtRank = null;
+    if (enqueuedAtRank === rank) enqueuedAtRank = null;
   }
 
   function invalidate(): void {
-    // A dependency settled during this derivation is already reflected in the current output.
-    if (isDeriving || invalidated) return;
-    invalidated = true;
+    // A dependency settled during this derivation is already reflected in the current output
+    if (isDeriving) return;
 
     if (!debouncedDerive) {
-      if (cascadeParticipants) {
+      if (subscribers.cascadeParticipantCount) {
+        invalidated = true;
         activateCascade();
+
         const upstream = getCurrentDeriveRank();
         const rank = upstream === null ? 0 : upstream + 1;
-
-        if (enqueuedAtRank !== null && rank <= enqueuedAtRank) {
-          return;
-        }
+        if (enqueuedAtRank !== null && rank <= enqueuedAtRank) return;
 
         enqueuedAtRank = rank;
         enqueueDerive(deriveTask, rank);
         return;
       }
 
+      if (invalidated) return;
+      invalidated = true;
+
       // Stores without cascade participants during active cascade: enlist for lazy derive and flush
       if (isCascadeActive()) {
-        if (!enlistedInCascade) {
-          enlistedInCascade = true;
+        if (prevStateForFlush === NO_CASCADE_FLUSH) {
+          prevStateForFlush = UNINITIALIZED;
           joinCascade(onCascadeFlush);
         }
         return;
@@ -336,42 +310,40 @@ export function derivedStore<DerivedState>(
     }
 
     // Outside cascades (debounced stores or no active cascade)
+    if (invalidated) return;
+    invalidated = true;
     enqueuedAtRank = null;
     scheduleDerive();
   }
 
-  function withDummyWatcher<T>(fn: () => T): T {
-    watchers.add(dummyWatcher);
+  function withDependencyTracking<T>(fn: () => T): T {
+    dependencyConsumerCount += 1;
     try {
       return fn();
     } finally {
-      watchers.delete(dummyWatcher);
+      dependencyConsumerCount -= 1;
     }
   }
 
   // ========== Snapshots ==========
 
   function getSnapshot(): DerivedState {
-    if (!isInitialized(derivedState)) {
+    if (invalidated || !isInitialized(derivedState)) {
       // Ensures useSyncExternalStore doesn't trigger redundant derivations
-      return watchers.size ? runDerive() : withDummyWatcher(runDerive);
+      return dependencyConsumerCount ? runDerive() : withDependencyTracking(runDerive);
     }
-    if (deriveScheduled) runScheduledDerive();
+    if (deriveScheduled && dependencyConsumerCount) runScheduledDerive();
     return derivedState;
-  }
-
-  function initializeWatcherSlice<Selected>(selector: Selector<DerivedState, Selected>): Selected {
-    return selector(watchers.size ? getState() : withDummyWatcher(getState));
   }
 
   // ========== Public Methods ==========
 
   function getState(): DerivedState {
-    if (isCascadeActive()) settleCascadeDerivations();
+    if (isCascadeActive() && getCurrentDeriveRank() === null) settleCascadeDerivations();
 
     if (invalidated || !isInitialized(derivedState)) {
       // If there are watchers, build subscriptions, otherwise compute directly
-      return watchers.size > 0 ? runDerive() : deriveFunction($);
+      return dependencyConsumerCount ? runDerive() : deriveFunction($);
     }
 
     return derivedState;
@@ -381,53 +353,60 @@ export function derivedStore<DerivedState>(
     // -- Overload #1: single argument (listener)
     if (args.length === 1) {
       const listener = args[0];
-      watchers.add(listener);
+      if (subscribers.addWatcher(listener)) dependencyConsumerCount += 1;
 
       if (!isInitialized(derivedState)) getState();
 
       return () => {
-        watchers.delete(listener);
-        if (!watchers.size) handleDestroy(false);
+        if (!subscribers.deleteWatcher(listener)) return;
+        dependencyConsumerCount -= 1;
+        if (!dependencyConsumerCount) handleDestroy(false);
       };
     }
 
-    // -- Overload #2: (selector, listener, { equalityFn, fireImmediately, isCascadeParticipant })
+    // -- Overload #2: (selector, listener, options?)
     const [selector, listener, options] = args;
     const equalityFn = options?.equalityFn ?? Object.is;
     const isCascadeParticipant = options?.isCascadeParticipant ?? false;
-    const currentSlice = initializeWatcherSlice(selector);
+    const currentSlice = selector(dependencyConsumerCount ? getState() : withDependencyTracking(getState));
 
-    const watcher: Watcher<DerivedState> = {
-      currentSlice,
-      equalityFn,
-      isCascadeParticipant,
-      listener,
-      selector,
-    };
+    const watcher: DerivedWatcher<DerivedState> = { currentSlice, equalityFn, isCascadeParticipant, listener, selector };
+    subscribers.addWatcher(watcher);
+    dependencyConsumerCount += 1;
 
-    watchers.add(watcher);
-    if (isCascadeParticipant) cascadeParticipants += 1;
     if (options?.fireImmediately) listener(currentSlice, currentSlice);
 
     return () => {
-      watchers.delete(watcher);
-      if (isCascadeParticipant) cascadeParticipants -= 1;
-      if (!watchers.size) handleDestroy(isCascadeParticipant);
+      if (!subscribers.deleteWatcher(watcher)) return;
+      dependencyConsumerCount -= 1;
+      if (!dependencyConsumerCount) handleDestroy(isCascadeParticipant);
+    };
+  }
+
+  function subscribeCascadeState(listener: Listener<DerivedState>): InternalUnsubscribeFn {
+    if (dependencyConsumerCount) getState();
+    else withDependencyTracking(getState);
+
+    if (subscribers.addCascadeStateListener(listener)) dependencyConsumerCount += 1;
+
+    return () => {
+      if (!subscribers.deleteCascadeStateListener(listener)) return;
+      dependencyConsumerCount -= 1;
+      if (!dependencyConsumerCount) handleDestroy(true);
     };
   }
 
   function flushUpdates(): void {
-    if (!watchers.size) return;
+    if (!dependencyConsumerCount) return;
     if (debouncedDerive) debouncedDerive.flush();
     else if (invalidated) runDerive();
   }
 
-  function destroy(isInternalCall = true): void {
-    if (keepAlive && isInternalCall) return;
+  function destroy(): void {
     debouncedDerive?.cancel();
-    unsubscribeAll();
-    watchers.clear();
-    cascadeParticipants = 0;
+    dependencies.clear();
+    subscribers.clear();
+    dependencyConsumerCount = 0;
     pathFinder = undefined;
     rootProxyCache = undefined;
     shouldRebuildSubscriptions = true;
@@ -435,58 +414,48 @@ export function derivedStore<DerivedState>(
     isDeriving = false;
     invalidated = true;
     derivedState = UNINITIALIZED;
-    enlistedInCascade = false;
-    prevStateForFlush = UNINITIALIZED;
+    prevStateForFlush = NO_CASCADE_FLUSH;
     enqueuedAtRank = null;
   }
 
-  return {
-    destroy: () => destroy(false),
+  function readForDependency(): DerivedState {
+    if (invalidated || deriveScheduled || !isInitialized(derivedState)) {
+      return dependencyConsumerCount ? runDerive() : withDependencyTracking(runDerive);
+    }
+    return derivedState;
+  }
+
+  const api = {
+    [READ_DEPENDENCY_STATE]: readForDependency,
+    [SUBSCRIBE_CASCADE_STATE]: subscribeCascadeState,
+    destroy,
     flushUpdates,
     getSnapshot,
     getState,
     subscribe,
     // -- Not applicable to derived stores
-    getInitialState: () => {
-      throw new Error('[createDerivedStore]: getInitialState() is not available on derived stores.');
-    },
-    setState: () => {
-      throw new Error('[createDerivedStore]: setState() is not available on derived stores.');
-    },
+    getInitialState: unavailableGetInitialState,
+    setState: unavailableSetState,
   };
+
+  return api;
 }
 
 // ============ Helpers ======================================================== //
 
-function dummyWatcher(): void {
-  return;
+function unavailableGetInitialState(): never {
+  throw new Error('[createDerivedStore]: getInitialState() is not available on derived stores.');
+}
+
+function unavailableSetState(): never {
+  throw new Error('[createDerivedStore]: setState() is not available on derived stores.');
+}
+
+function readDependencyState<State>(store: MaybeDerivedStore<State>): State {
+  const readDependency = store[READ_DEPENDENCY_STATE];
+  return readDependency ? readDependency() : store.getState();
 }
 
 function isInitialized<T>(state: T | typeof UNINITIALIZED): state is T {
   return state !== UNINITIALIZED;
-}
-
-function parseOptions<DerivedState>(options: DeriveOptions<DerivedState>): {
-  debounceOptions: number | DebounceOptions | undefined;
-  debugMode: boolean | 'verbose';
-  equalityFn: EqualityFn<DerivedState>;
-  keepAlive: boolean;
-  lockDependencies: boolean;
-} {
-  if (typeof options === 'function') {
-    return {
-      debounceOptions: undefined,
-      debugMode: false,
-      equalityFn: options,
-      keepAlive: false,
-      lockDependencies: false,
-    };
-  }
-  return {
-    debounceOptions: options.debounce,
-    debugMode: (IS_DEV && options.debugMode) ?? false,
-    equalityFn: options.equalityFn ?? Object.is,
-    keepAlive: options.keepAlive ?? false,
-    lockDependencies: options.lockDependencies ?? false,
-  };
 }

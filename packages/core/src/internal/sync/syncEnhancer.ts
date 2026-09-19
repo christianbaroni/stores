@@ -1,4 +1,5 @@
 import { IS_DEV } from '#env';
+import { type InternalUnsubscribeFn, wrapCascadeStateSubscription } from '../../store/internalSubscriptions';
 import { applyStateUpdate } from '../../store/stateUpdate';
 import { FieldMetadata, NormalizedSyncConfig, SyncHandle, SyncStateKey, SyncUpdate, SyncValues } from '../../sync/types';
 import { StateCreator, SubscribeArgs, SubscribeOverloads } from '../../types';
@@ -12,10 +13,10 @@ import { logger } from '../logger';
 // ============ Constants ====================================================== //
 
 /** Index of `timestamp` in `FieldMetadata` tuples. */
-export const TIMESTAMP = 0;
+const TIMESTAMP = 0;
 
 /** Index of `sessionId` in `FieldMetadata` tuples. */
-export const SESSION_ID = 1;
+const SESSION_ID = 1;
 
 // ============ Sync Enhancer ================================================== //
 
@@ -261,32 +262,38 @@ export function createSyncedStateCreator<T extends Record<string, unknown>>(
         }
         scheduleProcessUpdate(update);
       },
-      delta: config.delta,
       fields: syncKeys,
       getState: get,
       key: config.key,
     });
 
     if (handle?.onFirstSubscribe || handle?.onLastUnsubscribe) {
+      const syncHandle = handle;
       let subscriberCount = 0;
       const originalSubscribe: SubscribeOverloads<T> = api.subscribe;
 
-      api.subscribe = (...args: SubscribeArgs<T>) => {
-        if (!subscriberCount) handle.onFirstSubscribe?.();
+      function trackSubscription(unsubscribe: InternalUnsubscribeFn): InternalUnsubscribeFn {
+        if (!subscriberCount) syncHandle.onFirstSubscribe?.();
         subscriberCount += 1;
 
-        const unsubscribe = args.length === 1 ? originalSubscribe(args[0]) : originalSubscribe(args[0], args[1], args[2]);
-
-        return () => {
-          unsubscribe();
+        return skipAbortFetch => {
+          unsubscribe(skipAbortFetch);
           subscriberCount -= 1;
           if (!subscriberCount) {
             queueMicrotask(() => {
-              if (!subscriberCount) handle.onLastUnsubscribe?.();
+              if (!subscriberCount) syncHandle.onLastUnsubscribe?.();
             });
           }
         };
+      }
+
+      api.subscribe = (...args: SubscribeArgs<T>) => {
+        return trackSubscription(args.length === 1 ? originalSubscribe(args[0]) : originalSubscribe(args[0], args[1], args[2]));
       };
+
+      wrapCascadeStateSubscription(api, originalSubscribeCascadeState => {
+        return listener => trackSubscription(originalSubscribeCascadeState(listener));
+      });
     }
 
     function onHydrationComplete(): void {

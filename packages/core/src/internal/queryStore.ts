@@ -13,6 +13,7 @@ import type {
 } from '../queryStore/types';
 import type { BaseStoreOptions, PersistConfig, SetStatePartialArgs, StateCreator, Timeout } from '../types';
 import type { InternalSubscribeArgs, InternalSubscribeOverloads, InternalUnsubscribeFn } from './types/internalSubscribeTypes';
+import { wrapCascadeStateSubscription } from '../store/internalSubscriptions';
 import type { BivariantMethod } from '../types/functions';
 import { hasOwn } from '../types/utils';
 import { buildNullObject, nullObject } from '../utils/core';
@@ -70,9 +71,7 @@ type InternalSetState<TData, TParams extends Record<string, unknown>, S extends 
 
 type InternalQueryStore<TData, TParams extends Record<string, unknown>, S extends QueryStoreState<TData, TParams>> = ReturnType<
   typeof baseStore<S, Partial<S>, void | Promise<void>>
-> & {
-  setState: InternalSetState<TData, TParams, S>;
-};
+> & { setState: InternalSetState<TData, TParams, S> };
 
 // ============ Shared Query Task Queue ======================================== //
 
@@ -766,9 +765,20 @@ export function queryStore<
       const unsubscribe = args.length === 1 ? originalSubscribe(args[0]) : originalSubscribe(args[0], args[1], args[2]);
       return (skipAbortFetch?: boolean) => {
         internalUnsubscribe?.(skipAbortFetch);
-        unsubscribe();
+        unsubscribe(skipAbortFetch);
       };
     };
+
+    wrapCascadeStateSubscription(api, originalSubscribeCascadeState => {
+      return listener => {
+        const internalUnsubscribe = isBuildingParams ? undefined : subscriptionManager.subscribe();
+        const unsubscribe = originalSubscribeCascadeState(listener);
+        return (skipAbortFetch?: boolean) => {
+          internalUnsubscribe?.(skipAbortFetch);
+          unsubscribe(skipAbortFetch);
+        };
+      };
+    });
 
     return baseMethods;
   }

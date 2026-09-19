@@ -4,7 +4,7 @@ import { batchStoreNotifications } from '#store/batchStoreNotifications';
  * Cascade Scheduler
  *
  * - Coalesces derivations into a single microtask.
- * - Tasks run once at their maximum rank via a ranked dirty queue.
+ * - Derive tasks run by rank; callers own duplicate and stale-rank suppression.
  * - Doesn't retain snapshots or dependency graphs.
  * - Deferred listeners run after all derivations have settled.
  */
@@ -20,12 +20,15 @@ let active = false;
 let flushing = false;
 let scheduled = false;
 
-// Deferred listener flushes (one stable task per store)
-const flushQueue = new Set<Task>();
+// Deferred listener flushes. A single deferred task needs no queue; callers own
+// duplicate suppression through their scheduled/enlisted flags.
+let flushTask: Task | undefined;
+let flushQueue: Task[] | undefined;
+let flushIndex = 0;
 
 // Ranked dirty tasks (per cascade)
-const taskRank = new Map<Task, Rank>();
-const buckets = new Map<Rank, Set<Task>>();
+const buckets = new Map<Rank, Task[]>();
+let taskCount = 0;
 
 // Rank context during the currently executing derive batch
 let activeDeriveRank: Rank | null = null;
@@ -107,68 +110,51 @@ export function settleCascadeDerivations(): void {
  */
 export function joinCascade(task: Task): void {
   if (!active) return;
-  flushQueue.add(task);
+
+  if (flushQueue) {
+    flushQueue.push(task);
+    return;
+  }
+
+  if (!flushTask) {
+    flushTask = task;
+    return;
+  }
+
+  flushQueue = [flushTask, task];
+  flushTask = undefined;
 }
 
 /**
- * Enqueue (or upgrade) a derive task with the given rank.
- * If the task is already present, its rank is upgraded and it is run later.
+ * Enqueue a derive task with the given rank.
+ * The derived store owns duplicate suppression and stale-rank skips.
  */
 export function enqueueDerive(task: Task, rank: Rank): void {
   if (!active) return;
 
   const r = rank < 0 ? 0 : rank | 0;
-  const existing = taskRank.get(task);
-
-  if (existing === undefined) {
-    taskRank.set(task, r);
-    let set = buckets.get(r);
-    if (!set) {
-      set = new Set<Task>();
-      buckets.set(r, set);
-    }
-    set.add(task);
-    if (r < minRank) minRank = r;
-    return;
+  let bucket = buckets.get(r);
+  if (!bucket) {
+    bucket = [];
+    buckets.set(r, bucket);
   }
-
-  // Upgrade rank if needed
-  if (r > existing) {
-    const oldBucket = buckets.get(existing);
-    if (oldBucket) {
-      oldBucket.delete(task);
-      if (oldBucket.size === 0) {
-        buckets.delete(existing);
-        if (existing === minRank) {
-          // Recompute minRank; small cardinality, cheap
-          minRank = Infinity;
-          for (const k of buckets.keys()) if (k < minRank) minRank = k;
-        }
-      }
-    }
-    taskRank.set(task, r);
-    let newBucket = buckets.get(r);
-    if (!newBucket) {
-      newBucket = new Set<Task>();
-      buckets.set(r, newBucket);
-    }
-    newBucket.add(task);
-    if (r < minRank) minRank = r;
-  }
+  bucket.push(task);
+  taskCount += 1;
+  if (r < minRank) minRank = r;
 }
 
 // ============ Internal Methods =============================================== //
 
 function drainCascade(): void {
-  while (taskRank.size > 0 || flushQueue.size > 0) {
+  while (taskCount > 0 || hasDeferredTasks()) {
     settleDerivations();
     flushDeferredTasks();
   }
 }
 
 function settleDerivations(): void {
-  // Tasks may enqueue/upgrade other tasks with higher ranks during execution
-  while (taskRank.size > 0) {
+  // Tasks may enqueue other tasks with higher ranks during execution
+  while (taskCount > 0) {
     const r = minRank;
     const batch = buckets.get(r);
     if (!batch) {
@@ -178,21 +164,36 @@ function settleDerivations(): void {
     }
 
     buckets.delete(r);
-    for (const task of batch) taskRank.delete(task);
+    taskCount -= batch.length;
+    recomputeMinRank();
 
     activeDeriveRank = r;
-    for (const task of batch) task();
+    for (let i = 0; i < batch.length; i++) batch[i]();
     activeDeriveRank = null;
-
-    minRank = Infinity;
-    for (const k of buckets.keys()) if (k < minRank) minRank = k;
   }
 }
 
+function recomputeMinRank(): void {
+  minRank = Infinity;
+  for (const k of buckets.keys()) if (k < minRank) minRank = k;
+}
+
 function flushDeferredTasks(): void {
-  for (const task of flushQueue) {
-    flushQueue.delete(task);
-    task();
+  while (true) {
+    const task = flushTask;
+    if (task) {
+      flushTask = undefined;
+      task();
+      continue;
+    }
+
+    const queue = flushQueue;
+    if (!queue) return;
+
+    while (flushIndex < queue.length) queue[flushIndex++]();
+    flushQueue = undefined;
+    flushIndex = 0;
+    return;
   }
 }
 
@@ -200,8 +201,14 @@ function resetCascade(): void {
   active = false;
   flushing = false;
   activeDeriveRank = null;
-  flushQueue.clear();
-  taskRank.clear();
+  flushTask = undefined;
+  flushQueue = undefined;
+  flushIndex = 0;
   buckets.clear();
+  taskCount = 0;
   minRank = Infinity;
+}
+
+function hasDeferredTasks(): boolean {
+  return !!flushTask || !!flushQueue;
 }

@@ -1,6 +1,5 @@
 import type { StoreApi } from '../../store/types';
 import { hasOwn, isPlainObject } from '../../types/utils';
-import { hasGetSnapshot } from '../storeUtils';
 import { TrackPathFn } from './pathFinder';
 
 // ============ Constants ====================================================== //
@@ -14,11 +13,10 @@ const TRACKING_PROXY_UNWRAP = Symbol('stores.deriveProxy.unwrap');
  * method invocations via proxy traps. Used to auto-generate selectors that point
  * to either the accessed path or the value returned by an invoked store method.
  */
-export function getOrCreateProxy<S>(store: StoreApi<S>, rootProxyCache: WeakMap<object, unknown>, trackPath: TrackPathFn): S {
+export function getOrCreateProxy<S>(store: StoreApi<S>, snapshot: S, rootProxyCache: WeakMap<object, unknown>, trackPath: TrackPathFn): S {
   const cachedProxy = rootProxyCache.get(store);
   if (isCachedProxy<S>(cachedProxy)) return cachedProxy;
 
-  const snapshot = hasGetSnapshot(store) ? store.getSnapshot() : store.getState();
   const newProxy = createTrackingProxy(snapshot, store, trackPath);
   rootProxyCache.set(store, newProxy);
   return newProxy;
