@@ -19,7 +19,7 @@ echo_success() {
 }
 
 # Navigate to repo root
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 
 echo_step "Installing dependencies"
 pnpm install --frozen-lockfile
@@ -31,15 +31,15 @@ pnpm run lint
 echo_success "Lint passed"
 
 echo_step "JOB 2: Build"
-pnpm --filter stores run build
+pnpm --filter @storesjs/stores run build
 echo_success "Build passed"
 
 echo_step "JOB 3: Test Core"
-pnpm --filter stores test
+pnpm --filter @storesjs/stores test
 echo_success "Core tests passed"
 
 echo_step "JOB 4: Test Treeshaking"
-pnpm --filter stores test:treeshake
+pnpm --filter @storesjs/stores test:treeshake
 echo_success "Treeshake tests passed"
 
 echo -e "\n${GREEN}===================================================${NC}"
