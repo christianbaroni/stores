@@ -96,6 +96,7 @@
     "test": "vitest run",
     "test:chrome": "vitest run src/plugins/chrome",
     "test:plugins": "vitest run src/plugins",
-    "test:treeshake": "tsx --tsconfig scripts/tsconfig.json scripts/treeshake.ts"
+    "test:treeshake": "tsx --tsconfig scripts/tsconfig.json scripts/treeshake.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
   }
 }

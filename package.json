@@ -35,6 +35,7 @@
     "lint": "pnpm run lint:eslint && pnpm run lint:prettier && pnpm run lint:circular",
     "lint:circular": "pnpm --filter ./packages/core lint:circular",
     "lint:eslint": "eslint . --ext .ts,.tsx",
-    "lint:prettier": "prettier --check ."
+    "lint:prettier": "prettier --check .",
+    "typecheck": "pnpm --filter ./packages/core run typecheck"
   }
 }
