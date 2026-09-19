@@ -65,53 +65,6 @@ describe('createQueryStore', () => {
   // Error Handling and Retry
   // ──────────────────────────────────────────────
   describe('Error Handling and Retry', () => {
-    it('should handle fetch errors and update state with error and retry count', async () => {
-      const fetcher = vi.fn(async () => {
-        throw new Error('Fetch failed');
-      });
-      const onError = vi.fn();
-      const maxRetries = 2;
-      const store = createQueryStore<TestData, TestParams>({
-        fetcher,
-        maxRetries,
-        onError,
-        params: { id: 1 },
-        staleTime: time.minutes(2),
-      });
-
-      // Use fake timers because retries are scheduled via setTimeout.
-      vi.useFakeTimers();
-
-      const fetchPromise = store.getState().fetch();
-      // Fast-forward timers so that any scheduled retry happens.
-      vi.runAllTimers();
-      const result = await fetchPromise;
-      expect(result).toBeNull();
-
-      const fetchPromise2 = store.getState().fetch();
-      vi.runAllTimers();
-      const result2 = await fetchPromise2;
-      expect(result2).toBeNull();
-
-      const fetchPromise3 = store.getState().fetch();
-      vi.runAllTimers();
-      const result3 = await fetchPromise3;
-      expect(result3).toBeNull();
-
-      // onError should have been called (one or more times)
-      expect(onError).toHaveBeenCalled();
-      // The store status should be Error.
-      expect(store.getState().status).toBe(QueryStatuses.Error);
-
-      // Check that the query cache records a retry count equal to maxRetries.
-      const state = store.getState();
-      const queryKey = state.queryKey;
-      const cacheEntry = state.queryCache[queryKey];
-      expect(cacheEntry).toBeDefined();
-      expect(cacheEntry?.errorInfo?.retryCount).toBe(maxRetries);
-      vi.useRealTimers();
-    });
-
     it('should not run a scheduled retry after the store is disabled', async () => {
       vi.useFakeTimers();
 

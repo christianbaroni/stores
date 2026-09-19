@@ -1,31 +1,31 @@
-import { Prettify } from '../../types/objects';
 import { time } from '../../utils/time';
 import { QueryStoreDefaults, getOptions } from '../config';
 
-type RequiredDefaults = Prettify<Required<QueryStoreDefaults>>;
+type OptionalDefaults = 'onError' | 'retryDelay';
+type ResolvedDefaults = Required<Omit<QueryStoreDefaults, OptionalDefaults>> & Pick<QueryStoreDefaults, OptionalDefaults>;
 
-let resolvedDefaults: RequiredDefaults | undefined;
+let resolvedDefaults: ResolvedDefaults | undefined;
 
-export function getQueryStoreDefaults(): Prettify<Required<QueryStoreDefaults>> {
+export function getQueryStoreDefaults(): ResolvedDefaults {
   return (resolvedDefaults ??= buildQueryDefaults());
 }
 
-function buildQueryDefaults(): RequiredDefaults {
-  const systemDefaults: Required<QueryStoreDefaults> = {
-    abortInterruptedFetches: true,
-    cacheTime: time.days(7),
-    debugMode: false,
-    disableAutoRefetching: false,
-    keepPreviousData: false,
-    maxRetries: 5,
-    minStaleTime: false,
-    paramChangeThrottle: false,
-    retryDelay: defaultRetryDelay,
-    staleTime: time.minutes(2),
-    suppressStaleTimeWarning: false,
-  };
+function buildQueryDefaults(): ResolvedDefaults {
   const userDefaults = getOptions()?.queryStoreDefaults;
-  return userDefaults ? { ...systemDefaults, ...userDefaults } : systemDefaults;
+  return {
+    abortInterruptedFetches: userDefaults?.abortInterruptedFetches ?? true,
+    cacheTime: userDefaults?.cacheTime ?? time.days(7),
+    debugMode: userDefaults?.debugMode ?? false,
+    disableAutoRefetching: userDefaults?.disableAutoRefetching ?? false,
+    keepPreviousData: userDefaults?.keepPreviousData ?? false,
+    minStaleTime: userDefaults?.minStaleTime ?? false,
+    onError: userDefaults?.onError,
+    paramChangeThrottle: userDefaults?.paramChangeThrottle ?? false,
+    retry: userDefaults?.retry ?? 5,
+    retryDelay: userDefaults?.retryDelay,
+    staleTime: userDefaults?.staleTime ?? time.minutes(2),
+    suppressStaleTimeWarning: userDefaults?.suppressStaleTimeWarning ?? false,
+  };
 }
 
 /**

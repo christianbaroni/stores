@@ -46,7 +46,11 @@ export type StoresConfig = {
 };
 
 export type QueryStoreDefaults = Prettify<
-  ConfigDefaults<QueryStoreConfig<unknown, Record<string, unknown>>, 'disableCache' | 'enabled' | 'params', 'retryDelay'>
+  ConfigDefaults<
+    QueryStoreConfig<unknown, Record<string, unknown>>,
+    'disableCache' | 'enabled' | 'params',
+    'onError' | 'retry' | 'retryDelay'
+  >
 > & {
   /**
    * Minimum stale time for auto-refetching query stores under which to log warnings in development.

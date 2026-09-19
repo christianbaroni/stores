@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { flushMicrotasks } from './async.testUtils';
 import { createQueryStore, getQueryKey } from './createQueryStore';
 import { StoresError } from './internal/errors';
 import { logger } from './internal/logger';
@@ -12,6 +13,7 @@ const TEST_STORE_IDENTIFIER = getQueryKey(TEST_PARAMS);
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 function buildMessage(stage: string): string {
@@ -40,7 +42,7 @@ describe('createQueryStore error reporting', () => {
       fetcher: async () => {
         throw fetchError;
       },
-      maxRetries: 0,
+      retry: 0,
       params: TEST_PARAMS,
     });
 
@@ -57,7 +59,7 @@ describe('createQueryStore error reporting', () => {
 
     const store = createQueryStore<TestData, TestParams>({
       fetcher: async params => `data-${params.id}`,
-      maxRetries: 0,
+      retry: 0,
       params: TEST_PARAMS,
       transform: () => {
         throw transformError;
@@ -81,7 +83,7 @@ describe('createQueryStore error reporting', () => {
     const store = createQueryStore<TestData, TestParams, CustomState>(
       {
         fetcher: async params => `data-${params.id}`,
-        maxRetries: 0,
+        retry: 0,
         params: TEST_PARAMS,
         setData: () => {
           throw setDataError;
@@ -98,6 +100,68 @@ describe('createQueryStore error reporting', () => {
     expect(store.getState().status).toBe(QueryStatuses.Error);
   });
 
+  it('reports retry policy failures and ends the retry sequence', async () => {
+    const fetchError = new Error('Fetch failed');
+    const retryError = new Error('Bad retry policy');
+    const loggerError = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+    const onError = vi.fn();
+
+    const store = createQueryStore<TestData, TestParams>({
+      fetcher: async () => {
+        throw fetchError;
+      },
+      onError,
+      params: TEST_PARAMS,
+      retry: () => {
+        throw retryError;
+      },
+    });
+
+    await expect(store.getState().fetch()).resolves.toBeNull();
+
+    expect(loggerError).toHaveBeenCalledTimes(1);
+    expectStoreError(loggerError.mock.calls[0]?.[0], 'retry callback', retryError);
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError.mock.calls[0]?.[0]).toMatchObject({ error: fetchError, willRetry: false });
+    expect(store.getState().error).toBe(fetchError);
+    expect(store.getState().status).toBe(QueryStatuses.Error);
+  });
+
+  it('reports retry delay failures and ends the retry sequence', async () => {
+    vi.useFakeTimers();
+
+    const fetchError = new Error('Fetch failed');
+    const retryDelayError = new Error('Bad retry delay');
+    const loggerError = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+    const onError = vi.fn();
+    const store = createQueryStore<TestData, TestParams>({
+      fetcher: async () => {
+        throw fetchError;
+      },
+      onError,
+      params: TEST_PARAMS,
+      retry: 1,
+      retryDelay: () => {
+        throw retryDelayError;
+      },
+    });
+    const unsubscribe = store.subscribe(() => undefined);
+
+    try {
+      await flushMicrotasks(3);
+
+      expect(loggerError).toHaveBeenCalledTimes(1);
+      expectStoreError(loggerError.mock.calls[0]?.[0], 'retryDelay callback', retryDelayError);
+      expect(onError).toHaveBeenCalledTimes(1);
+      expect(onError.mock.calls[0]?.[0]).toMatchObject({ error: fetchError, willRetry: false });
+      expect(store.getState().error).toBe(fetchError);
+      expect(store.getState().status).toBe(QueryStatuses.Error);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      unsubscribe();
+    }
+  });
+
   it('reports onError failures without replacing the query error', async () => {
     const fetchError = new Error('Fetch failed');
     const onErrorError = new Error('Bad onError');
@@ -107,7 +171,7 @@ describe('createQueryStore error reporting', () => {
       fetcher: async () => {
         throw fetchError;
       },
-      maxRetries: 0,
+      retry: 0,
       onError: () => {
         throw onErrorError;
       },

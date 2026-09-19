@@ -51,10 +51,10 @@ export type QueryStoreConfig<
   fetcher: (params: TParams, abortController: AbortController | null) => TQueryFnData | Promise<TQueryFnData>;
 
   /**
-   * **A callback invoked whenever a fetch operation fails.**
-   * Receives the error and the current retry count.
+   * Called after each failure handled by the query store.
+   * `willRetry` indicates whether another attempt was scheduled.
    */
-  onError?: (error: Error, retryCount: number) => void;
+  onError?: (failure: OnErrorParams<TParams>) => void;
 
   /**
    * **A callback invoked whenever fresh data is successfully fetched.**
@@ -131,12 +131,6 @@ export type QueryStoreConfig<
   keepPreviousData?: boolean;
 
   /**
-   * The maximum number of times to retry a failed fetch operation.
-   * @default 5
-   */
-  maxRetries?: number;
-
-  /**
    * Delay before triggering a fetch when parameters change.
    * Accepts a number (ms), false (no throttling), or debounce options:
    *
@@ -151,15 +145,19 @@ export type QueryStoreConfig<
   params?: QueryStoreParams<TParams, TData, S, CustomState>;
 
   /**
-   * The delay between retries after a fetch error occurs, in milliseconds, defined as a number or a function that
-   * receives the error and current retry count and returns a number.
-   *
-   * @default Exponential backoff starting at 5s, doubling each retry, capped at 5m:
-   * ```ts
-   * retryCount => Math.min(time.seconds(5) * Math.pow(2, retryCount), time.minutes(5))
-   * ```
+   * Whether failed queries should be retried.
+   * `false` or `0` disables retries, a number limits retries, and a function decides each failure.
+   * Numeric limits must be non-negative integers.
+   * Function policies have no implicit retry limit.
+   * @default 5
    */
-  retryDelay?: number | ((retryCount: number, error: Error) => number);
+  retry?: RetryPolicy<TParams>;
+
+  /**
+   * Finite, non-negative delay before each retry, in milliseconds.
+   * @default Exponential backoff from 5 seconds, doubling after each failure and capped at 5 minutes
+   */
+  retryDelay?: RetryDelay<TParams>;
 
   /**
    * The duration, in milliseconds, that data is considered fresh after fetching.
@@ -377,6 +375,15 @@ export type QueryStatusInfo = {
 
 // ============ Cache Types ==================================================== //
 
+/** Error metadata for a query key's latest failed fetch. */
+export type QueryErrorInfo = {
+  error: Error;
+  lastFailedAt: number;
+  retryCount: number;
+  /** Whether the retry policy allows another attempt after this failure. */
+  retryAllowed: boolean;
+};
+
 /**
  * Represents an entry in the query cache, which stores fetched data along with metadata,
  * and error information in the event the most recent fetch failed.
@@ -386,19 +393,11 @@ export type CacheEntry<T> = {
   data: T | null;
 } & (
   | {
-      errorInfo: {
-        error: Error;
-        lastFailedAt: number;
-        retryCount: number;
-      };
+      errorInfo: QueryErrorInfo;
       lastFetchedAt: null;
     }
   | {
-      errorInfo: {
-        error: Error;
-        lastFailedAt: number;
-        retryCount: number;
-      } | null;
+      errorInfo: QueryErrorInfo | null;
       lastFetchedAt: number;
     }
 );
@@ -421,6 +420,43 @@ export type QueryStoreParams<
  * The keys that make up the internal state of the store.
  */
 export type InternalStateKeys = keyof QueryStoreInternalState<unknown, Record<string, unknown>>;
+
+// ============ Retry and Error Types ========================================== //
+
+/**
+ * Params available to retry policy and delay callbacks.
+ */
+export type RetryFailureParams<TParams extends Record<string, unknown>> = {
+  readonly error: Error;
+  readonly params: TParams;
+  readonly queryKey: string;
+  /**
+   * Retry attempts already performed in the current sequence.
+   * `0` after the originating request fails, `1` after the first retry fails, and so on.
+   */
+  readonly retryCount: number;
+};
+
+/**
+ * A handled query failure and whether another attempt was scheduled.
+ */
+export type OnErrorParams<TParams extends Record<string, unknown>> = RetryFailureParams<TParams> & {
+  readonly willRetry: boolean;
+};
+
+/**
+ * Whether failed queries should be retried.
+ *
+ * `false` or `0` disables retries, a number limits retries, and a function decides each failure.
+ *
+ * Numeric limits must be non-negative integers. Function policies have no implicit retry limit.
+ */
+export type RetryPolicy<TParams extends Record<string, unknown>> = false | number | ((failure: RetryFailureParams<TParams>) => boolean);
+
+/**
+ * The finite, non-negative delay before each retry, in milliseconds.
+ */
+export type RetryDelay<TParams extends Record<string, unknown>> = number | ((failure: RetryFailureParams<TParams>) => number);
 
 // ============ Query Config Helpers =========================================== //
 
