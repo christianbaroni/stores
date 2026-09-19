@@ -32,7 +32,6 @@ function bundleConfig(): UserConfig {
             ...(buildInternalRuntime ? { 'internal/runtime': 'src/internal/runtime.ts' } : undefined),
           },
     deps: { neverBundle: ['react', 'react-native', 'react-native-mmkv'] },
-    env: { NODE_ENV: isProduction ? 'production' : 'development' },
     fixedExtension: false,
     format: ['esm', 'cjs'],
     logLevel: 'silent',
