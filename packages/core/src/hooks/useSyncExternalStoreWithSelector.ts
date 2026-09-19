@@ -22,8 +22,6 @@ type SelectionCell<State, Value> = {
   getSelectedSnapshot: () => Value;
   getServerStoreSnapshot?: () => State;
   getStoreSnapshot: () => State;
-  latestSnapshot: State | Empty;
-  latestSource: SubscribeOverloads<State> | Empty;
   selector: Selector<State, Value>;
   selectedSource: SubscribeOverloads<State>;
   selectedSubscribe: (onStoreChange: () => void) => UnsubscribeFn;
@@ -112,8 +110,6 @@ function createSelectionCell<State, Value>(
     getSelectedSnapshot: () => readSelectedSnapshot(cell),
     getServerStoreSnapshot,
     getStoreSnapshot,
-    latestSnapshot: EMPTY,
-    latestSource: EMPTY,
     selector,
     selectedSource: source,
     selectedSubscribe: () => noop,
@@ -137,8 +133,6 @@ function updateSelectionCell<State, Value>(
   selector: Selector<State, Value>,
   equalityFn: EqualityFn<Value>
 ): void {
-  if (cell.source !== source || cell.getStoreSnapshot !== getStoreSnapshot) cell.latestSnapshot = EMPTY;
-
   cell.source = source;
   cell.getStoreSnapshot = getStoreSnapshot;
   cell.getServerStoreSnapshot = getServerStoreSnapshot;
@@ -159,9 +153,6 @@ function createSelectionSubscribe<State, Value>(
     commitSelection(cell);
 
     return source(snapshot => {
-      cell.latestSnapshot = snapshot;
-      cell.latestSource = source;
-
       const previousValue = cell.committedValue;
       if (previousValue === EMPTY || cell.committedSource !== source) {
         onStoreChange();
@@ -206,7 +197,7 @@ function createSelectionSubscribe<State, Value>(
 }
 
 function readSelectedSnapshot<State, Value>(cell: SelectionCell<State, Value>): Value {
-  const snapshot = readStoreSnapshot(cell);
+  const snapshot = cell.getStoreSnapshot();
   return selectSnapshot(cell, snapshot);
 }
 
@@ -244,15 +235,6 @@ function selectSnapshot<State, Value>(cell: SelectionCell<State, Value>, snapsho
   }
 
   return rememberSelection(cell, snapshot, nextValue);
-}
-
-function readStoreSnapshot<State, Value>(cell: SelectionCell<State, Value>): State {
-  if (cell.latestSource === cell.source && cell.latestSnapshot !== EMPTY) return cell.latestSnapshot;
-
-  const snapshot = cell.getStoreSnapshot();
-  cell.latestSnapshot = snapshot;
-  cell.latestSource = cell.source;
-  return snapshot;
 }
 
 function rememberSelection<State, Value>(cell: SelectionCell<State, Value>, snapshot: State, value: Value): Value {

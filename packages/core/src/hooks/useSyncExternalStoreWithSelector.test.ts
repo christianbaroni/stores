@@ -2,7 +2,7 @@
  * @vitest-environment happy-dom
  */
 
-import { act, createElement, memo } from 'react';
+import { act, createElement, memo, useLayoutEffect } from 'react';
 import type { ReactElement } from 'react';
 import { hydrateRoot } from 'react-dom/client';
 import type { Root } from 'react-dom/client';
@@ -73,6 +73,36 @@ describe('useSyncExternalStoreWithSelector', () => {
     }
   });
 
+  it('recovers an update between the first render and subscription without another notification', () => {
+    type State = { count: number };
+
+    const store = createExternalStore<State>({ count: 0 });
+    const selectCount = vi.fn((state: State) => state.count);
+
+    function View(): ReactElement {
+      const count = useSyncExternalStoreWithSelector(store.subscribe, store.getSnapshot, store.getServerSnapshot, selectCount);
+
+      useLayoutEffect(() => {
+        expect(store.listenerCount()).toBe(0);
+        store.publish({ count: 1 });
+      }, []);
+
+      return createElement('span', null, count);
+    }
+
+    const root = createMountedRoot();
+
+    try {
+      root.render(createElement(View));
+
+      expect(root.container.textContent).toBe('1');
+      expect(store.metrics.notifications).toBe(0);
+      expect(selectCount).toHaveBeenCalledTimes(2);
+    } finally {
+      root.unmount();
+    }
+  });
+
   it('preserves selected identity across inline selector churn when equality says the value is unchanged', () => {
     type State = { items: readonly string[] };
 
@@ -108,6 +138,33 @@ describe('useSyncExternalStoreWithSelector', () => {
       expect(appSelections).toHaveLength(2);
       expect(listSelections).toHaveLength(1);
       expect(appSelections[1]).toBe(appSelections[0]);
+    } finally {
+      root.unmount();
+    }
+  });
+
+  it('reads the current snapshot during a parent render before a deferred notification', () => {
+    type State = { count: number };
+
+    const store = createExternalStore<State>({ count: 0 });
+    const selectCount = vi.fn((state: State) => state.count);
+
+    function View({ version: _version }: { version: number }): ReactElement {
+      const count = useSyncExternalStoreWithSelector(store.subscribe, store.getSnapshot, store.getServerSnapshot, selectCount);
+      return createElement('span', null, count);
+    }
+
+    const root = createMountedRoot();
+
+    try {
+      root.render(createElement(View, { version: 0 }));
+      store.replace({ count: 1 });
+      root.render(createElement(View, { version: 1 }));
+
+      expect(root.container.textContent).toBe('1');
+      expect(store.metrics.notifications).toBe(0);
+      expect(store.metrics.subscribes).toBe(1);
+      expect(selectCount).toHaveBeenCalledTimes(2);
     } finally {
       root.unmount();
     }
@@ -251,7 +308,7 @@ describe('useSyncExternalStoreWithSelector', () => {
     expect(secondStore.metrics.unsubscribes).toBe(1);
   });
 
-  it('invalidates the cached source snapshot when the getSnapshot identity changes', () => {
+  it('reads the current snapshot when the getSnapshot identity changes', () => {
     type State = { value: number };
 
     const store = createExternalStore<State>({ value: 0 });
