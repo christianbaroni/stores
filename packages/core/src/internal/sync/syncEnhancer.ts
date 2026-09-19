@@ -87,15 +87,12 @@ export function createSyncedStateCreator<T extends Record<string, unknown>>(
       }
     }
 
-    function queueOrPublish(update: PendingUpdate<T>): void {
+    function queueOrPublish(keys: SyncStateKey<T>[], values: SyncValues<T>, timestamp: number, replace = false): void {
       const sessionId = resolvedEngine.sessionId;
-      for (const key of update.keys) lastWrites.set(key, [update.timestamp, sessionId]);
+      for (const key of keys) lastWrites.set(key, [timestamp, sessionId]);
 
-      if (!handle || !isHydrated) {
-        pendingUpdates.push(update);
-        return;
-      }
-      handle.publish?.({ replace: update.replace, sessionId, timestamp: update.timestamp, values: update.values });
+      if (!handle || !isHydrated) pendingUpdates.push({ keys, replace, timestamp, values });
+      else handle.publish?.({ replace, sessionId, timestamp, values });
     }
 
     function flushPendingUpdates(): void {
@@ -103,9 +100,7 @@ export function createSyncedStateCreator<T extends Record<string, unknown>>(
 
       for (const pending of pendingUpdates) {
         const sessionId = resolvedEngine.sessionId;
-        for (const key of pending.keys) {
-          lastWrites.set(key, [pending.timestamp, sessionId]);
-        }
+        for (const key of pending.keys) lastWrites.set(key, [pending.timestamp, sessionId]);
         setPersistMetadata(pending.timestamp, pending.keys);
         handle.publish?.({ replace: pending.replace, sessionId, timestamp: pending.timestamp, values: pending.values });
       }
@@ -116,33 +111,31 @@ export function createSyncedStateCreator<T extends Record<string, unknown>>(
       if (isApplyingRemote || !syncKeySet) return replace ? set(update, replace) : set(update);
 
       const timestamp = generateTimestamp();
-      let publishKeys: SyncStateKey<T>[] = [];
-      let publishValues: SyncValues<T> = nullObject();
+      let publishKeys: SyncStateKey<T>[] | undefined;
+      let publishValues: SyncValues<T> | undefined;
 
       const maybePromise: void | Promise<void> = replace ? set(wrappedUpdate, true) : set(wrappedUpdate);
-      if (!publishKeys.length) return maybePromise;
+      if (!publishKeys || !publishValues) return maybePromise;
 
       function wrappedUpdate(state: T): T {
         const newState = applyStateUpdate(state, update, replace);
 
         for (const key of syncKeys) {
           if (!Object.is(newState[key], state[key])) {
-            publishKeys.push(key);
-            publishValues[key] = newState[key];
+            (publishKeys ??= []).push(key);
+            (publishValues ??= nullObject<SyncValues<T>>())[key] = newState[key];
           }
         }
 
-        if (publishKeys.length) setPersistMetadata(timestamp, publishKeys);
+        if (publishKeys) setPersistMetadata(timestamp, publishKeys);
         return newState;
       }
 
-      function publish(): void {
-        queueOrPublish({ keys: publishKeys, replace: replace ?? false, values: publishValues, timestamp });
+      if (isPromiseLike(maybePromise)) {
+        return maybePromise.finally(queueOrPublish.bind(undefined, publishKeys, publishValues, timestamp, replace));
       }
 
-      if (isPromiseLike(maybePromise)) return maybePromise.finally(publish);
-
-      publish();
+      queueOrPublish(publishKeys, publishValues, timestamp, replace);
       return maybePromise;
     }
 
