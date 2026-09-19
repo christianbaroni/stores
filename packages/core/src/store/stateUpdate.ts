@@ -1,4 +1,4 @@
-import type { SetStateArgs, SetStateOverloads } from '../types';
+import type { SetPartial, SetStateArgs, SetStateOverloads } from '../types';
 import { isRecordLike } from '../types/utils';
 
 /**
@@ -15,13 +15,14 @@ export function applySetState<S, SetReturn extends Promise<void> | void>(
 /**
  * Applies a `setState` payload to the current state.
  */
-export function applyStateUpdate<S>(state: S, ...setArgs: SetStateArgs<S>): S;
+export function applyStateUpdate<S>(state: S, update: SetPartial<S>, replace?: boolean): S;
 export function applyStateUpdate(state: unknown, update: unknown, replace?: boolean): unknown {
   if (replace === true) return isFunctionSetter(update) ? update(state) : update;
 
   const partial = isFunctionSetter(update) ? update(state) : update;
   if (Object.is(partial, state)) return state;
   if (!isRecordLike(state) || !isRecordLike(partial)) return partial;
+
   return { ...state, ...partial };
 }
 

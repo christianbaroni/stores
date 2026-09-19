@@ -1,6 +1,6 @@
 import { flushMicrotasks } from '../../async.testUtils';
 import { SUBSCRIBE_CASCADE_STATE, type CascadeStateSubscribable } from '../../store/internalSubscriptions';
-import { applyStateUpdate } from '../../store/stateUpdate';
+import { applySetState, applyStateUpdate } from '../../store/stateUpdate';
 import { StoreApi } from '../../store/types';
 import { NormalizedSyncConfig, SyncEngine, SyncHandle, SyncRegistration, SyncUpdate } from '../../sync/types';
 import { SetStateArgs, StateCreator } from '../../types';
@@ -61,7 +61,7 @@ function createStoreApiHarness<S>(initialState: S): StoreApiHarness<S> {
   }
 
   function set(...args: SetStateArgs<S>): void {
-    state.current = applyStateUpdate(state.current, ...args);
+    state.current = applyStateUpdate<S>(state.current, args[0], args[1]);
   }
 
   function subscribeCascadeState(): (skipAbortFetch?: boolean) => void {
@@ -265,7 +265,7 @@ describe('createSyncedStateCreator', () => {
       const appliedCounts: number[] = [];
       const originalSetState = store.api.setState;
       store.api.setState = (...args: SetStateArgs<CounterState>) => {
-        const result = args[1] ? originalSetState(args[0], args[1]) : originalSetState(args[0]);
+        const result = applySetState(originalSetState, args);
         appliedCounts.push(store.state.current.count);
         return result;
       };

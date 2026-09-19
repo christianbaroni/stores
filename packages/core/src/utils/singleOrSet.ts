@@ -19,7 +19,7 @@ export type SingleOrSet<T extends object> = T | Set<T> | undefined;
  * Adds value and returns the canonical next representation.
  * Returns null when value was already present.
  */
-export function addToSingleOrSet<T extends object>(values: SingleOrSet<T>, count: number, value: T): SingleOrSet<T> | null {
+export function addToSingleOrSet<T extends object>(values: SingleOrSet<T>, count: number, value: T): NonNullable<SingleOrSet<T>> | null {
   if (count === 0) return value;
 
   if (count === 1) {

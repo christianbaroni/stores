@@ -6,6 +6,13 @@ import type { StoreApi } from './types';
 describe('createStore', () => {
   type CounterState = { count: number; increment: () => void; reset: () => void };
 
+  it('preserves undefined as an initial value', () => {
+    const store = createStore(undefined);
+
+    expect(store.getInitialState()).toBeUndefined();
+    expect(store.getState()).toBeUndefined();
+  });
+
   it('passes the store api into the creator and keeps initial state stable', () => {
     let creatorApi: StoreApi<CounterState> | undefined;
 

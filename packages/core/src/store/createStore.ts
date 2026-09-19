@@ -1,5 +1,7 @@
-import type { InternalSubscribeArgs, InternalSubscribeOptions } from '../internal/types/internalSubscribeTypes';
-import type { Listener, Selector, SetStateArgs, UnsubscribeFn } from '../types';
+import type { InternalSubscribeOptions } from '../internal/types/internalSubscribeTypes';
+import type { Listener, Selector, SetPartial, UnsubscribeFn } from '../types';
+import type { BivariantMethod } from '../types/functions';
+import { Primitive, Widen } from '../types/primitives';
 import { notifyListener } from '../utils/core';
 import { addToSingleOrSet, deleteFromSingleOrSet, forEachSingleOrSet, type SingleOrSet } from '../utils/singleOrSet';
 import { activateCascade, flushCascade } from './cascadeScheduler';
@@ -8,21 +10,28 @@ import { applyStateUpdate } from './stateUpdate';
 import type { Mutate, StateCreator, StoreApi, StoreMutators } from './types';
 
 /**
- * Creates the internal core store API.
+ * Creates a store from its initial state.
+ */
+export function createStore<State extends Primitive | unknown[] | Record<string, unknown> | undefined>(
+  initial: State
+): StoreApi<Widen<State>>;
+
+/**
+ * Creates a store from a state creator that receives `(set, get, api)`.
  */
 export function createStore<State, Mutators extends StoreMutators = []>(
   createState: StateCreator<State, [], Mutators>
 ): Mutate<StoreApi<State>, Mutators>;
 
-export function createStore<State>(createState: StateCreator<State>): StoreApi<State> {
+export function createStore<State>(stateOrCreator: State | StateCreator<State>): StoreApi<State> {
   let state: State;
 
   let listeners: Set<Listener<State>> | undefined;
   let cascadeListeners: SingleOrSet<Listener<State>>;
   let cascadeListenerCount = 0;
 
-  function setState(...args: SetStateArgs<State>): void {
-    const nextState = applyStateUpdate(state, ...args);
+  function setState(update: SetPartial<State>, replace?: boolean): void {
+    const nextState = applyStateUpdate(state, update, replace);
     if (Object.is(nextState, state)) return;
 
     const previousState = state;
@@ -44,9 +53,19 @@ export function createStore<State>(createState: StateCreator<State>): StoreApi<S
     return initialState;
   }
 
-  function subscribe<Selected>(...args: InternalSubscribeArgs<State, Selected>): UnsubscribeFn {
-    if (args.length === 1) return createSubscription(args[0]);
-    return createSelectorSubscription(args[0], args[1], args[2]);
+  function subscribe(listener: Listener<State>): UnsubscribeFn;
+  function subscribe<Selected>(
+    selector: Selector<State, Selected>,
+    listener: Listener<Selected>,
+    options?: InternalSubscribeOptions<Selected>
+  ): UnsubscribeFn;
+  function subscribe<Selected>(
+    selectorOrListener: BivariantMethod<{ callback(state: State, previousState: State): Selected }>,
+    listener?: Listener<Selected>,
+    options?: InternalSubscribeOptions<Selected>
+  ): UnsubscribeFn {
+    if (!listener) return createSubscription(selectorOrListener);
+    return createSelectorSubscription(selectorOrListener, listener, options);
   }
 
   const api: StoreApi<State> & CascadeStateSubscribable<State> = {
@@ -57,7 +76,8 @@ export function createStore<State>(createState: StateCreator<State>): StoreApi<S
     subscribe,
   };
 
-  const initialState = (state = createState(setState, getState, api));
+  const initialState = (state = isStateCreator(stateOrCreator) ? stateOrCreator(setState, getState, api) : stateOrCreator);
+
   return api;
 
   function createSubscription(listener: Listener<State>): UnsubscribeFn {
@@ -96,7 +116,7 @@ export function createStore<State>(createState: StateCreator<State>): StoreApi<S
   }
 
   function createSelectorSubscription<Selected>(
-    selector: Selector<State, Selected>,
+    selector: BivariantMethod<{ selector(state: State, previousState?: State): Selected }>,
     listener: Listener<Selected>,
     options: InternalSubscribeOptions<Selected> | undefined
   ): UnsubscribeFn {
@@ -119,4 +139,8 @@ export function createStore<State>(createState: StateCreator<State>): StoreApi<S
 
     return isCascadeParticipant ? createCascadeSubscription(selectedListener) : createSubscription(selectedListener);
   }
+}
+
+function isStateCreator<S>(initial: S | StateCreator<S>): initial is StateCreator<S> {
+  return typeof initial === 'function';
 }
