@@ -66,9 +66,11 @@ export type UseListenOptions<Selected> = {
   fireImmediately?: boolean;
 };
 
+type Reaction<S, Selected> = (current: Selected, previous: Selected, get: () => S, unsubscribe: () => void) => void;
+
 type ListenerRef<S, Selected> = {
   selector: Selector<S, Selected>;
-  react: (current: Selected, previous: Selected, unsubscribe: () => void) => void;
+  react: Reaction<S, Selected>;
   options: UseListenOptions<Selected>;
 } & ListenHandle;
 
@@ -100,7 +102,7 @@ const DEFAULT_OPTIONS = Object.freeze({
  * ---
  * @param store - Store to listen to. Should be a stable reference.
  * @param selector - Selects the slice of the store state to listen to.
- * @param react - Triggered when the selected slice changes. Receives `(current, previous, unsubscribe)`.
+ * @param react - Triggered when the selected slice changes. Receives `(current, previous, get, unsubscribe)`.
  * @param optionsOrEqualityFn - Optional `equalityFn`, `fireImmediately` settings, forwarded to `store.subscribe`.
  *
  * ---
@@ -108,8 +110,8 @@ const DEFAULT_OPTIONS = Object.freeze({
  * ```ts
  * useListen(
  *   useCandlestickStore,
- *   state => state.getData(),
- *   (candles, previous, unsubscribe) => {
+ *   s => s.getData(),
+ *   (candles, previous, get, unsubscribe) => {
  *     if (candles?.unsupported) return unsubscribe();
  *     updateTokenPrice(token, getPriceUpdate(candles, previous));
  *     runOnUI(() => chartManager.value?.setCandles(candles))();
@@ -120,15 +122,13 @@ const DEFAULT_OPTIONS = Object.freeze({
 export function useListen<Store extends BaseStore<S>, Selected, S = InferStoreState<Store>>(
   store: Store,
   selector: Selector<S, Selected>,
-  react: (current: Selected, previous: Selected, unsubscribe: () => void) => void,
+  react: Reaction<S, Selected>,
   optionsOrEqualityFn: UseListenOptions<Selected> | UseListenOptions<Selected>['equalityFn'] = DEFAULT_OPTIONS
 ): RefObject<Readonly<ListenHandle>> {
   const listenerRef = useRef<ListenerRef<S, Selected>>(() => createListenerRef(selector, react, optionsOrEqualityFn));
   const enabled = getEnabledOption(optionsOrEqualityFn);
 
-  listenerRef.current.react = react;
-  listenerRef.current.selector = selector;
-  setOptions(listenerRef, optionsOrEqualityFn);
+  setListenerRef(listenerRef, selector, react, optionsOrEqualityFn);
 
   useLayoutEffect(() => {
     if (!enabled) return;
@@ -161,13 +161,12 @@ function attachListener<Store extends BaseStore<S>, Selected, S>(
   }
 
   listenerRef.current.isActive = true;
-  listenerRef.current.resubscribe = (options: ResubscribeOptions = DEFAULT_RESUBSCRIBE_OPTIONS) =>
-    attachListener(store, listenerRef, options);
+  listenerRef.current.resubscribe = (options = DEFAULT_RESUBSCRIBE_OPTIONS) => attachListener(store, listenerRef, options);
 
   const unsubscribe = store.subscribe(
-    state => listenerRef.current.selector(state),
-    (curr, prev) =>
-      listenerRef.current.react(curr, prev, () => {
+    s => listenerRef.current.selector(s),
+    (current, previous) =>
+      listenerRef.current.react(current, previous, store.getState, () => {
         unsubscribe();
         listenerRef.current.isActive = false;
       }),
@@ -193,7 +192,7 @@ function detachListener<S, Selected>(listenerRef: RefObject<ListenerRef<S, Selec
 
 function createListenerRef<S, Selected>(
   selector: Selector<S, Selected>,
-  react: (current: Selected, previous: Selected, unsubscribe: () => void) => void,
+  react: Reaction<S, Selected>,
   optionsOrEqualityFn: UseListenOptions<Selected> | UseListenOptions<Selected>['equalityFn']
 ): ListenerRef<S, Selected> {
   return {
@@ -220,10 +219,15 @@ function getEnabledOption<Selected>(optionsOrEqualityFn: UseListenOptions<Select
   return optionsOrEqualityFn?.enabled ?? DEFAULT_OPTIONS.enabled;
 }
 
-function setOptions<S, Selected>(
+function setListenerRef<S, Selected>(
   listenerRef: RefObject<ListenerRef<S, Selected>>,
+  selector: Selector<S, Selected>,
+  react: ListenerRef<S, Selected>['react'],
   optionsOrEqualityFn: UseListenOptions<Selected> | UseListenOptions<Selected>['equalityFn']
 ): void {
+  listenerRef.current.selector = selector;
+  listenerRef.current.react = react;
+
   if (typeof optionsOrEqualityFn === 'function') listenerRef.current.options.equalityFn = optionsOrEqualityFn;
   else if (optionsOrEqualityFn) listenerRef.current.options = optionsOrEqualityFn ?? DEFAULT_OPTIONS;
 }
