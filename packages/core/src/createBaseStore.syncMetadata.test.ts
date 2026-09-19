@@ -1,6 +1,7 @@
 import type { Mock } from 'vitest';
 import { flushMicrotasks } from './async.testUtils';
 import { createBaseStore } from './createBaseStore';
+import { createQueryStore } from './createQueryStore';
 import { createAsyncStorageMock, createSyncStorageMock } from './internal/storage/storageMocks.testUtils';
 import * as syncEnhancer from './internal/sync/syncEnhancer';
 import { StorageValue } from './storage/storageTypes';
@@ -71,7 +72,7 @@ describe('createBaseStore sync and persistence', () => {
     expect(createContext).toHaveBeenCalledWith(false);
   });
 
-  it('flushes local hydration updates before applying queued remote updates with async storage', async () => {
+  it.each([false, true])('publishes a queued update once after async hydration (replace: %s)', async replace => {
     const storage = createAsyncStorageMock();
     let resolveStorageRead: ((value: string) => void) | undefined;
     storage.get.mockReturnValueOnce(new Promise(resolve => (resolveStorageRead = resolve)));
@@ -83,7 +84,8 @@ describe('createBaseStore sync and persistence', () => {
     });
     const states: TestState[] = [];
     const unsubscribe = store.subscribe(state => states.push(state));
-    const localUpdate = store.setState(state => ({ a: state.a + 1 }));
+    const update = vi.fn((state: TestState) => ({ a: state.a + 1, b: state.b }));
+    const localUpdate = replace ? store.setState(update, true) : store.setState(update);
     const timestamp = Date.now() + 10_000;
     const apply = register.mock.calls[0][0].apply;
     apply({ replace: false, sessionId: 'remote', timestamp, values: { b: 6 } });
@@ -99,14 +101,17 @@ describe('createBaseStore sync and persistence', () => {
     await flushMicrotasks(5);
 
     expect(states).toEqual([{ a: 5, b: 5 }, { a: 6, b: 5 }, { a: 6, b: 6 }, { a: 8 }]);
-    expect(publish).toHaveBeenCalled();
-    for (const call of publish.mock.calls) expect(call[0].values).toEqual({ a: 6 });
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(publish).toHaveBeenCalledTimes(1);
+    expect(publish.mock.calls[0][0].values).toEqual({ a: 6 });
+    expect(publish.mock.calls[0][0].replace).toBe(replace);
     expect(storage.set).toHaveBeenCalledTimes(1);
     unsubscribe();
   });
 
   it('accumulates field timestamps across deferred hydration updates', async () => {
     const storageWrites: Array<{ key: string; value: string }> = [];
+    const { engine, publish } = createSyncEngine();
 
     const mockStorage: AsyncStorageInterface = {
       async: true,
@@ -123,7 +128,7 @@ describe('createBaseStore sync and persistence', () => {
     const store = createBaseStore<TestState, Partial<TestState>, Promise<void>>(() => ({ a: 0, b: 0 }), {
       storage: mockStorage,
       storageKey: 'test-sync-store',
-      sync: { injectStorageMetadata: true, key: 'test-sync-store' },
+      sync: { engine, injectStorageMetadata: true, key: 'test-sync-store' },
     });
 
     const hydrationComplete = new Promise<void>(resolve => {
@@ -150,8 +155,62 @@ describe('createBaseStore sync and persistence', () => {
         b: expect.any(Number),
       })
     );
+    expect(publish.mock.calls.map(call => call[0].values)).toEqual([{ a: 1 }, { b: 2 }]);
 
     store.persist?.clearStorage();
+  });
+
+  it('waits for async persistence before publishing an update after hydration', async () => {
+    const storage = createAsyncStorageMock();
+    const { engine, publish } = createSyncEngine();
+    const store = createBaseStore<TestState, Partial<TestState>, Promise<void>>(() => ({ a: 0, b: 0 }), {
+      storage,
+      storageKey: 'hydrated-update',
+      sync: { engine },
+    });
+    await store.persist.hydrationPromise();
+
+    let completeWrite: (() => void) | undefined;
+    storage.set.mockReturnValueOnce(new Promise(resolve => (completeWrite = resolve)));
+    const update = store.setState({ a: 1 });
+    await flushMicrotasks();
+    expect(store.getState()).toEqual({ a: 1, b: 0 });
+    expect(storage.set).toHaveBeenCalledTimes(1);
+    expect(publish).not.toHaveBeenCalled();
+
+    if (!completeWrite) throw new Error('Expected storage write to start.');
+    completeWrite();
+    await update;
+    await store.setState(state => state);
+
+    expect(storage.set).toHaveBeenCalledTimes(1);
+    expect(publish).toHaveBeenCalledTimes(1);
+    expect(publish.mock.calls[0][0].values).toEqual({ a: 1 });
+  });
+
+  it('fetches when an active query is enabled before async hydration completes', async () => {
+    const storage = createAsyncStorageMock();
+    let resolveStorageRead: ((value: undefined) => void) | undefined;
+    storage.get.mockReturnValueOnce(new Promise(resolve => (resolveStorageRead = resolve)));
+    const fetcher = vi.fn(async () => 42);
+    const { engine } = createSyncEngine();
+    const store = createQueryStore(
+      { enabled: false, fetcher, staleTime: Infinity },
+      { storage, storageKey: 'enabled-before-hydration', sync: { engine } }
+    );
+    const unsubscribe = store.subscribe(() => {});
+    const enabled = store.setState({ enabled: true });
+    expect(fetcher).not.toHaveBeenCalled();
+
+    if (!resolveStorageRead) throw new Error('Expected storage read to start.');
+    resolveStorageRead(undefined);
+    await enabled;
+    await flushMicrotasks(5);
+
+    expect(store.getState().enabled).toBe(true);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    unsubscribe();
+    store.getState().reset();
   });
 
   it('skips persistence and publication when a pre-hydration update preserves hydrated state', async () => {

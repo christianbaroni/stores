@@ -1,4 +1,5 @@
 import { flushMicrotasks } from '../../async.testUtils';
+import { createBaseStore } from '../../createBaseStore';
 import { SUBSCRIBE_CASCADE_STATE, type CascadeStateSubscribable } from '../cascadeSubscriptions';
 import { applySetState, applyStateUpdate } from '../../store/stateUpdate';
 import { StoreApi } from '../../store/types';
@@ -220,6 +221,32 @@ describe('createSyncedStateCreator', () => {
   });
 
   describe('subscription lifecycle', () => {
+    it('counts the first subscriber before the engine delivers initial state', async () => {
+      const onFirstSubscribe = vi.fn(() => {
+        register.mock.calls[0][0].apply({ replace: false, sessionId: 'remote', timestamp: 1, values: { count: 1 } });
+      });
+      const onLastUnsubscribe = vi.fn();
+      const register = vi.fn<SyncEngine['register']>(() => ({
+        destroy: () => {},
+        publish: () => {},
+        onFirstSubscribe,
+        onLastUnsubscribe,
+      }));
+      const engine: SyncEngine = { sessionId: 'local', register };
+      const store = createBaseStore(() => ({ count: 0 }), { sync: { key: 'initial-state', engine } });
+      let stopNested: (() => void) | undefined;
+      const stop = store.subscribe(() => {
+        stopNested = store.subscribe(() => {});
+      });
+
+      expect(store.getState().count).toBe(1);
+      expect(onFirstSubscribe).toHaveBeenCalledTimes(1);
+      stopNested?.();
+      stop();
+      await flushMicrotasks();
+      expect(onLastUnsubscribe).toHaveBeenCalledTimes(1);
+    });
+
     it('tracks internal full-state cascade subscriptions', async () => {
       const onFirstSubscribe = vi.fn();
       const onLastUnsubscribe = vi.fn();

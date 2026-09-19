@@ -120,6 +120,7 @@ export function createSyncedStateCreator<T extends Record<string, unknown>>(
       let publishValues: SyncValues<T> = nullObject();
 
       const maybePromise: void | Promise<void> = replace ? set(wrappedUpdate, true) : set(wrappedUpdate);
+      if (!publishKeys.length) return maybePromise;
 
       function wrappedUpdate(state: T): T {
         const newState = applyStateUpdate(state, update, replace);
@@ -136,7 +137,6 @@ export function createSyncedStateCreator<T extends Record<string, unknown>>(
       }
 
       function publish(): void {
-        if (!publishKeys.length) return;
         queueOrPublish({ keys: publishKeys, replace: replace ?? false, values: publishValues, timestamp });
       }
 
@@ -269,8 +269,7 @@ export function createSyncedStateCreator<T extends Record<string, unknown>>(
       const originalSubscribe: SubscribeOverloads<T> = api.subscribe;
 
       function trackSubscription(unsubscribe: InternalUnsubscribeFn): InternalUnsubscribeFn {
-        if (!subscriberCount) syncHandle.onFirstSubscribe?.();
-        subscriberCount += 1;
+        if (subscriberCount++ === 0) syncHandle.onFirstSubscribe?.();
 
         return skipAbortFetch => {
           unsubscribe(skipAbortFetch);
