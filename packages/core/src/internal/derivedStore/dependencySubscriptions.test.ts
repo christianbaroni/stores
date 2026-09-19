@@ -1,5 +1,5 @@
-import { createStore } from '../../store/createStore';
-import { hasCascadeStateSubscription, SUBSCRIBE_CASCADE_STATE } from '../../store/internalSubscriptions';
+import { createStore } from '../createStore';
+import { hasCascadeStateSubscription, SUBSCRIBE_CASCADE_STATE } from '../cascadeSubscriptions';
 import type { StoreApi } from '../../store/types';
 import { DependencySubscriptions } from './dependencySubscriptions';
 

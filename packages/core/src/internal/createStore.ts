@@ -1,13 +1,13 @@
-import type { InternalSubscribeOptions } from '../internal/types/internalSubscribeTypes';
+import type { InternalSubscribeOptions } from './types/internalSubscribeTypes';
 import type { Listener, Selector, SetPartial, UnsubscribeFn } from '../types';
 import type { BivariantMethod } from '../types/functions';
 import { Primitive, Widen } from '../types/primitives';
 import { notifyListener } from '../utils/core';
 import { addToSingleOrSet, deleteFromSingleOrSet, forEachSingleOrSet, type SingleOrSet } from '../utils/singleOrSet';
 import { activateCascade, flushCascade } from './cascadeScheduler';
-import { SUBSCRIBE_CASCADE_STATE, type CascadeStateSubscribable } from './internalSubscriptions';
-import { applyStateUpdate } from './stateUpdate';
-import type { Mutate, StateCreator, StoreApi, StoreMutators } from './types';
+import { SUBSCRIBE_CASCADE_STATE, type CascadeStateSubscribable } from './cascadeSubscriptions';
+import { applyStateUpdate } from '../store/stateUpdate';
+import type { Mutate, StateCreator, StoreApi, StoreMutators } from '../store/types';
 
 /**
  * Creates a store from its initial state.

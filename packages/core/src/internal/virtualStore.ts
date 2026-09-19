@@ -1,5 +1,5 @@
 import type { StoreApi, WithPersist } from '../store/types';
-import { hasCascadeStateSubscription, SUBSCRIBE_CASCADE_STATE } from '../store/internalSubscriptions';
+import { hasCascadeStateSubscription, SUBSCRIBE_CASCADE_STATE } from './cascadeSubscriptions';
 import type {
   BaseStore,
   DeriveGetter,
@@ -11,7 +11,7 @@ import type {
 } from '../types';
 import type { Listener } from '../types/subscribe';
 import { identity, noop } from '../utils/core';
-import { activateCascade, flushCascade } from '../store/cascadeScheduler';
+import { activateCascade, flushCascade } from './cascadeScheduler';
 import { derivedStore } from './derivedStore';
 import type { InternalSubscribeArgs, InternalUnsubscribeFn } from './types/internalSubscribeTypes';
 import { StoreTags, destroyStore } from './storeUtils';

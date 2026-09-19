@@ -1,5 +1,5 @@
 import { flushMicrotasks } from '../../async.testUtils';
-import { SUBSCRIBE_CASCADE_STATE, type CascadeStateSubscribable } from '../../store/internalSubscriptions';
+import { SUBSCRIBE_CASCADE_STATE, type CascadeStateSubscribable } from '../cascadeSubscriptions';
 import { applySetState, applyStateUpdate } from '../../store/stateUpdate';
 import { StoreApi } from '../../store/types';
 import { NormalizedSyncConfig, SyncEngine, SyncHandle, SyncRegistration, SyncUpdate } from '../../sync/types';

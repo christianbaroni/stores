@@ -1,6 +1,6 @@
 import { flushMicrotasks } from '../async.testUtils';
 import type { StorageValue } from '../storage/storageTypes';
-import { createStore } from './createStore';
+import { createStore } from '../internal/createStore';
 import { persist } from './persist';
 import type { AsyncPersistStorage, SyncPersistStorage } from './types';
 

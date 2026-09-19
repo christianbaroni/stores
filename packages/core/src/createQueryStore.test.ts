@@ -4,7 +4,7 @@ import { createDerivedStore } from './createDerivedStore';
 import { createQueryStore, getQueryKey, parseQueryKey, queryParam } from './createQueryStore';
 import { createAsyncStorageMock } from './internal/storage/storageMocks.testUtils';
 import { QueryStatuses } from './queryStore/types';
-import { hasCascadeStateSubscription, SUBSCRIBE_CASCADE_STATE } from './store/internalSubscriptions';
+import { hasCascadeStateSubscription, SUBSCRIBE_CASCADE_STATE } from './internal/cascadeSubscriptions';
 import { time } from './utils/time';
 
 type TestData = string;

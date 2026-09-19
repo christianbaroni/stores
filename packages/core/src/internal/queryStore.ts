@@ -13,7 +13,7 @@ import type {
 } from '../queryStore/types';
 import type { BaseStoreOptions, PersistConfig, SetStatePartialArgs, StateCreator, Timeout } from '../types';
 import type { InternalSubscribeArgs, InternalSubscribeOverloads, InternalUnsubscribeFn } from './types/internalSubscribeTypes';
-import { wrapCascadeStateSubscription } from '../store/internalSubscriptions';
+import { wrapCascadeStateSubscription } from './cascadeSubscriptions';
 import type { BivariantMethod } from '../types/functions';
 import { hasOwn } from '../types/utils';
 import { buildNullObject, nullObject } from '../utils/core';

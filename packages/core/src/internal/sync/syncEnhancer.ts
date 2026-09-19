@@ -1,5 +1,5 @@
 import { IS_DEV } from '#env';
-import { type InternalUnsubscribeFn, wrapCascadeStateSubscription } from '../../store/internalSubscriptions';
+import { type InternalUnsubscribeFn, wrapCascadeStateSubscription } from '../cascadeSubscriptions';
 import { applyStateUpdate } from '../../store/stateUpdate';
 import { FieldMetadata, NormalizedSyncConfig, SyncHandle, SyncStateKey, SyncUpdate, SyncValues } from '../../sync/types';
 import { StateCreator, SubscribeArgs, SubscribeOverloads } from '../../types';

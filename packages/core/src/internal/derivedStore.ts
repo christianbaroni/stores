@@ -21,8 +21,8 @@ import {
   isCascadeActive,
   joinCascade,
   settleCascadeDerivations,
-} from '../store/cascadeScheduler';
-import { SUBSCRIBE_CASCADE_STATE } from '../store/internalSubscriptions';
+} from './cascadeScheduler';
+import { SUBSCRIBE_CASCADE_STATE } from './cascadeSubscriptions';
 import { CASCADE_PARTICIPANT_SUBSCRIBE_OPTIONS, DependencySubscriptions } from './derivedStore/dependencySubscriptions';
 import { DerivedSubscribers, type DerivedWatcher } from './derivedStore/derivedSubscribers';
 import { getOrCreateProxy, stripProxies } from './derivedStore/deriveProxy';

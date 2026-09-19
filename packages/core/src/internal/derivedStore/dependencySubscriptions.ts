@@ -1,5 +1,5 @@
 import type { StoreApi } from '../../store/types';
-import { hasCascadeStateSubscription, SUBSCRIBE_CASCADE_STATE } from '../../store/internalSubscriptions';
+import { hasCascadeStateSubscription, SUBSCRIBE_CASCADE_STATE } from '../cascadeSubscriptions';
 import { identity } from '../../utils/core';
 import type { InternalUnsubscribeFn } from '../types/internalSubscribeTypes';
 

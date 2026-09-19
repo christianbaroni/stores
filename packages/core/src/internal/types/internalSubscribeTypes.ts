@@ -1,5 +1,5 @@
 import type { Listener, ListenerArgs, Selector, SubscribeOptions } from '../../types/subscribe';
-import type { InternalUnsubscribeFn } from '../../store/internalSubscriptions';
+import type { InternalUnsubscribeFn } from '../cascadeSubscriptions';
 
 export type InternalSubscribeOptions<Selected> = SubscribeOptions<Selected> & {
   isCascadeParticipant?: boolean;

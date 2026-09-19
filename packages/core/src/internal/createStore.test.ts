@@ -1,7 +1,7 @@
-import type { InternalSubscribeOptions } from '../internal/types/internalSubscribeTypes';
+import type { InternalSubscribeOptions } from './types/internalSubscribeTypes';
 import { createStore } from './createStore';
-import { hasCascadeStateSubscription, SUBSCRIBE_CASCADE_STATE } from './internalSubscriptions';
-import type { StoreApi } from './types';
+import { hasCascadeStateSubscription, SUBSCRIBE_CASCADE_STATE } from './cascadeSubscriptions';
+import type { StoreApi } from '../store/types';
 
 describe('createStore', () => {
   type CounterState = { count: number; increment: () => void; reset: () => void };

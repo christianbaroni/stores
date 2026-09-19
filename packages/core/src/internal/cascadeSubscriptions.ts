@@ -1,11 +1,10 @@
 import type { Listener } from '../types';
-import type { StoreApi } from './types';
+import type { StoreApi } from '../store/types';
 
 /**
  * Internal unsubscribe callback used by store-to-store subscriptions that may suppress fetch aborts.
  */
 export type InternalUnsubscribeFn = (skipAbortFetch?: boolean) => void;
-export type CascadeStateSubscribe<State> = (listener: Listener<State>) => InternalUnsubscribeFn;
 
 /**
  * Internal full-state cascade subscription hook shared by store implementations.
@@ -18,6 +17,8 @@ export const SUBSCRIBE_CASCADE_STATE = Symbol('stores.subscribeCascadeState');
 export type CascadeStateSubscribable<State> = {
   [SUBSCRIBE_CASCADE_STATE]: CascadeStateSubscribe<State>;
 };
+
+type CascadeStateSubscribe<State> = (listener: Listener<State>) => InternalUnsubscribeFn;
 
 /**
  * Returns whether a store exposes the internal full-state cascade subscription hook.

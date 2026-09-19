@@ -1,4 +1,4 @@
-import { createStore } from '../store/createStore';
+import { createStore } from './createStore';
 import { persist } from '../store/persist';
 import type { StoreApi, WithPersist } from '../store/types';
 import type { NormalizedSyncConfig } from '../sync/types';
