@@ -4,7 +4,7 @@ import { applySetState, applyStateUpdate } from '../../store/stateUpdate';
 import { StoreApi } from '../../store/types';
 import { NormalizedSyncConfig, SyncEngine, SyncHandle, SyncRegistration, SyncUpdate } from '../../sync/types';
 import { SetStateArgs, StateCreator } from '../../types';
-import { SyncContext, createSyncedStateCreator } from './syncEnhancer';
+import { SyncContext, createSyncContext, createSyncedStateCreator } from './syncEnhancer';
 
 type CounterState = { count: number };
 type HydratableSyncHandle = SyncHandle<Record<string, unknown>> & {
@@ -39,18 +39,19 @@ function registerStore<T extends Record<string, unknown>>(
   handle: HydratableSyncHandle;
 } {
   const { engine, getRegistration, handle, publishedUpdates } = createSyncEngineHarness(overrides.handle);
-  const middleware = createSyncedStateCreator(stateCreator, { ...config, engine }, overrides.isAsync ?? false);
+  const context = createSyncContext(overrides.isAsync ?? false);
+  const syncedStateCreator = createSyncedStateCreator(stateCreator, { ...config, engine }, context);
   const store = createStoreApiHarness<T>(initialState);
-  const resolvedState = middleware.stateCreator(store.api.setState, store.api.getState, store.api);
+  const resolvedState = syncedStateCreator(store.api.setState, store.api.getState, store.api);
   store.state.current = resolvedState;
 
-  if (middleware.syncContext.isAsync && !middleware.syncContext.setWithoutPersist) {
-    middleware.syncContext.setWithoutPersist = store.api.setState;
+  if (context.isAsync) {
+    context.setWithoutPersist = store.api.setState;
   }
 
   const registration = getRegistration();
 
-  return { registration, store, publishedUpdates, context: middleware.syncContext, handle };
+  return { registration, store, publishedUpdates, context, handle };
 }
 
 function createStoreApiHarness<S>(initialState: S): StoreApiHarness<S> {

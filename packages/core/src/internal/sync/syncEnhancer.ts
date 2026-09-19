@@ -48,15 +48,11 @@ type PendingUpdate<T extends Record<string, unknown>> = {
 export function createSyncedStateCreator<T extends Record<string, unknown>>(
   stateCreator: StateCreator<T>,
   config: NormalizedSyncConfig<T>,
-  isAsync: boolean
-): {
-  stateCreator: StateCreator<T>;
-  syncContext: SyncContext;
-} {
+  syncContext: SyncContext | undefined
+): StateCreator<T> {
   const resolvedEngine = config.engine ?? getStorageConfig().syncEngine;
-  const syncContext = buildSyncContext(isAsync);
 
-  const enhancedStateCreator: StateCreator<T> = (set, get, api) => {
+  return (set, get, api) => {
     const lastWrites = new Map<SyncStateKey<T>, FieldMetadata>();
     const pendingRemoteUpdates: SyncUpdate<T>[] = [];
     const pendingUpdates: PendingUpdate<T>[] = [];
@@ -69,7 +65,7 @@ export function createSyncedStateCreator<T extends Record<string, unknown>>(
     let syncKeys: ReadonlyArray<SyncStateKey<T>> = [];
 
     let applyPromiseChain: Promise<void> = Promise.resolve();
-    let canProcessRemoteUpdates = !isAsync;
+    let canProcessRemoteUpdates = !syncContext?.isAsync;
 
     function generateTimestamp(): number {
       const candidate = Date.now();
@@ -79,12 +75,12 @@ export function createSyncedStateCreator<T extends Record<string, unknown>>(
     }
 
     function setPersistMetadata(timestamp: number, keys: readonly SyncStateKey<T>[]): void {
-      if (!syncContext?.setSessionId || !syncContext?.setTimestamp || !resolvedEngine.sessionId) return;
+      if (!syncContext || !resolvedEngine.sessionId) return;
 
       syncContext.setSessionId(resolvedEngine.sessionId);
       syncContext.setTimestamp(timestamp);
 
-      if (syncContext.mergeFieldTimestamps && keys.length > 0) {
+      if (keys.length > 0) {
         const timestamps: Record<string, number> = nullObject();
         for (const key of keys) timestamps[String(key)] = timestamp;
         syncContext.mergeFieldTimestamps(timestamps);
@@ -158,7 +154,7 @@ export function createSyncedStateCreator<T extends Record<string, unknown>>(
     if (!syncKeys.length) return state;
     syncKeySet = new Set(syncKeys);
 
-    async function processUpdate(update: SyncUpdate<T>) {
+    async function processUpdate(update: SyncUpdate<T>): Promise<void> {
       latestTimestamp = Math.max(latestTimestamp, update.timestamp);
       const updates: SyncValues<T> = nullObject();
       const currentState = get();
@@ -208,7 +204,7 @@ export function createSyncedStateCreator<T extends Record<string, unknown>>(
       if (!hasUpdates && !keysToClear?.length) return;
 
       isApplyingRemote = true;
-      if (syncContext) syncContext.setIsApplyingRemote(true);
+      syncContext?.setIsApplyingRemote(true);
       try {
         if (update.replace) {
           const nextState = { ...currentState };
@@ -232,18 +228,18 @@ export function createSyncedStateCreator<T extends Record<string, unknown>>(
           }
 
           if (!mutated) return;
-          await (syncContext.setWithoutPersist ?? originalSet)(nextState, true);
+          await (syncContext?.setWithoutPersist ?? originalSet)(nextState, true);
         } else {
-          await (syncContext.setWithoutPersist ?? originalSet)(updates);
+          await (syncContext?.setWithoutPersist ?? originalSet)(updates);
         }
       } finally {
         isApplyingRemote = false;
-        if (syncContext) syncContext.setIsApplyingRemote(false);
+        syncContext?.setIsApplyingRemote(false);
       }
     }
 
     function scheduleProcessUpdate(update: SyncUpdate<T>): void {
-      if (isAsync) applyPromiseChain = applyPromiseChain.then(() => processUpdate(update));
+      if (syncContext?.isAsync) applyPromiseChain = applyPromiseChain.then(() => processUpdate(update));
       else void processUpdate(update);
     }
 
@@ -312,7 +308,7 @@ export function createSyncedStateCreator<T extends Record<string, unknown>>(
      *   2. If sync engine provides onHydrated: use that
      *   3. Otherwise: immediate
      */
-    if (isAsync) {
+    if (syncContext?.isAsync) {
       // Wait for external hydration signal from persist middleware
       syncContext.onHydrationComplete = onHydrationComplete;
       syncContext.onHydrationFlushEnd = onHydrationFlushEnd;
@@ -328,16 +324,12 @@ export function createSyncedStateCreator<T extends Record<string, unknown>>(
 
     return state;
   };
-
-  return {
-    stateCreator: enhancedStateCreator,
-    syncContext,
-  };
 }
 
 // ============ Sync Context Builder =========================================== //
 
-function buildSyncContext(isAsync: boolean): SyncContext {
+/** Creates the context shared by sync, persistence, and storage hydration. */
+export function createSyncContext(isAsync: boolean): SyncContext {
   let currentSessionId: string | undefined;
   let currentTimestamp: number | undefined;
   let fieldTimestampAccumulator: Record<string, number> | undefined;

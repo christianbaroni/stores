@@ -1,8 +1,10 @@
+import type { Mock } from 'vitest';
 import { flushMicrotasks } from './async.testUtils';
 import { createBaseStore } from './createBaseStore';
-import { createAsyncStorageMock } from './internal/storage/storageMocks.testUtils';
+import { createAsyncStorageMock, createSyncStorageMock } from './internal/storage/storageMocks.testUtils';
+import * as syncEnhancer from './internal/sync/syncEnhancer';
 import { StorageValue } from './storage/storageTypes';
-import type { SyncEngine, SyncHandle } from './sync/types';
+import type { SyncEngine, SyncHandle, SyncUpdate } from './sync/types';
 import { AsyncStorageInterface } from './types';
 
 type TestState = {
@@ -12,7 +14,97 @@ type TestState = {
 
 // ============ Tests ========================================================= //
 
-describe('createBaseStore sync metadata', () => {
+describe('createBaseStore sync and persistence', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it.each([false, true])('syncs without a persistence context (engine hydration: %s)', async waitForEngine => {
+    const createContext = vi.spyOn(syncEnhancer, 'createSyncContext');
+    let completeHydration: (() => void) | undefined;
+    const { engine, publish, register } = createSyncEngine(waitForEngine ? callback => (completeHydration = callback) : undefined);
+    const store = createBaseStore(() => ({ a: 0, b: 1 }), { sync: { key: 'memory-only', engine } });
+
+    store.setState({ a: 1 });
+    if (waitForEngine) {
+      expect(publish).not.toHaveBeenCalled();
+      expect(completeHydration).toBeDefined();
+      completeHydration?.();
+    }
+    expect(publish).toHaveBeenCalledTimes(1);
+    expect(publish.mock.calls[0][0].values).toEqual({ a: 1 });
+
+    const timestamp = publish.mock.calls[0][0].timestamp;
+    const apply = register.mock.calls[0][0].apply;
+    apply({ replace: false, sessionId: 'remote', timestamp: timestamp + 1, values: { a: 2 } });
+    await flushMicrotasks();
+    expect(store.getState()).toEqual({ a: 2, b: 1 });
+
+    apply({ replace: true, sessionId: 'remote', timestamp: timestamp + 2, values: { a: 3 } });
+    await flushMicrotasks();
+    expect(store.getState()).toEqual({ a: 3 });
+    expect(publish).toHaveBeenCalledTimes(1);
+    expect(createContext).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])('suppresses remote persistence writes with sync storage (metadata: %s)', async injectStorageMetadata => {
+    const createContext = vi.spyOn(syncEnhancer, 'createSyncContext');
+    const storage = { ...createSyncStorageMock(), async: undefined };
+    const { engine, publish, register } = createSyncEngine();
+    const store = createBaseStore(() => ({ a: 0, b: 0 }), {
+      storage,
+      storageKey: 'sync-storage',
+      sync: { engine, injectStorageMetadata },
+    });
+
+    store.setState({ a: 1 });
+    expect(storage.set).toHaveBeenCalledTimes(1);
+    const serialized: StorageValue<TestState> = JSON.parse(storage.set.mock.calls[0][1]);
+    const timestamp = publish.mock.calls[0][0].timestamp;
+    expect(serialized.state).toEqual({ a: 1, b: 0 });
+    expect(serialized.syncMetadata).toEqual(injectStorageMetadata ? { origin: 'local', timestamp, fields: { a: timestamp } } : undefined);
+
+    register.mock.calls[0][0].apply({ replace: false, sessionId: 'remote', timestamp: timestamp + 1, values: { a: 2 } });
+    await flushMicrotasks();
+    expect(store.getState()).toEqual({ a: 2, b: 0 });
+    expect(storage.set).toHaveBeenCalledTimes(1);
+    expect(publish).toHaveBeenCalledTimes(1);
+    expect(createContext).toHaveBeenCalledTimes(1);
+    expect(createContext).toHaveBeenCalledWith(false);
+  });
+
+  it('flushes local hydration updates before applying queued remote updates with async storage', async () => {
+    const storage = createAsyncStorageMock();
+    let resolveStorageRead: ((value: string) => void) | undefined;
+    storage.get.mockReturnValueOnce(new Promise(resolve => (resolveStorageRead = resolve)));
+    const { engine, publish, register } = createSyncEngine();
+    const store = createBaseStore<TestState, Partial<TestState>, Promise<void>>(() => ({ a: 0, b: 0 }), {
+      storage,
+      storageKey: 'async-storage',
+      sync: { engine },
+    });
+    const states: TestState[] = [];
+    const unsubscribe = store.subscribe(state => states.push(state));
+    const localUpdate = store.setState(state => ({ a: state.a + 1 }));
+    const timestamp = Date.now() + 10_000;
+    const apply = register.mock.calls[0][0].apply;
+    apply({ replace: false, sessionId: 'remote', timestamp, values: { b: 6 } });
+    apply({ replace: true, sessionId: 'remote', timestamp: timestamp + 1, values: { a: 8 } });
+
+    expect(store.getState()).toEqual({ a: 0, b: 0 });
+    expect(storage.set).not.toHaveBeenCalled();
+    expect(publish).not.toHaveBeenCalled();
+
+    if (!resolveStorageRead) throw new Error('Expected storage read to start synchronously.');
+    resolveStorageRead(JSON.stringify({ state: { a: 5, b: 5 }, version: 0 }));
+    await localUpdate;
+    await flushMicrotasks(5);
+
+    expect(states).toEqual([{ a: 5, b: 5 }, { a: 6, b: 5 }, { a: 6, b: 6 }, { a: 8 }]);
+    expect(publish).toHaveBeenCalled();
+    for (const call of publish.mock.calls) expect(call[0].values).toEqual({ a: 6 });
+    expect(storage.set).toHaveBeenCalledTimes(1);
+    unsubscribe();
+  });
+
   it('accumulates field timestamps across deferred hydration updates', async () => {
     const storageWrites: Array<{ key: string; value: string }> = [];
 
@@ -102,3 +194,13 @@ describe('createBaseStore sync metadata', () => {
     expect(publish).not.toHaveBeenCalled();
   });
 });
+
+function createSyncEngine(onHydrated?: SyncHandle<Record<string, unknown>>['onHydrated']): {
+  engine: SyncEngine;
+  publish: Mock<(update: SyncUpdate<Record<string, unknown>>) => void>;
+  register: Mock<SyncEngine['register']>;
+} {
+  const publish = vi.fn<(update: SyncUpdate<Record<string, unknown>>) => void>();
+  const register = vi.fn<SyncEngine['register']>(() => ({ destroy: () => {}, onHydrated, publish }));
+  return { engine: { sessionId: 'local', register }, publish, register };
+}

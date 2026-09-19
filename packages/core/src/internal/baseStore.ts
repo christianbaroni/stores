@@ -7,7 +7,7 @@ import { getStorageConfig, markStoreCreated } from './config';
 import { StoresError } from './errors';
 import { createHydrationGate } from './middleware/createHydrationGate';
 import { createPersistStorage } from './storage/storageCreators';
-import { createSyncedStateCreator } from './sync/syncEnhancer';
+import { createSyncContext, createSyncedStateCreator } from './sync/syncEnhancer';
 
 // ============ Store Creator ================================================== //
 
@@ -24,21 +24,21 @@ export function baseStore<S, PersistedState extends Partial<S>, PersistReturn ex
   const storage = isPersisted ? (options.storage ?? getStorageConfig().storage) : undefined;
 
   const normalizedSync = normalizeSyncOption(options.sync, storageKey);
-  const syncMiddleware = normalizedSync ? createSyncedStateCreator(createState, normalizedSync, storage?.async ?? false) : undefined;
-  const stateCreator = syncMiddleware?.stateCreator ?? createState;
+  const syncContext = !storage || !normalizedSync ? undefined : createSyncContext(storage.async ?? false);
+  const stateCreator = !normalizedSync ? createState : createSyncedStateCreator(createState, normalizedSync, syncContext);
 
   if (!isPersisted) return createStore(stateCreator);
 
-  const storageConfig = createPersistStorage<S, PersistedState, PersistReturn>(options, storage, syncMiddleware?.syncContext);
+  const storageConfig = createPersistStorage<S, PersistedState, PersistReturn>(options, storage, syncContext);
   const hydrationGate = storageConfig.async ? createHydrationGate(stateCreator) : undefined;
 
   const onRehydrateStorage = hydrationGate
-    ? hydrationGate.wrapOnRehydrateStorage(options.onRehydrateStorage, syncMiddleware?.syncContext)
+    ? hydrationGate.wrapOnRehydrateStorage(options.onRehydrateStorage, syncContext)
     : options.onRehydrateStorage;
 
   const finalStateCreator: StateCreator<S> = hydrationGate
     ? (set, get, api) => {
-        if (syncMiddleware) syncMiddleware.syncContext.setWithoutPersist = api.setState;
+        if (syncContext) syncContext.setWithoutPersist = api.setState;
         return hydrationGate.stateCreator(set, get, api);
       }
     : stateCreator;
