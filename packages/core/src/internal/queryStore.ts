@@ -768,6 +768,7 @@ export function queryStore<
 
         abortActiveFetch();
         clearActiveRefetchTimeout();
+        throttledParamChange?.cancel();
 
         activeFetch = null;
         lastFetchKey = null;

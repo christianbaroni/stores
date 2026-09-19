@@ -1,6 +1,7 @@
 import { flushMicrotasks } from './async.testUtils';
 import { createBaseStore } from './createBaseStore';
 import { createQueryStore, getQueryKey } from './createQueryStore';
+import { createSyncStorageMock } from './internal/storage/storageMocks.testUtils';
 
 vi.mock('#env', () => ({
   IS_ANDROID: false,
@@ -14,6 +15,66 @@ vi.mock('#env', () => ({
 describe('createQueryStore paramChangeThrottle', () => {
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it.each([false, true])('cancels the pending parameter debounce on teardown with keepPreviousData=%s', async keepPreviousData => {
+    vi.useFakeTimers();
+    const source = createBaseStore(() => ({ id: 1 }));
+    const fetcher = vi.fn(async (params: { id: number }) => params.id);
+    const store = createQueryStore({
+      fetcher,
+      keepPreviousData,
+      paramChangeThrottle: 50,
+      params: { id: $ => $(source, state => state.id) },
+      staleTime: Infinity,
+    });
+    const unsubscribe = store.subscribe(() => {});
+
+    try {
+      await flushMicrotasks();
+      source.setState({ id: 2 });
+      expect(vi.getTimerCount()).toBe(1);
+      unsubscribe();
+      store.getState().reset(true);
+      const resetState = store.getState();
+      expect(vi.getTimerCount()).toBe(0);
+
+      await vi.advanceTimersByTimeAsync(100);
+      expect(store.getState()).toBe(resetState);
+      expect(fetcher).toHaveBeenCalledTimes(1);
+    } finally {
+      unsubscribe();
+      store.getState().reset(true);
+      vi.clearAllTimers();
+    }
+  });
+
+  it('preserves persisted data for a new instance after teardown', async () => {
+    vi.useFakeTimers();
+    const entries = new Map<string, string>();
+    const storage = createSyncStorageMock();
+    storage.get.mockImplementation(key => entries.get(key));
+    storage.set.mockImplementation((key, value) => void entries.set(key, value));
+    const fetcher = vi.fn(async (params: { id: number }) => params.id);
+    const config = {
+      fetcher,
+      paramChangeThrottle: 50,
+      params: { id: 1 },
+      staleTime: Infinity,
+    };
+    const options = { persistThrottleMs: 0, storage, storageKey: 'reset-persisted-query' };
+    const store = createQueryStore(config, options);
+
+    await store.getState().fetch();
+    const persisted = new Map(entries);
+    store.getState().reset();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(entries).toEqual(persisted);
+
+    const restored = createQueryStore(config, options);
+    expect(restored.getState().getData()).toBe(1);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    restored.getState().reset();
   });
 
   it('replaces the current fetch promptly, then throttles while the replacement is in flight', async () => {
