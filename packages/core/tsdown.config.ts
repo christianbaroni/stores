@@ -1,6 +1,6 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { defineConfig, type TsdownPlugin, type UserConfig } from 'tsdown';
+import { defineConfig, type NormalizedFormat, type TsdownPlugin, type UserConfig } from 'tsdown';
 import { pluginBuildEntries, pluginDeclarationEntries, type Platform } from './build/plugins.ts';
 
 // ============ Constants ====================================================== //
@@ -38,15 +38,15 @@ function bundleConfig(): UserConfig {
     logLevel: 'silent',
     minify: isProduction ? { compress: { dropDebugger: true }, codegen: { legalComments: 'none' } } : false,
     outputOptions: isProduction ? { comments: { legal: false } } : undefined,
-    plugins: platform === 'web' ? [externalizeInternalRuntimeImports()] : undefined,
     report: false,
     sourcemap: !isProduction,
     target: 'es2020',
     treeshake: true,
 
-    inputOptions(options) {
+    inputOptions(options, format) {
       const conditions = mode === 'vanilla' ? ['vanilla', 'default'] : platform === 'native' ? ['react-native', 'default'] : undefined;
       if (conditions) options.resolve = { ...options.resolve, conditionNames: conditions };
+      if (platform === 'web') options.plugins = [options.plugins, externalizeInternalRuntimeImports(format)];
     },
   };
 }
@@ -76,15 +76,12 @@ function declarationConfig(entry: string, outDir: string, tsconfig: string): Use
 
 // ============ Utilities ====================================================== //
 
-function externalizeInternalRuntimeImports(): TsdownPlugin {
-  let runtimeImport = '';
+function externalizeInternalRuntimeImports(format: NormalizedFormat): TsdownPlugin {
+  const extension = format === 'es' ? '.mjs' : '.js';
+  const runtimeImport = mode === 'vanilla' ? `../web/internal/runtime${extension}` : `./internal/runtime${extension}`;
 
   return {
     name: 'externalize-internal-runtime-imports',
-    tsdownConfigResolved(config) {
-      const extension = config.format === 'es' ? '.mjs' : '.js';
-      runtimeImport = mode === 'vanilla' ? `../web/internal/runtime${extension}` : `./internal/runtime${extension}`;
-    },
     resolveId(source, importer, options) {
       if (importer === undefined || options.isEntry || !source.startsWith('.')) return undefined;
 
