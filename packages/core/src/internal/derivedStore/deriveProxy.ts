@@ -1,5 +1,5 @@
 import type { StoreApi } from '../../store/types';
-import { hasOwn, isPlainObject } from '../../types/utils';
+import { hasOwn, isArrayIndex, isPlainObject } from '../../types/utils';
 import { TrackPathFn } from './pathFinder';
 
 // ============ Constants ====================================================== //
@@ -42,6 +42,8 @@ function buildProxy<T extends object, S>(
   bailedOutObjects: WeakSet<object>,
   subProxyCache: WeakMap<object, object>
 ): T {
+  const isArray = Array.isArray(value);
+
   return new Proxy<T>(value, {
     get(target, propKey, receiver) {
       if (propKey === TRACKING_PROXY_UNWRAP) {
@@ -61,6 +63,13 @@ function buildProxy<T extends object, S>(
           trackPath(store, path, true);
           bailedOutObjects.add(target);
         }
+        return Reflect.get(target, propKey, receiver);
+      }
+
+      // Array elements depend on the collection, not individual indexes.
+      if (isArray && isArrayIndex(propKey)) {
+        trackPath(store, path, true);
+        bailedOutObjects.add(target);
         return Reflect.get(target, propKey, receiver);
       }
 
@@ -173,8 +182,6 @@ function stripPropertyValue(target: object, key: PropertyKey, seen: WeakSet<obje
   descriptor.value = nextValue;
   Reflect.defineProperty(target, key, descriptor);
 }
-
-// ============ Helpers ======================================================== //
 
 function unwrapTrackingProxy(value: object): object | undefined {
   const target = Reflect.get(value, TRACKING_PROXY_UNWRAP);

@@ -125,7 +125,7 @@ export function trackQueryValue<T, State>(getValue: ReactiveParam<T, State>, own
         return store.subscribe(selector, listener, CASCADE_PARTICIPANT_SUBSCRIBE_OPTIONS);
       });
     }, false);
-    proxyPaths.reset();
+    proxyPaths = undefined;
   }
 
   rootProxyCache = undefined;

@@ -1,5 +1,5 @@
-import { Selector, SubscribableStore } from '../../types';
-import { nullObject } from '../../utils/core';
+import type { Selector, SubscribableStore } from '../../types';
+import { identity, nullObject } from '../../utils/core';
 import { pluralize } from '../../utils/stringUtils';
 
 // ============ Settings ======================================================= //
@@ -17,75 +17,92 @@ const EMPTY_INVOCATION_ARGS = Object.freeze<unknown[]>([]);
 
 // ============ Types ========================================================== //
 
-type TrackedInvocation = { args: unknown[] | undefined };
-
-type PathEntry = {
-  path: string[];
-  store: SubscribableStore;
-  invocation?: TrackedInvocation;
-  isLeaf: boolean;
-};
-
-type SubscriptionBuilder = (store: SubscribableStore, selector: Selector<unknown, unknown>, path: string[]) => void;
-
-// ============ Public API ===================================================== //
-
 export type PathFinder = {
-  buildProxySubscriptions(
-    createSubscription: SubscriptionBuilder,
-    shouldLog: boolean,
-    minConsolidationDepth?: number,
-    shouldBuild?: (paths: Set<PathEntry>) => boolean
-  ): void;
+  buildProxySubscriptions(createSubscription: SubscriptionBuilder, shouldLog: boolean, minConsolidationDepth?: number): void;
   reset(): void;
   trackPath: TrackPathFn;
 };
 
 export type TrackPathFn = (store: SubscribableStore, path: string[], isLeaf: boolean, invocation?: TrackedInvocation) => void;
 
-/**
- * A factory that returns a proxy path-tracking object with three methods:
- *  - `buildProxySubscriptions()`: builds subscriptions to the final paths
- *  - `reset()`: clears all tracked paths
- *  - `trackPath()`: records usage of a store path
- */
+type TrackedInvocation = { args: unknown[] | undefined };
+type SubscriptionBuilder = (store: SubscribableStore, selector: Selector<unknown, unknown>, path: string[]) => void;
+
+type PathEntry = {
+  path: string[];
+  store: SubscribableStore;
+  invocation?: TrackedInvocation;
+};
+
+// ============ Public API ===================================================== //
+
 export function createPathFinder(): PathFinder {
-  const storeMap = new Map<SubscribableStore, TrieNode>();
+  let singleStore: SubscribableStore | undefined;
+  let singleRoot: TrieNode | undefined;
+  let storeMap: Map<SubscribableStore, TrieNode> | undefined;
 
   return {
-    buildProxySubscriptions(
-      createSubscription: SubscriptionBuilder,
-      shouldLog: boolean,
-      minConsolidationDepth?: number,
-      shouldBuild?: (paths: Set<PathEntry>) => boolean
-    ) {
-      const results = new Set<PathEntry>();
-      for (const entry of storeMap) {
-        collectMinimalPaths(entry[1], entry[0], [], 0, results, minConsolidationDepth);
-      }
-      if (shouldBuild?.(results) === false) return;
+    buildProxySubscriptions(createSubscription: SubscriptionBuilder, shouldLog: boolean, minConsolidationDepth?: number) {
+      const results: PathEntry[] = [];
+      const root = singleRoot;
+      const store = singleStore;
 
-      buildProxySubscriptions(results, createSubscription, shouldLog);
+      if (root && store) collectMinimalPaths(root, store, [], 0, results, minConsolidationDepth);
+      else if (storeMap) {
+        for (const entry of storeMap) collectMinimalPaths(entry[1], entry[0], [], 0, results, minConsolidationDepth);
+      }
+
+      buildPathSubscriptions(results, createSubscription, shouldLog);
     },
 
     reset(): void {
-      storeMap.clear();
+      singleStore = undefined;
+      singleRoot = undefined;
+      storeMap = undefined;
     },
 
     trackPath(store, path, isLeaf, invocation) {
-      let root = storeMap.get(store);
-      if (!root) {
-        root = createTrieNode();
-        storeMap.set(store, root);
+      let root = singleRoot;
+      if (root) {
+        const currentStore = singleStore;
+        if (currentStore !== store) {
+          if (!currentStore) singleStore = store;
+          else {
+            const map = (storeMap ??= new Map());
+            map.set(currentStore, root);
+            root = createTrieNode();
+            map.set(store, root);
+            singleStore = undefined;
+            singleRoot = undefined;
+          }
+        }
+      } else {
+        const map = storeMap;
+        if (map) {
+          root = map.get(store);
+          if (!root) {
+            root = createTrieNode();
+            map.set(store, root);
+          }
+        } else {
+          root = createTrieNode();
+          singleStore = store;
+          singleRoot = root;
+        }
       }
-      insertPath(root, path, 0, isLeaf, invocation);
+      insertPath(root, path, isLeaf, invocation);
     },
   };
 }
 
 // ============ Trie Utilities ================================================= //
 
+/**
+ * `child` and `childKey` are the unary edge; `children` is its promoted form.
+ */
 type TrieNode = {
+  child?: TrieNode;
+  childKey?: string;
   children?: Record<string, TrieNode>;
   extraInvocations?: TrackedInvocation[];
   invocation?: TrackedInvocation;
@@ -104,78 +121,96 @@ function createTrieNode<T extends TrieNode | RootNode = TrieNode>(): T {
 /**
  * Inserts a path into the trie, creating nodes to represent the path.
  */
-function insertPath(node: TrieNode, path: string[], index: number, isLeaf?: boolean, invocation?: TrackedInvocation): void {
-  if (index === path.length) {
-    if (isLeaf) node.isLeaf = true;
-    if (invocation) addInvocation(node, invocation);
-    return;
+function insertPath(root: TrieNode, path: string[], isLeaf?: boolean, invocation?: TrackedInvocation): void {
+  let node = root;
+
+  for (let i = 0; i < path.length; i++) {
+    const segment = path[i];
+    const children = node.children;
+    let child: TrieNode | undefined;
+
+    if (children) {
+      child = children[segment];
+      if (!child) child = children[segment] = createTrieNode();
+    } else {
+      child = node.child;
+      if (!child) {
+        child = createTrieNode();
+        node.child = child;
+        node.childKey = segment;
+      } else if (node.childKey !== segment) {
+        const childKey = node.childKey;
+        if (childKey === undefined) node.childKey = segment;
+        else {
+          const branches = createTrieNode<RootNode>();
+          branches[childKey] = child;
+          child = branches[segment] = createTrieNode();
+          node.child = undefined;
+          node.childKey = undefined;
+          node.children = branches;
+        }
+      }
+    }
+
+    node = child;
   }
-  if (!node.children) {
-    node.children = createTrieNode<RootNode>();
-  }
-  const segment = path[index];
-  let child = node.children?.[segment];
-  if (!child) {
-    child = createTrieNode();
-    node.children[segment] = child;
-  }
-  insertPath(child, path, index + 1, isLeaf, invocation);
+
+  if (isLeaf) node.isLeaf = true;
+  if (invocation) addInvocation(node, invocation);
 }
 
 /**
- * Determines and collects the final paths to build selectors for.
+ * Collects the minimal subscription paths using inline unary edges and a
+ * mutable traversal stack. Only final subscription paths are copied.
  */
 function collectMinimalPaths(
   node: TrieNode,
   store: SubscribableStore,
   path: string[],
   depth: number,
-  results: Set<PathEntry>,
+  results: PathEntry[],
   minConsolidationDepth = DEFAULT_MIN_CONSOLIDATION_DEPTH
 ): void {
+  const child = node.child;
+  if (child) {
+    const childKey = node.childKey;
+    if (node.isLeaf) {
+      collectPathEntries(node, store, path, results);
+      if (!child.invocation || childKey === undefined) return;
+    } else if (childKey === undefined) {
+      collectPathEntries(node, store, path, results);
+      return;
+    }
+
+    path.push(childKey);
+    collectMinimalPaths(child, store, path, depth + 1, results, minConsolidationDepth);
+    path.pop();
+    return;
+  }
+
   const children = node.children;
   if (!children) {
-    // Leaf node
-    collectPathEntries(node, store, path, results);
-    return;
-  }
-  const childKeys = Object.keys(children);
-  const childCount = childKeys.length;
-
-  // -- 1) No children => leaf
-  if (childCount === 0) {
     collectPathEntries(node, store, path, results);
     return;
   }
 
-  // -- 2) Is a leaf (or at/beyond min depth with multiple children) => subscribe here
-  if (node.isLeaf || (depth >= minConsolidationDepth && childCount > 1)) {
+  if (node.isLeaf || depth >= minConsolidationDepth) {
     collectPathEntries(node, store, path, results);
-    // Only recurse into children that have an invocation
-    for (const key of childKeys) {
-      const child = children[key];
-      if (child.invocation) collectMinimalPaths(child, store, [...path, key], depth + 1, results, minConsolidationDepth);
+    for (const key in children) {
+      const branch = children[key];
+      if (!branch.invocation) continue;
+      path.push(key);
+      collectMinimalPaths(branch, store, path, depth + 1, results, minConsolidationDepth);
+      path.pop();
     }
     return;
   }
 
-  // -- 3) Below min consolidation depth with multiple children => skip this node, recurse each child
-  if (depth < minConsolidationDepth && childCount > 1 && !node.isLeaf) {
-    for (const key of childKeys) {
-      collectMinimalPaths(children[key], store, [...path, key], depth + 1, results, minConsolidationDepth);
-    }
-    return;
+  for (const key in children) {
+    path.push(key);
+    collectMinimalPaths(children[key], store, path, depth + 1, results, minConsolidationDepth);
+    path.pop();
   }
-
-  // -- 4) Exactly one child, not a leaf => merge downward
-  if (childCount === 1) {
-    const onlyKey = childKeys[0];
-    collectMinimalPaths(children[onlyKey], store, [...path, onlyKey], depth + 1, results, minConsolidationDepth);
-    return;
-  }
-
-  // If no prior conditions met, subscribe here
-  collectPathEntries(node, store, path, results);
 }
 
 // ============ Invocation Tracking Utilities ================================== //
@@ -211,25 +246,28 @@ function isSameInvocation(left: TrackedInvocation, right: TrackedInvocation): bo
   return true;
 }
 
-function collectPathEntries(node: TrieNode, store: SubscribableStore, path: string[], results: Set<PathEntry>): void {
-  const isLeaf = node.isLeaf ?? false;
+function collectPathEntries(node: TrieNode, store: SubscribableStore, path: string[], results: PathEntry[]): void {
+  const entryPath = path.slice();
   const invocation = node.invocation;
+
   if (!invocation) {
-    results.add({ store, path, isLeaf });
+    results.push({ store, path: entryPath });
     return;
   }
 
-  results.add({ store, path, invocation, isLeaf });
+  results.push({ store, path: entryPath, invocation });
 
   const extraInvocations = node.extraInvocations;
   if (!extraInvocations) return;
 
-  for (let i = 0; i < extraInvocations.length; i++) results.add({ store, path, invocation: extraInvocations[i], isLeaf });
+  for (let i = 0; i < extraInvocations.length; i++) {
+    results.push({ store, path: entryPath, invocation: extraInvocations[i] });
+  }
 }
 
 // ============ Proxy Subscription Utilities =================================== //
 
-function buildProxySubscriptions(finalPaths: Set<PathEntry>, createSubscription: SubscriptionBuilder, shouldLog: boolean): void {
+function buildPathSubscriptions(finalPaths: readonly PathEntry[], createSubscription: SubscriptionBuilder, shouldLog: boolean): void {
   for (const entry of finalPaths) {
     const selector = entry.invocation ? buildInvocationSelector(entry.path, entry.invocation) : buildPathSelector(entry.path);
     createSubscription(entry.store, selector, entry.path);
@@ -241,6 +279,7 @@ function buildProxySubscriptions(finalPaths: Set<PathEntry>, createSubscription:
  * Builds a selector that returns the value at the specified path.
  */
 function buildPathSelector(path: string[]): Selector<unknown, unknown> {
+  if (!path.length) return identity;
   return state => getValueAtPath(state, path);
 }
 
@@ -258,34 +297,24 @@ function buildInvocationSelector(path: string[], invocation: TrackedInvocation):
   };
 }
 
-/**
- * Gets the value at the specified path in an object.
- *
- * `path` is an array of keys used to traverse the object.
- *
- * @example
- * ```ts
- * const obj = { a: { b: { c: 1 } } };
- * getValueAtPath(obj, ['a', 'b', 'c']); // 1
- * ```
- */
-function getValueAtPath(obj: unknown, path: string[]): unknown {
-  let current = obj;
-  for (const p of path) {
+/** Reads a nested property path until the value no longer supports traversal. */
+function getValueAtPath(value: unknown, path: readonly string[]): unknown {
+  let current = value;
+  for (let i = 0; i < path.length; i++) {
     if (!current || typeof current !== 'object') return current;
-    current = Reflect.get(current, p);
+    current = Reflect.get(current, path[i]);
   }
   return current;
 }
 
 // ============ Debug Utilities ================================================ //
 
-function logTrackedPaths(paths: Set<PathEntry>): void {
-  const count = paths.size;
+function logTrackedPaths(paths: readonly PathEntry[]): void {
+  const count = paths.length;
   console.log(
     `[📡 ${count} ${pluralize('Proxy Subscription', count)} 📡]:`,
     JSON.stringify(
-      Array.from(paths).map(entry => {
+      paths.map(entry => {
         const storeName = extractStoreName(entry.store);
         const pathKey = entry.path.join('.');
         if (!entry.invocation) return pathKey ? `$(${storeName}).${pathKey}` : `$(${storeName})`;
