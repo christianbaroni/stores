@@ -1,7 +1,6 @@
 import type { StorageValue } from '../storage/storageTypes';
-import type { SetStateArgs } from '../types';
 import { isPromiseLike } from '../utils/promiseUtils';
-import { applySetState } from './stateUpdate';
+import { RETURN_STATE_CHANGE, STATE_UNCHANGED, type RootStateCreator } from './rootStateCreator';
 import type { PersistMethods, PersistOptions, StateCreator, StoreMutators } from './types';
 
 // ============ Types ========================================================== //
@@ -18,7 +17,11 @@ type HydrationRead<PersistedState> = {
 
 type PostRehydrationCallback<State> = ((state?: State, error?: unknown) => void) | void;
 
-// ============ Middleware ===================================================== //
+// ============ Constants ====================================================== //
+
+const EMPTY_STORAGE_READ = Object.freeze({ migrated: false, state: undefined });
+
+// ============ Persist Middleware ============================================= //
 
 /**
  * Wraps a state creator with persistence.
@@ -30,32 +33,33 @@ export function persist<
   Mutators extends StoreMutators = [],
 >(
   createState: StateCreator<State, [], Mutators>,
-  initialOptions: PersistOptions<State, PersistedState>
-): StateCreator<State, [], PersistMutators<PersistedState, PersistReturn, Mutators>> {
+  initialOptions: PersistOptions<State, PersistedState>,
+  isAsync: boolean
+): RootStateCreator<State, PersistMutators<PersistedState, PersistReturn, Mutators>> {
   return (set, get, api) => {
     let options = resolveOptions(initialOptions);
+    let noOpPromise: Promise<void> | undefined;
     let hasHydrated = false;
     let hydrationVersion = 0;
     let stateFromStorage: State | undefined;
     let hydrationListeners: Set<(state: State) => void> | undefined;
     let finishHydrationListeners: Set<(state: State) => void> | undefined;
 
-    function persistState(): void | Promise<void> {
-      return options.storage.setItem(options.name, get(), options.version);
+    function persistState(state: State): void | Promise<void> {
+      return options.storage.setItem(options.name, state, options.version);
     }
 
-    const savedSetState = api.setState;
-    function setStateAndPersist(...args: SetStateArgs<State>): void | Promise<void> {
-      applySetState(savedSetState, args);
-      return persistState();
+    function setAndPersist(update: Parameters<typeof set>[0], replace?: boolean): void | Promise<void> {
+      const stateChange = replace === true ? set(update, replace, RETURN_STATE_CHANGE) : set(update, false, RETURN_STATE_CHANGE);
+      if (stateChange === STATE_UNCHANGED) {
+        if (!isAsync) return;
+        return (noOpPromise ??= Promise.resolve());
+      }
+
+      return persistState(get());
     }
 
-    api.setState = setStateAndPersist;
-
-    function setAndPersist(...args: SetStateArgs<State>): void | Promise<void> {
-      applySetState(set, args);
-      return persistState();
-    }
+    api.setState = setAndPersist;
 
     const configState = createState(setAndPersist, get, api);
     api.getInitialState = () => configState;
@@ -119,7 +123,7 @@ export function persist<
       const nextState = options.merge(value.state, get() ?? configState);
       stateFromStorage = nextState;
       set(nextState, true);
-      if (value.migrated) return persistState();
+      if (value.migrated) return persistState(get());
     }
 
     function createPersistMethods(): PersistMethods<State, PersistedState> {
@@ -181,13 +185,13 @@ function readStoredValue<PersistedState>(
   options: { migrate?: (persistedState: PersistedState, version: number) => PersistedState | Promise<PersistedState>; version: number },
   value: StorageValue<PersistedState> | null
 ): HydrationRead<PersistedState> | Promise<HydrationRead<PersistedState>> {
-  if (!value) return { migrated: false, state: undefined };
+  if (!value) return EMPTY_STORAGE_READ;
 
   if (typeof value.version !== 'number' || value.version === options.version) return { migrated: false, state: value.state };
 
   if (!options.migrate) {
     console.error("State loaded from storage couldn't be migrated since no migrate function was provided");
-    return { migrated: false, state: undefined };
+    return EMPTY_STORAGE_READ;
   }
 
   const migratedState = options.migrate(value.state, value.version);

@@ -44,14 +44,18 @@ export function baseStore<S, PersistedState extends Partial<S>, PersistReturn ex
     : stateCreator;
 
   const store = createStore(
-    persist<S, PersistedState, PersistReturn>(finalStateCreator, {
-      merge: options.merge,
-      migrate: options.migrate,
-      name: storageKey,
-      onRehydrateStorage,
-      storage: storageConfig.persistStorage,
-      version: storageConfig.version,
-    })
+    persist<S, PersistedState, PersistReturn>(
+      finalStateCreator,
+      {
+        merge: options.merge,
+        migrate: options.migrate,
+        name: storageKey,
+        onRehydrateStorage,
+        storage: storageConfig.persistStorage,
+        version: storageConfig.version,
+      },
+      storageConfig.async
+    )
   );
 
   if (!hydrationGate) return store;

@@ -1,7 +1,9 @@
 import { flushMicrotasks } from '../async.testUtils';
 import type { StorageValue } from '../storage/storageTypes';
 import { createStore } from '../internal/createStore';
+import type { SetFull, SetPartial, SetStateArgs } from '../types';
 import { persist } from './persist';
+import { applySetState } from './stateUpdate';
 import type { AsyncPersistStorage, SyncPersistStorage } from './types';
 
 type Deferred<Value> = {
@@ -30,7 +32,8 @@ describe('persist', () => {
           onRehydrateStorage,
           storage: storage.storage,
           version: 0,
-        }
+        },
+        false
       )
     );
 
@@ -44,7 +47,7 @@ describe('persist', () => {
   });
 
   it('persists updates from the api and creator set function', () => {
-    type State = { count: number; increment: () => void };
+    type State = { count: number; increment: () => void; label?: string };
 
     const storage = createSyncStorage<State, State>();
     const store = createStore(
@@ -52,18 +55,22 @@ describe('persist', () => {
         set => ({
           count: 0,
           increment: () => set(state => ({ count: state.count + 1 })),
+          label: 'initial',
         }),
         {
           name: 'counter',
           skipHydration: true,
           storage: storage.storage,
           version: 0,
-        }
+        },
+        false
       )
     );
 
-    store.setState({ count: 1 });
+    store.setState({ count: 1, increment: store.getState().increment }, true);
     store.getState().increment();
+
+    expect(store.getState().label).toBeUndefined();
 
     const firstWrite = storage.storage.setItem.mock.calls[0];
     const secondWrite = storage.storage.setItem.mock.calls[1];
@@ -82,17 +89,166 @@ describe('persist', () => {
     expect(storage.storage.removeItem).toHaveBeenCalledWith('renamed');
   });
 
+  it('skips persistence when api and creator updates preserve the state reference', () => {
+    type State = { count: number; noOp: () => void };
+
+    const storage = createSyncStorage<State, State>();
+    const store = createStore(
+      persist<State, State>(
+        set => ({
+          count: 0,
+          noOp: () => set(state => state),
+        }),
+        {
+          name: 'counter',
+          skipHydration: true,
+          storage: storage.storage,
+          version: 0,
+        },
+        false
+      )
+    );
+
+    expect(store.setState(state => state)).toBeUndefined();
+    expect(store.getState().noOp()).toBeUndefined();
+    expect(storage.storage.setItem).not.toHaveBeenCalled();
+  });
+
+  it('persists conservatively when the setter does not report state changes', () => {
+    type State = { count: number };
+
+    const storage = createSyncStorage<State, State>();
+    const store = createStore(() => ({ count: 0 }));
+    const rawSet = store.setState;
+    const persistedStateCreator = persist<State, State>(
+      () => ({ count: 0 }),
+      {
+        name: 'counter',
+        skipHydration: true,
+        storage: storage.storage,
+        version: 0,
+      },
+      false
+    );
+
+    function ordinarySet(update: SetPartial<State>, replace?: false): void;
+    function ordinarySet(update: SetFull<State>, replace: true): void;
+    function ordinarySet(...args: SetStateArgs<State>): void {
+      applySetState(rawSet, args);
+    }
+
+    persistedStateCreator(ordinarySet, store.getState, store);
+    store.setState(state => state);
+
+    expect(storage.storage.setItem).toHaveBeenCalledOnce();
+    expect(storage.storage.setItem).toHaveBeenCalledWith('counter', store.getState(), 0);
+  });
+
+  it('persists when an update creates an equal state with a new reference', () => {
+    type State = { count: number };
+
+    const storage = createSyncStorage<State, State>();
+    const store = createStore(
+      persist<State, State>(
+        () => ({ count: 0 }),
+        {
+          name: 'counter',
+          skipHydration: true,
+          storage: storage.storage,
+          version: 0,
+        },
+        false
+      )
+    );
+    const previousState = store.getState();
+
+    store.setState(state => ({ ...state }));
+
+    expect(store.getState()).not.toBe(previousState);
+    expect(storage.storage.setItem).toHaveBeenCalledOnce();
+    expect(storage.storage.setItem).toHaveBeenCalledWith('counter', store.getState(), 0);
+  });
+
+  it('persists the final state after synchronous subscriber updates', () => {
+    type State = { count: number };
+
+    const storage = createSyncStorage<State, State>();
+    const store = createStore(
+      persist<State, State>(
+        () => ({ count: 0 }),
+        {
+          name: 'counter',
+          skipHydration: true,
+          storage: storage.storage,
+          version: 0,
+        },
+        false
+      )
+    );
+    store.subscribe(state => {
+      if (state.count === 1) store.setState({ count: 2 });
+    });
+
+    store.setState({ count: 1 });
+
+    expect(storage.storage.setItem).toHaveBeenCalledTimes(2);
+    expect(storage.storage.setItem).toHaveBeenLastCalledWith('counter', store.getState(), 0);
+    expect(store.getState()).toEqual({ count: 2 });
+  });
+
+  it('returns a stable resolved promise without writing for async no-ops', async () => {
+    type State = { count: number };
+
+    const storage = createAsyncStorage<State, State>();
+    const write = createDeferred<void>();
+    const store = createStore(
+      persist<State, State, Promise<void>>(
+        () => ({ count: 0 }),
+        {
+          name: 'counter',
+          skipHydration: true,
+          storage: storage.storage,
+          version: 0,
+        },
+        true
+      )
+    );
+
+    const firstNoOp = store.setState(state => state);
+    const secondNoOp = store.setState(state => state);
+
+    expect(firstNoOp).toBeInstanceOf(Promise);
+    expect(secondNoOp).toBe(firstNoOp);
+    expect(storage.storage.setItem).not.toHaveBeenCalled();
+
+    storage.storage.setItem.mockReturnValueOnce(write.promise);
+    const writeResult = store.setState({ count: 1 });
+    const noOpAfterWrite = store.setState(state => state);
+
+    expect(writeResult).toBe(write.promise);
+    expect(noOpAfterWrite).toBe(firstNoOp);
+    expect(storage.storage.setItem).toHaveBeenCalledOnce();
+
+    await noOpAfterWrite;
+    write.resolve();
+    await writeResult;
+  });
+
   it('manually rehydrates and honors hydration listener unsubscriptions', () => {
     type State = { count: number };
 
     const storage = createSyncStorage<State, State>();
     const store = createStore(
-      persist<State, State>(() => ({ count: 0 }), {
-        name: 'counter',
-        skipHydration: true,
-        storage: storage.storage,
-        version: 0,
-      })
+      persist<State, State>(
+        () => ({ count: 0 }),
+        {
+          name: 'counter',
+          skipHydration: true,
+          storage: storage.storage,
+          version: 0,
+        },
+        false
+      )
     );
 
     const hydrateOnce = vi.fn();
@@ -142,19 +298,46 @@ describe('persist', () => {
     );
 
     const store = createStore(
-      persist<State, PersistedState>(() => ({ count: 0, label: 'initial' }), {
-        merge,
-        migrate,
-        name: 'counter',
-        storage: storage.storage,
-        version: 2,
-      })
+      persist<State, PersistedState>(
+        () => ({ count: 0, label: 'initial' }),
+        {
+          merge,
+          migrate,
+          name: 'counter',
+          storage: storage.storage,
+          version: 2,
+        },
+        false
+      )
     );
 
     expect(store.getState()).toEqual({ count: 3, label: 'initial' });
     expect(migrate).toHaveBeenCalledWith({ count: 2 }, 1);
     expect(merge).toHaveBeenCalledWith({ count: 3 }, { count: 0, label: 'initial' });
     expect(storage.storage.setItem).toHaveBeenCalledWith('counter', { count: 3, label: 'initial' }, 2);
+  });
+
+  it('persists after migration even when hydration preserves the current reference', () => {
+    type State = { count: number };
+
+    const storage = createSyncStorage<State, State>({ state: { count: 1 }, version: 0 });
+    const store = createStore(
+      persist<State, State>(
+        () => ({ count: 0 }),
+        {
+          merge: (_persistedState, currentState) => currentState,
+          migrate: state => state,
+          name: 'counter',
+          storage: storage.storage,
+          version: 1,
+        },
+        false
+      )
+    );
+
+    expect(store.getState()).toEqual({ count: 0 });
+    expect(storage.storage.setItem).toHaveBeenCalledOnce();
+    expect(storage.storage.setItem).toHaveBeenCalledWith('counter', store.getState(), 1);
   });
 
   it('reports synchronous hydration errors to the post-rehydration callback', () => {
@@ -168,12 +351,16 @@ describe('persist', () => {
 
     const postRehydrate = vi.fn();
     const store = createStore(
-      persist<State, State>(() => ({ count: 0 }), {
-        name: 'counter',
-        onRehydrateStorage: () => postRehydrate,
-        storage: storage.storage,
-        version: 0,
-      })
+      persist<State, State>(
+        () => ({ count: 0 }),
+        {
+          name: 'counter',
+          onRehydrateStorage: () => postRehydrate,
+          storage: storage.storage,
+          version: 0,
+        },
+        false
+      )
     );
 
     expect(store.getState()).toEqual({ count: 0 });
@@ -186,12 +373,16 @@ describe('persist', () => {
 
     const storage = createAsyncStorage<State, State>();
     const store = createStore(
-      persist<State, State, Promise<void>>(() => ({ count: 0 }), {
-        name: 'counter',
-        skipHydration: true,
-        storage: storage.storage,
-        version: 0,
-      })
+      persist<State, State, Promise<void>>(
+        () => ({ count: 0 }),
+        {
+          name: 'counter',
+          skipHydration: true,
+          storage: storage.storage,
+          version: 0,
+        },
+        true
+      )
     );
     const finishHydration = vi.fn();
     store.persist.onFinishHydration(finishHydration);
@@ -225,13 +416,17 @@ describe('persist', () => {
     });
 
     const store = createStore(
-      persist<State, State, Promise<void>>(() => ({ count: 0 }), {
-        migrate,
-        name: 'counter',
-        skipHydration: true,
-        storage: storage.storage,
-        version: 1,
-      })
+      persist<State, State, Promise<void>>(
+        () => ({ count: 0 }),
+        {
+          migrate,
+          name: 'counter',
+          skipHydration: true,
+          storage: storage.storage,
+          version: 1,
+        },
+        true
+      )
     );
 
     const firstHydration = store.persist.rehydrate();

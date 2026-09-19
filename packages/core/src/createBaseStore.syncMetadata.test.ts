@@ -1,6 +1,8 @@
 import { flushMicrotasks } from './async.testUtils';
 import { createBaseStore } from './createBaseStore';
+import { createAsyncStorageMock } from './internal/storage/storageMocks.testUtils';
 import { StorageValue } from './storage/storageTypes';
+import type { SyncEngine, SyncHandle } from './sync/types';
 import { AsyncStorageInterface } from './types';
 
 type TestState = {
@@ -58,5 +60,45 @@ describe('createBaseStore sync metadata', () => {
     );
 
     store.persist?.clearStorage();
+  });
+
+  it('skips persistence and publication when a pre-hydration update preserves hydrated state', async () => {
+    let resolveStorageRead: ((value: string | undefined) => void) | undefined;
+    const storageRead = new Promise<string | undefined>(resolve => {
+      resolveStorageRead = resolve;
+    });
+    const storage = createAsyncStorageMock();
+    storage.get.mockReturnValueOnce(storageRead);
+    const publish = vi.fn();
+    const engine: SyncEngine = {
+      sessionId: 'test-session',
+      register<T extends Record<string, unknown>>(): SyncHandle<T> {
+        return { destroy: () => {}, publish: () => publish() };
+      },
+    };
+    let updaterState: TestState | undefined;
+    const store = createBaseStore<TestState, Partial<TestState>, Promise<void>>(() => ({ a: 0, b: 0 }), {
+      storage,
+      storageKey: 'test-no-op-store',
+      sync: { engine, key: 'test-no-op-store' },
+    });
+
+    const result = store.setState(state => {
+      updaterState = state;
+      return state;
+    });
+
+    expect(updaterState).toBeUndefined();
+    expect(storage.set).not.toHaveBeenCalled();
+    expect(publish).not.toHaveBeenCalled();
+
+    if (!resolveStorageRead) throw new Error('Expected storage read to start synchronously.');
+    resolveStorageRead(JSON.stringify({ state: { a: 2, b: 3 }, version: 0 }));
+    await result;
+
+    expect(updaterState).toEqual({ a: 2, b: 3 });
+    expect(updaterState).toBe(store.getState());
+    expect(storage.set).not.toHaveBeenCalled();
+    expect(publish).not.toHaveBeenCalled();
   });
 });

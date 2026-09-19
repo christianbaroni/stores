@@ -43,10 +43,23 @@ describe('createStore', () => {
     const listener = vi.fn();
 
     store.subscribe(listener);
-    store.setState(state => state);
+    const result = store.setState(state => state);
 
+    expect(result).toBeUndefined();
     expect(listener).not.toHaveBeenCalled();
     expect(store.getState()).toEqual({ count: 0 });
+  });
+
+  it('keeps state-change results out of public and creator set calls', () => {
+    type State = { count: number; increment: () => void };
+
+    const store = createStore<State>(set => ({
+      count: 0,
+      increment: () => set(state => ({ count: state.count + 1 })),
+    }));
+
+    expect(store.setState({ count: 1 })).toBeUndefined();
+    expect(store.getState().increment()).toBeUndefined();
   });
 
   it('does not notify when Object.is treats primitive state as unchanged', () => {

@@ -1,5 +1,5 @@
 import type { InternalSubscribeOptions } from './types/internalSubscribeTypes';
-import type { Listener, Selector, SetPartial, UnsubscribeFn } from '../types';
+import type { Listener, Selector, SetFull, SetPartial, UnsubscribeFn } from '../types';
 import type { BivariantMethod } from '../types/functions';
 import { Primitive, Widen } from '../types/primitives';
 import { notifyListener } from '../utils/core';
@@ -7,6 +7,7 @@ import { addToSingleOrSet, deleteFromSingleOrSet, forEachSingleOrSet, type Singl
 import { activateCascade, flushCascade } from './cascadeScheduler';
 import { SUBSCRIBE_CASCADE_STATE, type CascadeStateSubscribable } from './cascadeSubscriptions';
 import { applyStateUpdate } from '../store/stateUpdate';
+import { RETURN_STATE_CHANGE, STATE_UNCHANGED } from '../store/rootStateCreator';
 import type { Mutate, StateCreator, StoreApi, StoreMutators } from '../store/types';
 
 /**
@@ -30,9 +31,13 @@ export function createStore<State>(stateOrCreator: State | StateCreator<State>):
   let cascadeListeners: SingleOrSet<Listener<State>>;
   let cascadeListenerCount = 0;
 
-  function setState(update: SetPartial<State>, replace?: boolean): void {
+  function setState(update: SetPartial<State>, replace?: false): void;
+  function setState(update: SetFull<State>, replace: true): void;
+  function setState(update: SetPartial<State>, replace: false, result: typeof RETURN_STATE_CHANGE): typeof STATE_UNCHANGED | void;
+  function setState(update: SetFull<State>, replace: true, result: typeof RETURN_STATE_CHANGE): typeof STATE_UNCHANGED | void;
+  function setState(update: SetPartial<State>, replace?: boolean, result?: typeof RETURN_STATE_CHANGE): typeof STATE_UNCHANGED | void {
     const nextState = applyStateUpdate(state, update, replace);
-    if (Object.is(nextState, state)) return;
+    if (Object.is(nextState, state)) return result === RETURN_STATE_CHANGE ? STATE_UNCHANGED : undefined;
 
     const previousState = state;
     state = nextState;
