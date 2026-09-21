@@ -528,13 +528,16 @@ export function queryStore<
             }
 
             (setData ? setWithEnabledHandling : set)(state => {
-              let newState: S = {
-                ...state,
-                error: null,
-                lastFetchedAt,
-                queryKey: shouldUpdateQueryKey ? fetchQueryKey : state.queryKey,
-                status: QueryStatuses.Success,
-              };
+              let newState: S =
+                currentFetch && activeFetch === currentFetch
+                  ? {
+                      ...state,
+                      error: null,
+                      lastFetchedAt,
+                      queryKey: shouldUpdateQueryKey ? fetchQueryKey : state.queryKey,
+                      status: QueryStatuses.Success,
+                    }
+                  : { ...state };
 
               if (!setData && !disableCache) {
                 if (enableLogs)
@@ -588,7 +591,7 @@ export function queryStore<
                 : pruneCache<S, TData, TParams>(keepPreviousData, fetchQueryKey, newState);
             });
 
-            if (isMainFetchPath) {
+            if (currentFetch && activeFetch === currentFetch) {
               lastFetchKey = fetchQueryKey;
               scheduleNextFetch(effectiveParams);
             }
@@ -635,7 +638,7 @@ export function queryStore<
             }
 
             let retryAfter: number | undefined;
-            if (retryAllowed && get().enabled && subscriptionManager.hasSubscribers()) {
+            if (retryAllowed && activeFetch === currentFetch && get().enabled && subscriptionManager.hasSubscribers()) {
               if (retryDelay === undefined) retryAfter = defaultRetryDelay(retryCount);
               else if (typeof retryDelay === 'number') retryAfter = retryDelay;
               else {
@@ -649,8 +652,6 @@ export function queryStore<
               }
             }
 
-            const willRetry = retryAfter !== undefined;
-
             if (retryAfter !== undefined) {
               clearActiveRefetchTimeout();
               activeRefetchTimeout = setTimeout(() => {
@@ -658,16 +659,16 @@ export function queryStore<
               }, retryAfter);
             }
 
-            if (disableCache) {
-              set(state => ({
-                error: typedError,
-                queryKey: shouldUpdateQueryKey ? fetchQueryKey : state.queryKey,
-                status: QueryStatuses.Error,
-              }));
-            } else {
-              set(state => ({
-                error: typedError,
-                queryCache: {
+            set(state => {
+              const newState: S = { ...state };
+              if (activeFetch === currentFetch) {
+                newState.error = typedError;
+                if (shouldUpdateQueryKey) newState.queryKey = fetchQueryKey;
+                newState.status = QueryStatuses.Error;
+              }
+
+              if (!disableCache) {
+                newState.queryCache = {
                   ...state.queryCache,
                   [fetchQueryKey]: {
                     cacheTime: entry?.cacheTime ?? effectiveCacheTime,
@@ -680,15 +681,21 @@ export function queryStore<
                       retryCount,
                     },
                   } satisfies CacheEntry<TData>,
-                },
-                queryKey: shouldUpdateQueryKey ? fetchQueryKey : state.queryKey,
-                status: QueryStatuses.Error,
-              }));
-            }
+                };
+              }
+
+              return newState;
+            });
 
             if (onError) {
               try {
-                onError({ error: typedError, params: effectiveParams, queryKey: fetchQueryKey, retryCount, willRetry });
+                onError({
+                  error: typedError,
+                  params: effectiveParams,
+                  queryKey: fetchQueryKey,
+                  retryCount,
+                  willRetry: retryAfter !== undefined,
+                });
               } catch (onErrorError) {
                 logger.error(queryStoreError(storeIdentifier, 'onError callback', onErrorError));
               }
@@ -970,7 +977,6 @@ function pruneCache<S extends QueryStoreState<TData, TParams>, TData, TParams ex
 ): S | Partial<S> {
   if (!state.queryCache) return state;
   const pruneTime = Date.now();
-  const preserve = keyToPreserve ?? ((keepPreviousData && state.queryKey) || null);
   const newCache: Record<string, CacheEntry<TData>> = nullObject();
 
   let prunedSomething = false;
@@ -978,7 +984,11 @@ function pruneCache<S extends QueryStoreState<TData, TParams>, TData, TParams ex
   for (const key in state.queryCache) {
     if (!hasOwn(state.queryCache, key)) continue;
     const entry = state.queryCache[key];
-    const isValid = !!entry && (pruneTime - (entry.lastFetchedAt ?? entry.errorInfo.lastFailedAt) < entry.cacheTime || key === preserve);
+    const isValid =
+      !!entry &&
+      (pruneTime - (entry.lastFetchedAt ?? entry.errorInfo.lastFailedAt) < entry.cacheTime ||
+        key === keyToPreserve ||
+        (keepPreviousData && key === state.queryKey));
 
     if (!isValid) {
       prunedSomething = true;
