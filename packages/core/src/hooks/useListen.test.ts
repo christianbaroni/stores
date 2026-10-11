@@ -5,10 +5,51 @@
 import { act, createElement, useLayoutEffect } from 'react';
 import { createBaseStore } from '../createBaseStore';
 import { createMountedRoot } from '../react.testUtils';
-import type { EqualityFn } from '../types';
+import type { EqualityFn, SubscribeArgs } from '../types';
 import { useListen, type ListenHandle, type UseListenOptions } from './useListen';
 
 describe('useListen', () => {
+  it.each([false, true])('establishes its baseline after subscription setup (fireImmediately=%s)', fireImmediately => {
+    const store = createBaseStore(() => ({ count: 0 }));
+    const subscribe = store.subscribe;
+    store.subscribe = (...args: SubscribeArgs<{ count: number }>) => {
+      store.setState({ count: 1 });
+      const unsubscribe = args.length === 1 ? subscribe(args[0]) : subscribe(args[0], args[1], args[2]);
+      store.setState({ count: 2 });
+      return unsubscribe;
+    };
+    const changes: [number, number][] = [];
+
+    function View() {
+      useListen(
+        store,
+        state => state.count,
+        (current, previous) => changes.push([current, previous]),
+        { fireImmediately }
+      );
+      return null;
+    }
+
+    const root = createMountedRoot();
+
+    try {
+      root.render(createElement(View));
+      expect(changes).toEqual(fireImmediately ? [[2, 2]] : []);
+
+      act(() => store.setState({ count: 0 }));
+      expect(changes).toEqual(
+        fireImmediately
+          ? [
+              [2, 2],
+              [0, 2],
+            ]
+          : [[0, 2]]
+      );
+    } finally {
+      root.unmount();
+    }
+  });
+
   it('provides the current store getter and lets reactions unsubscribe', () => {
     const store = createBaseStore(() => ({ count: 0, label: 'initial' }));
     const reaction = vi.fn((current: number, previous: number, get: typeof store.getState, unsubscribe: () => void) => {

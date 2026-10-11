@@ -163,9 +163,6 @@ function attachListener<Store extends BaseStore<S>, Selected, S>(
   const options = buildOptionsObject(listener.options);
   const equalityFn = options.equalityFn ?? Object.is;
 
-  let selected = listener.selector(store.getState());
-  let unsubscribe = noop;
-
   function check(state: S): void {
     if (!listener.isActive) return;
     const next = listener.selector(state);
@@ -175,7 +172,9 @@ function attachListener<Store extends BaseStore<S>, Selected, S>(
     listener.react(next, previous, store.getState, listener.unsubscribe);
   }
 
-  listener.isActive = true;
+  const unsubscribe = store.subscribe(check);
+  let selected = listener.selector(store.getState());
+
   listener.resubscribe = (options = DEFAULT_RESUBSCRIBE_OPTIONS) => attachListener(store, listenerRef, options);
   listener.refresh = () => check(store.getState());
   listener.unsubscribe = () => {
@@ -185,12 +184,7 @@ function attachListener<Store extends BaseStore<S>, Selected, S>(
     unsubscribe();
   };
 
-  unsubscribe = store.subscribe(check);
-
-  if (!listener.isActive) {
-    unsubscribe();
-    return;
-  }
+  listener.isActive = true;
 
   if (IS_DEV && options.debugMode) console.log('[📡 useListen 📡] Attached listener');
 
