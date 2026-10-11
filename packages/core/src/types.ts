@@ -282,6 +282,7 @@ export type PersistConfig<S, PersistedState extends Partial<S> = Partial<S>, Per
 
   /**
    * The throttle rate for the persist operation in milliseconds.
+   * Applies to synchronous storage. Async storage batches updates without a timed delay.
    * @default iOS: time.seconds(3) | Android: time.seconds(5)
    */
   persistThrottleMs?: PersistReturn extends Promise<unknown> ? undefined : number;
@@ -293,8 +294,10 @@ export type PersistConfig<S, PersistedState extends Partial<S> = Partial<S>, Per
   serializer?: (storageValue: StorageValue<PersistedState>) => string;
 
   /**
-   * Custom storage implementation. If async, `setState` will return a Promise that resolves
-   * when the state is persisted. If sync, `setState` will return void.
+   * Custom storage implementation. If async, `setState` returns a Promise that resolves
+   * after its batched persistence attempt completes. Storage and serialization failures are
+   * logged without rejecting the promise. Unchanged-state updates resolve immediately.
+   * If sync, `setState` returns void.
    */
   storage?: PersistReturn extends Promise<unknown> ? AsyncStorageInterface : SyncStorageInterface;
 

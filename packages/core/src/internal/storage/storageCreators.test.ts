@@ -1,8 +1,14 @@
 import { type Mock } from 'vitest';
+import { flushMacrotask } from '../../async.testUtils';
 import { createSyncContextMock } from '../sync/syncContext.testUtils';
 import { SyncContext } from '../sync/syncEnhancer';
 import { createPersistStorage } from './storageCreators';
 import { createAsyncStorageMock, createSyncStorageMock } from './storageMocks.testUtils';
+
+vi.mock('#env', async importOriginal => ({
+  ...(await importOriginal<typeof import('#env')>()),
+  IS_TEST: false,
+}));
 
 function createContext(overrides: Partial<SyncContext> = {}): {
   context: SyncContext;
@@ -29,6 +35,27 @@ function createContext(overrides: Partial<SyncContext> = {}): {
 
 describe('createPersistStorage', () => {
   describe('synchronous storage', () => {
+    it('retains timed coalescing for synchronous storage', async () => {
+      vi.useFakeTimers();
+      const storage = createSyncStorageMock();
+      const { persistStorage } = createPersistStorage<{ count: number }, { count: number }, void>(
+        { storageKey: 'throttled', persistThrottleMs: 50 },
+        storage,
+        undefined
+      );
+
+      try {
+        expect(persistStorage.setItem('throttled', { count: 1 }, 0)).toBeUndefined();
+        persistStorage.setItem('throttled', { count: 2 }, 0);
+        await vi.advanceTimersByTimeAsync(49);
+        expect(storage.set).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(1);
+        expect(storage.set.mock.calls).toEqual([['throttled', JSON.stringify({ state: { count: 2 }, version: 0 })]]);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('embeds sync metadata and clears snapshots after persist', () => {
       const storage = createSyncStorageMock();
       const { context, fields, clearSpy } = createContext();
@@ -111,6 +138,22 @@ describe('createPersistStorage', () => {
   });
 
   describe('asynchronous storage', () => {
+    it('batches asynchronous persistence without applying the platform throttle', async () => {
+      const storage = createAsyncStorageMock();
+      const { persistStorage } = createPersistStorage<{ count: number }, { count: number }, Promise<void>>(
+        { storageKey: 'unthrottled' },
+        storage,
+        undefined
+      );
+
+      const first = persistStorage.setItem('unthrottled', { count: 1 }, 0);
+      const second = persistStorage.setItem('unthrottled', { count: 2 }, 0);
+      await flushMacrotask();
+
+      expect(storage.set.mock.calls).toEqual([['unthrottled', JSON.stringify({ state: { count: 2 }, version: 0 })]]);
+      await Promise.all([first, second]);
+    });
+
     it('embeds metadata for async storage and clears snapshots after success', async () => {
       const storage = createAsyncStorageMock();
       const { context, fields, clearSpy } = createContext({ isAsync: true, getTimestamp: () => 2000 });

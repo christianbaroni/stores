@@ -1,6 +1,8 @@
-import { flushMacrotask } from './async.testUtils';
+import { createAsyncStorageMock } from './internal/storage/storageMocks.testUtils';
+import { deferred, flushMacrotask } from './async.testUtils';
 import { createBaseStore } from './createBaseStore';
 import { StoresError } from './internal/errors';
+import { logger } from './internal/logger';
 import { AsyncStorageInterface, OptionallyPersistedStore, PersistedStore } from './types';
 import { isPlainObject } from './types/utils';
 
@@ -247,3 +249,102 @@ function readPersisted<T>(key: string): PersistEnvelope<T> | undefined {
   if (!raw) return undefined;
   return JSON.parse(raw);
 }
+
+describe('hydration error isolation', () => {
+  it.each([false, true])('settles queued updates after their batched persistence attempt, fails=%s', async fails => {
+    const read = deferred<string | undefined>();
+    const write = deferred<void>();
+    const storage = createAsyncStorageMock();
+    storage.get.mockReturnValueOnce(read.promise);
+    storage.set.mockReturnValueOnce(write.promise);
+    const log = vi.spyOn(logger, 'error').mockImplementation(() => {});
+    const store = createBaseStore<{ value: number; change: (value: number) => void | Promise<void> }>(
+      set => ({ value: 0, change: value => set({ value }) }),
+      { storage, storageKey: 'queued-persistence' }
+    );
+    const settled = vi.fn();
+    const completion = Promise.all([1, 2, 3].map(value => store.getState().change(value))).then(settled);
+
+    try {
+      read.resolve(undefined);
+      await store.persist.hydrationPromise();
+      await flushMacrotask();
+
+      expect(store.getState().value).toBe(3);
+      expect(store.persist.hasHydrated()).toBe(true);
+      expect(storage.set.mock.calls).toEqual([['queued-persistence', JSON.stringify({ state: { value: 3 }, version: 0 })]]);
+      expect(settled).not.toHaveBeenCalled();
+
+      if (fails) write.reject(new Error('storage unavailable'));
+      else write.resolve();
+
+      await completion;
+      expect(settled).toHaveBeenCalledOnce();
+      expect(log).toHaveBeenCalledTimes(fails ? 1 : 0);
+    } finally {
+      write.resolve();
+      await completion;
+      log.mockRestore();
+    }
+  });
+
+  it.each([false, true])('keeps the initial hydration outcome after a later failed read, observedEarly=%s', async observedEarly => {
+    const storage = createAsyncStorageMock();
+    const error = new Error('later read failed');
+    storage.get.mockResolvedValueOnce(undefined).mockRejectedValueOnce(error);
+    const store = createBaseStore<{ value: number }>(() => ({ value: 0 }), { storage, storageKey: 'rehydrate' });
+    if (observedEarly) await store.persist.hydrationPromise();
+    else await flushMacrotask();
+    expect(store.persist.hasHydrated()).toBe(true);
+    await store.persist.rehydrate();
+    await expect(store.persist.hydrationPromise()).resolves.toBeUndefined();
+  });
+
+  it('rejects only the failing write and continues hydration and later writes', async () => {
+    const read = deferred<string | undefined>();
+    const storage = createAsyncStorageMock();
+    storage.get.mockReturnValueOnce(read.promise);
+    const error = new Error('updater failed');
+    const updater = vi.fn(() => {
+      throw error;
+    });
+    const store = createBaseStore<{ total: number; fail: () => void | Promise<void>; increment: () => void | Promise<void> }>(
+      set => ({
+        total: 0,
+        fail: () => set(updater),
+        increment: () => set(state => ({ total: state.total + 1 })),
+      }),
+      { storage, storageKey: 'application-errors' }
+    );
+    const onFinish = vi.fn();
+    store.persist.onFinishHydration(onFinish);
+    const writes = Promise.allSettled([store.getState().fail(), store.getState().increment()]);
+    read.resolve(JSON.stringify({ version: 0, state: { total: 10 } }));
+    await store.persist.hydrationPromise();
+    expect(await writes).toEqual([
+      { status: 'rejected', reason: error },
+      { status: 'fulfilled', value: undefined },
+    ]);
+    expect(updater).toHaveBeenCalledOnce();
+    expect(store.getState().total).toBe(11);
+    expect(store.persist.hasHydrated()).toBe(true);
+    expect(onFinish).toHaveBeenCalledOnce();
+  });
+
+  it('keeps storage-read failure separate from successful deferred application', async () => {
+    const read = deferred<string | undefined>();
+    const storage = createAsyncStorageMock();
+    storage.get.mockReturnValueOnce(read.promise);
+    const error = new Error('storage failed');
+    const store = createBaseStore<{ value: number; change: () => void | Promise<void> }>(
+      set => ({ value: 0, change: () => set({ value: 1 }) }),
+      { storage, storageKey: 'read-error' }
+    );
+    const change = store.getState().change();
+    read.reject(error);
+    await change;
+    await flushMacrotask();
+    expect(store.getState().value).toBe(1);
+    await expect(store.persist.hydrationPromise()).rejects.toBe(error);
+  });
+});

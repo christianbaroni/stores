@@ -27,16 +27,17 @@ export function createPersistStorage<S, PersistedState extends Partial<S>, Persi
   syncContext: SyncContext | undefined
 ): PersistStorageConfig<S, PersistedState> {
   const parsedStorage = storage ?? options.storage ?? getStorageConfig().storage;
-  const persistThrottleMs = (options.sync ? undefined : (options.persistThrottleMs ?? DEFAULT_PERSIST_THROTTLE_MS)) || undefined;
   const version = options.version ?? 0;
 
   if (parsedStorage.async) {
     return {
       async: true,
-      persistStorage: createAsyncPersistStorage(parsedStorage, options, persistThrottleMs, syncContext),
+      persistStorage: createAsyncPersistStorage(parsedStorage, options, syncContext),
       version,
     };
   }
+
+  const persistThrottleMs = (options.sync ? undefined : (options.persistThrottleMs ?? DEFAULT_PERSIST_THROTTLE_MS)) || undefined;
 
   return {
     async: false,
@@ -112,7 +113,6 @@ function createSyncPersistStorage<S, PersistedState extends Partial<S>, PersistR
 export function createAsyncPersistStorage<S, PersistedState extends Partial<S>, PersistReturn>(
   storage: AsyncStorageInterface,
   options: EnforceStorageKey<BaseStoreOptions<S, PersistedState, PersistReturn>>,
-  persistThrottleMs: number | undefined,
   syncContext?: SyncContext
 ): AsyncPersistStorage<S, PersistedState> {
   const enableMapSetHandling = !options.deserializer && !options.serializer && !storage.deserializer && !storage.serializer;
@@ -142,14 +142,7 @@ export function createAsyncPersistStorage<S, PersistedState extends Partial<S>, 
     }
   }
 
-  const lazyPersist =
-    persistThrottleMs !== undefined
-      ? debounce(persist, persistThrottleMs, {
-          leading: false,
-          maxWait: persistThrottleMs,
-          trailing: true,
-        })
-      : createAsyncMicrotaskScheduler(persist);
+  const lazyPersist = createAsyncMicrotaskScheduler(persist);
 
   return {
     getItem: async name => {
@@ -157,9 +150,9 @@ export function createAsyncPersistStorage<S, PersistedState extends Partial<S>, 
       if (serializedValue === undefined) return null;
       return deserializer(serializedValue);
     },
-    setItem: async (name, state, version) => {
-      if (syncContext?.getIsApplyingRemote()) return;
-      return await lazyPersist(name, state, version);
+    setItem: (name, state, version) => {
+      if (syncContext?.getIsApplyingRemote()) return Promise.resolve();
+      return lazyPersist(name, state, version);
     },
     removeItem: async name => {
       try {

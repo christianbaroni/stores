@@ -16,3 +16,18 @@ export async function flushMicrotasks(times = 1): Promise<void> {
   for (let i = 0; i < times; i++) promise = promise.then(() => Promise.resolve());
   await promise;
 }
+
+/**
+ * Builds a deferred promise with exposed resolve and reject functions.
+ */
+export function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void; reject: (error: Error) => void } {
+  let resolve!: (value: T) => void;
+  let reject!: (error: Error) => void;
+
+  const promise = new Promise<T>((onResolve, onReject) => {
+    resolve = onResolve;
+    reject = onReject;
+  });
+
+  return { promise, resolve, reject };
+}

@@ -1,5 +1,6 @@
 import { applySetState } from '../../store/stateUpdate';
 import { SetStateArgs, StateCreator } from '../../types';
+import { noop } from '../../utils/core';
 import { HydrationCoordinator, createHydrationCoordinator } from '../../utils/hydrationCoordinator';
 import { ensureError } from '../errors';
 import { SyncContext } from '../sync/syncEnhancer';
@@ -12,7 +13,8 @@ type WrappedOnRehydrateStorage<S> = (
 /**
  * Creates hydration-gating middleware that queues state updates until rehydration completes.
  *
- * **Before hydration**: Queues all `set()` calls and flushes them sequentially after rehydration.
+ * **Before hydration**: Queues `set()` calls in order and forwards each applied setter's result,
+ * including persistence-attempt completion. An application error rejects only that update's promise.
  *
  * **After hydration**: Passes `set()` calls through synchronously without batching.
  *
@@ -30,15 +32,20 @@ export function createHydrationGate<S>(stateCreator: StateCreator<S>): {
   let flushPendingSetCalls: (() => void) | undefined = undefined;
 
   const wrappedStateCreator: StateCreator<S> = (set, get, api) => {
-    let pendingSetCalls: Array<SetStateArgs<S>> | undefined = undefined;
+    let pendingSetCalls: Array<() => void> | undefined = undefined;
 
     function deferredSet(...args: SetStateArgs<S>): Promise<void> | void {
       // -- Hydrating: defer set() calls to be flushed after hydration
       if (!isHydrated) {
-        if (!coordinator) coordinator = createHydrationCoordinator();
-        if (!pendingSetCalls) pendingSetCalls = [];
-        pendingSetCalls.push(args);
-        return coordinator.promise;
+        return new Promise<void>((resolve, reject) => {
+          (pendingSetCalls ??= []).push(() => {
+            try {
+              resolve(applySetState(api.setState, args));
+            } catch (error) {
+              reject(error);
+            }
+          });
+        });
       }
       // -- Hydrated: let synchronous calls pass through
       return applySetState(set, args);
@@ -46,10 +53,9 @@ export function createHydrationGate<S>(stateCreator: StateCreator<S>): {
 
     flushPendingSetCalls = () => {
       if (!pendingSetCalls?.length) return;
-      for (const args of pendingSetCalls) {
-        applySetState(api.setState, args);
-      }
+      const pending = pendingSetCalls;
       pendingSetCalls = undefined;
+      for (const apply of pending) apply();
     };
 
     return stateCreator(deferredSet, get, api);
@@ -68,6 +74,7 @@ export function createHydrationGate<S>(stateCreator: StateCreator<S>): {
     return state => {
       const userRehydrateCallback = userCallback?.(state);
       return (finalState, error) => {
+        const wasHydrated = isHydrated;
         isHydrated = true;
 
         // This allows the sync enhancer to flush before processing queued set() calls.
@@ -75,8 +82,13 @@ export function createHydrationGate<S>(stateCreator: StateCreator<S>): {
         if (flushPendingSetCalls) flushPendingSetCalls();
         syncContext?.onHydrationFlushEnd?.();
 
-        if (error) coordinator?.fail(ensureError(error));
-        else coordinator?.complete();
+        if (error) {
+          if (!coordinator && !wasHydrated) {
+            coordinator = createHydrationCoordinator();
+            void coordinator.promise.catch(noop);
+          }
+          coordinator?.fail(ensureError(error));
+        } else coordinator?.complete();
 
         userRehydrateCallback?.(finalState, error);
       };
