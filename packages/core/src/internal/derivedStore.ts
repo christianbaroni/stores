@@ -322,6 +322,7 @@ export function derivedStore<DerivedState>(
       return fn();
     } finally {
       dependencyConsumerCount -= 1;
+      if (!dependencyConsumerCount) queueMicrotask(handleDestroy);
     }
   }
 
