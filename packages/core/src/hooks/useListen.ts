@@ -1,3 +1,4 @@
+import { IS_DEV } from '#env';
 import { RefObject, useLayoutEffect } from 'react';
 import { BaseStore, EqualityFn, InferStoreState, Selector } from '../types';
 import { noop } from '../utils/core';
@@ -9,12 +10,13 @@ import { useLazyRef as useRef } from './useLazyRef';
  * Handle returned by `useListen`.
  *
  * The hook cleans itself up, so you normally ignore this handle.
- * Keep it only when you need to pause or resume the listener manually
- * (e.g. suspend heavy work while a long-lived component is off screen).
+ * Keep it when you need to refresh the selection or pause and resume the listener manually.
  */
 export type ListenHandle = {
   /** `true` while the listener is attached. */
   isActive: boolean;
+  /** Re-evaluate the selector and notify if its value changed. Does nothing while detached. */
+  refresh: () => void;
   /** Re-attach the listener. */
   resubscribe: (options?: ResubscribeOptions) => void;
   /** Detach the listener. Safe to call more than once. */
@@ -71,7 +73,7 @@ type Reaction<S, Selected> = (current: Selected, previous: Selected, get: () => 
 type ListenerRef<S, Selected> = {
   selector: Selector<S, Selected>;
   react: Reaction<S, Selected>;
-  options: UseListenOptions<Selected>;
+  options: UseListenOptions<Selected> | UseListenOptions<Selected>['equalityFn'];
 } & ListenHandle;
 
 // ============ useListen ====================================================== //
@@ -93,7 +95,7 @@ const DEFAULT_OPTIONS = Object.freeze({
  * effects, or deciding yourself if or when a render should happen.
  *
  * The hook attaches the listener and cleans it up automatically. Use the returned `ListenHandle`
- * only when you need to pause or resume the listener manually.
+ * to refresh the selection or pause and resume the listener manually.
  *
  * ---
  * 💡 **Note:** With the exception of `enabled`, changes in `options` are **not reactive**.
@@ -103,7 +105,7 @@ const DEFAULT_OPTIONS = Object.freeze({
  * @param store - Store to listen to. Should be a stable reference.
  * @param selector - Selects the slice of the store state to listen to.
  * @param react - Triggered when the selected slice changes. Receives `(current, previous, get, unsubscribe)`.
- * @param optionsOrEqualityFn - Optional `equalityFn`, `fireImmediately` settings, forwarded to `store.subscribe`.
+ * @param optionsOrEqualityFn - Equality function or listener options, including `enabled` and `fireImmediately`.
  *
  * ---
  * @example
@@ -151,43 +153,64 @@ function attachListener<Store extends BaseStore<S>, Selected, S>(
   listenerRef: RefObject<ListenerRef<S, Selected>>,
   resubscribeOptions: ResubscribeOptions = DEFAULT_RESUBSCRIBE_OPTIONS
 ): void {
-  if (listenerRef.current.isActive) {
-    if (!resubscribeOptions?.forceResubscribe) return;
-    listenerRef.current.unsubscribe();
+  const listener = listenerRef.current;
+
+  if (listener.isActive) {
+    if (!resubscribeOptions.forceResubscribe) return;
+    listener.unsubscribe();
   }
 
-  if (listenerRef.current.options.debugMode) {
-    console.log('[📡 useListen 📡] Attaching listener');
+  const options = buildOptionsObject(listener.options);
+  const equalityFn = options.equalityFn ?? Object.is;
+
+  let selected = listener.selector(store.getState());
+  let unsubscribe = noop;
+
+  function check(state: S): void {
+    if (!listener.isActive) return;
+
+    const next = listener.selector(state);
+    if (equalityFn(selected, next)) return;
+
+    const previous = selected;
+    selected = next;
+    listener.react(next, previous, store.getState, listener.unsubscribe);
   }
 
-  listenerRef.current.isActive = true;
-  listenerRef.current.resubscribe = (options = DEFAULT_RESUBSCRIBE_OPTIONS) => attachListener(store, listenerRef, options);
+  listener.isActive = true;
+  listener.resubscribe = (options = DEFAULT_RESUBSCRIBE_OPTIONS) => attachListener(store, listenerRef, options);
+  listener.refresh = () => check(store.getState());
 
-  const unsubscribe = store.subscribe(
-    s => listenerRef.current.selector(s),
-    (current, previous) =>
-      listenerRef.current.react(current, previous, store.getState, () => {
-        unsubscribe();
-        listenerRef.current.isActive = false;
-      }),
-    resubscribeOptions.fireImmediately ? { ...listenerRef.current.options, fireImmediately: true } : listenerRef.current.options
-  );
-
-  listenerRef.current.unsubscribe = () => {
-    if (!listenerRef.current.isActive) return;
+  listener.unsubscribe = () => {
+    if (!listener.isActive) return;
+    listener.isActive = false;
+    listener.refresh = noop;
     unsubscribe();
-    listenerRef.current.isActive = false;
   };
+
+  unsubscribe = store.subscribe(check);
+
+  if (!listener.isActive) {
+    unsubscribe();
+    return;
+  }
+
+  if (IS_DEV && options.debugMode) console.log('[📡 useListen 📡] Attached listener');
+
+  if (resubscribeOptions.fireImmediately || options.fireImmediately) {
+    listener.react(selected, selected, store.getState, listener.unsubscribe);
+  }
 }
 
 function detachListener<S, Selected>(listenerRef: RefObject<ListenerRef<S, Selected>>): void {
-  if (listenerRef.current.options.debugMode) {
-    console.log('[🗑️ useListen 🗑️] Detaching listener');
-  }
-  listenerRef.current.resubscribe = noop;
-  listenerRef.current.unsubscribe();
-  listenerRef.current.unsubscribe = noop;
-  listenerRef.current.isActive = false;
+  const listener = listenerRef.current;
+  listener.resubscribe = noop;
+  listener.unsubscribe();
+  listener.unsubscribe = noop;
+  listener.isActive = false;
+
+  if (!IS_DEV || typeof listener.options === 'function') return;
+  if (listener.options?.debugMode) console.log('[🗑️ useListen 🗑️] Detached listener');
 }
 
 function createListenerRef<S, Selected>(
@@ -199,7 +222,8 @@ function createListenerRef<S, Selected>(
     selector,
     react,
     isActive: false,
-    options: buildOptionsObject(optionsOrEqualityFn),
+    options: optionsOrEqualityFn,
+    refresh: noop,
     resubscribe: noop,
     unsubscribe: noop,
   };
@@ -225,9 +249,8 @@ function setListenerRef<S, Selected>(
   react: ListenerRef<S, Selected>['react'],
   optionsOrEqualityFn: UseListenOptions<Selected> | UseListenOptions<Selected>['equalityFn']
 ): void {
-  listenerRef.current.selector = selector;
-  listenerRef.current.react = react;
-
-  if (typeof optionsOrEqualityFn === 'function') listenerRef.current.options.equalityFn = optionsOrEqualityFn;
-  else if (optionsOrEqualityFn) listenerRef.current.options = optionsOrEqualityFn ?? DEFAULT_OPTIONS;
+  const listener = listenerRef.current;
+  listener.selector = selector;
+  listener.react = react;
+  listener.options = optionsOrEqualityFn;
 }
