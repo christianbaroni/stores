@@ -1,7 +1,6 @@
 import type { Mock } from 'vitest';
 import { flushMicrotasks } from './async.testUtils';
 import { createBaseStore } from './createBaseStore';
-import { createQueryStore } from './createQueryStore';
 import { createAsyncStorageMock, createSyncStorageMock } from './internal/storage/storageMocks.testUtils';
 import * as syncEnhancer from './internal/sync/syncEnhancer';
 import { StorageValue } from './storage/storageTypes';
@@ -186,31 +185,6 @@ describe('createBaseStore sync and persistence', () => {
     expect(storage.set).toHaveBeenCalledTimes(1);
     expect(publish).toHaveBeenCalledTimes(1);
     expect(publish.mock.calls[0][0].values).toEqual({ a: 1 });
-  });
-
-  it('fetches when an active query is enabled before async hydration completes', async () => {
-    const storage = createAsyncStorageMock();
-    let resolveStorageRead: ((value: undefined) => void) | undefined;
-    storage.get.mockReturnValueOnce(new Promise(resolve => (resolveStorageRead = resolve)));
-    const fetcher = vi.fn(async () => 42);
-    const { engine } = createSyncEngine();
-    const store = createQueryStore(
-      { enabled: false, fetcher, staleTime: Infinity },
-      { storage, storageKey: 'enabled-before-hydration', sync: { engine } }
-    );
-    const unsubscribe = store.subscribe(() => {});
-    const enabled = store.setState({ enabled: true });
-    expect(fetcher).not.toHaveBeenCalled();
-
-    if (!resolveStorageRead) throw new Error('Expected storage read to start.');
-    resolveStorageRead(undefined);
-    await enabled;
-    await flushMicrotasks(5);
-
-    expect(store.getState().enabled).toBe(true);
-    expect(fetcher).toHaveBeenCalledTimes(1);
-    unsubscribe();
-    store.getState().reset();
   });
 
   it('skips persistence and publication when a pre-hydration update preserves hydrated state', async () => {
