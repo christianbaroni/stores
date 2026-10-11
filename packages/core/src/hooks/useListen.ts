@@ -73,7 +73,7 @@ type Reaction<S, Selected> = (current: Selected, previous: Selected, get: () => 
 type ListenerRef<S, Selected> = {
   selector: Selector<S, Selected>;
   react: Reaction<S, Selected>;
-  options: UseListenOptions<Selected> | UseListenOptions<Selected>['equalityFn'];
+  options: UseListenOptions<Selected> | EqualityFn<Selected>;
 } & ListenHandle;
 
 // ============ useListen ====================================================== //
@@ -125,7 +125,7 @@ export function useListen<Store extends BaseStore<S>, Selected, S = InferStoreSt
   store: Store,
   selector: Selector<S, Selected>,
   react: Reaction<S, Selected>,
-  optionsOrEqualityFn: UseListenOptions<Selected> | UseListenOptions<Selected>['equalityFn'] = DEFAULT_OPTIONS
+  optionsOrEqualityFn: UseListenOptions<Selected> | EqualityFn<Selected> = DEFAULT_OPTIONS
 ): RefObject<Readonly<ListenHandle>> {
   const listenerRef = useRef<ListenerRef<S, Selected>>(() => createListenerRef(selector, react, optionsOrEqualityFn));
   const enabled = getEnabledOption(optionsOrEqualityFn);
@@ -168,10 +168,8 @@ function attachListener<Store extends BaseStore<S>, Selected, S>(
 
   function check(state: S): void {
     if (!listener.isActive) return;
-
     const next = listener.selector(state);
     if (equalityFn(selected, next)) return;
-
     const previous = selected;
     selected = next;
     listener.react(next, previous, store.getState, listener.unsubscribe);
@@ -180,7 +178,6 @@ function attachListener<Store extends BaseStore<S>, Selected, S>(
   listener.isActive = true;
   listener.resubscribe = (options = DEFAULT_RESUBSCRIBE_OPTIONS) => attachListener(store, listenerRef, options);
   listener.refresh = () => check(store.getState());
-
   listener.unsubscribe = () => {
     if (!listener.isActive) return;
     listener.isActive = false;
@@ -216,7 +213,7 @@ function detachListener<S, Selected>(listenerRef: RefObject<ListenerRef<S, Selec
 function createListenerRef<S, Selected>(
   selector: Selector<S, Selected>,
   react: Reaction<S, Selected>,
-  optionsOrEqualityFn: UseListenOptions<Selected> | UseListenOptions<Selected>['equalityFn']
+  optionsOrEqualityFn: UseListenOptions<Selected> | EqualityFn<Selected>
 ): ListenerRef<S, Selected> {
   return {
     selector,
@@ -231,14 +228,12 @@ function createListenerRef<S, Selected>(
 
 // ============ Utilities ====================================================== //
 
-function buildOptionsObject<Selected>(
-  optionsOrEqualityFn: UseListenOptions<Selected> | UseListenOptions<Selected>['equalityFn']
-): UseListenOptions<Selected> {
+function buildOptionsObject<Selected>(optionsOrEqualityFn: UseListenOptions<Selected> | EqualityFn<Selected>): UseListenOptions<Selected> {
   if (typeof optionsOrEqualityFn === 'function') return { equalityFn: optionsOrEqualityFn };
   return optionsOrEqualityFn ?? DEFAULT_OPTIONS;
 }
 
-function getEnabledOption<Selected>(optionsOrEqualityFn: UseListenOptions<Selected> | UseListenOptions<Selected>['equalityFn']): boolean {
+function getEnabledOption<Selected>(optionsOrEqualityFn: UseListenOptions<Selected> | EqualityFn<Selected>): boolean {
   if (typeof optionsOrEqualityFn === 'function') return DEFAULT_OPTIONS.enabled;
   return optionsOrEqualityFn?.enabled ?? DEFAULT_OPTIONS.enabled;
 }
@@ -246,8 +241,8 @@ function getEnabledOption<Selected>(optionsOrEqualityFn: UseListenOptions<Select
 function setListenerRef<S, Selected>(
   listenerRef: RefObject<ListenerRef<S, Selected>>,
   selector: Selector<S, Selected>,
-  react: ListenerRef<S, Selected>['react'],
-  optionsOrEqualityFn: UseListenOptions<Selected> | UseListenOptions<Selected>['equalityFn']
+  react: Reaction<S, Selected>,
+  optionsOrEqualityFn: UseListenOptions<Selected> | EqualityFn<Selected>
 ): void {
   const listener = listenerRef.current;
   listener.selector = selector;
