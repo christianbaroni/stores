@@ -42,9 +42,7 @@ export function buildNullObject<A extends object, B>(a: A, b?: B): A & B {
 /**
  * Does nothing.
  */
-export function noop(): void {
-  return;
-}
+export function noop(): undefined {}
 
 /**
  * Notifies a listener with the current and previous state.

@@ -1,170 +1,108 @@
-import { Timeout } from '../types';
+import { noop } from './core';
 
-export type DebounceOptions = {
+type DebouncedFunction<Args extends unknown[], Result, This = unknown> = {
+  (this: This, ...args: Args): Result | undefined;
+  cancel(): void;
+  flush(): Result | undefined;
+};
+
+type DebounceOptions = {
   leading?: boolean;
   maxWait?: number;
   trailing?: boolean;
 };
 
-export type DebouncedFunction<F extends (...args: Parameters<F>) => ReturnType<F>> = {
-  (...args: Parameters<F>): ReturnType<F> | undefined;
-  cancel: () => void;
-  flush: () => ReturnType<F> | undefined;
-};
-
-const nativeMax = Math.max;
-const nativeMin = Math.min;
+const EMPTY_OPTIONS = Object.freeze<DebounceOptions>({});
+const NOOP_DEBOUNCED: DebouncedFunction<[], undefined> = Object.assign(() => undefined, { cancel: noop, flush: noop });
 
 /**
- * Creates a debounced function that delays invoking `func` until after `wait` milliseconds
- * have elapsed since the last time the debounced function was invoked.
- * Copied and adapted from lodash@4.17.21.
- *
- * @param func The function to debounce.
- * @param wait The number of milliseconds to delay.
- * @param options The options object.
- * @returns Returns the new debounced function.
+ * Leaner reimplementation of the `lodash` debounce function.
  */
-export function debounce<F extends (...args: Parameters<F>) => ReturnType<F>>(
-  func: F,
+export function debounce<Args extends unknown[], Result, This = unknown>(
+  fn: (this: This, ...args: Args) => Result,
   wait = 0,
-  options: DebounceOptions = {}
-): DebouncedFunction<F> {
-  let lastArgs: Parameters<F> | undefined;
-  let lastThis: ThisType<F> | undefined;
-  let maxWait: number | undefined;
-  let result: ReturnType<F> | undefined;
-  let timerId: Timeout | undefined;
-  let lastCallTime: number | undefined;
-  let lastInvokeTime = 0;
-  let leading = false;
-  let maxing = false;
-  let trailing = true;
+  { leading = false, maxWait, trailing = true }: DebounceOptions = EMPTY_OPTIONS
+): DebouncedFunction<Args, Result, This> {
+  if (!leading && !trailing) return NOOP_DEBOUNCED;
 
-  if (typeof func !== 'function') {
-    throw new TypeError('Expected a function');
-  }
-  wait = toNumber(wait) || 0;
-  if (isObject(options)) {
-    leading = !!options.leading;
-    maxing = 'maxWait' in options;
-    maxWait = maxing ? nativeMax(toNumber(options.maxWait) || 0, wait) : undefined;
-    trailing = 'trailing' in options ? !!options.trailing : trailing;
+  wait = Math.max(0, wait) || 0;
+  const maxing = maxWait !== undefined;
+  const limit = Math.max(wait, maxWait || 0);
+  const hasPerformanceNow = typeof performance !== 'undefined' && typeof performance.now === 'function';
+  const now = hasPerformanceNow ? performance.now.bind(performance) : Date.now;
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let args: Args | undefined;
+  let receiver: This | undefined;
+  let calledAt: number | undefined;
+  let invokedAt = 0;
+  let result: Result | undefined;
+
+  function invoke(time: number): Result {
+    const a = args!;
+    const self = receiver!;
+    args = receiver = undefined;
+    invokedAt = time;
+    return (result = fn.apply(self, a));
   }
 
-  function invokeFunc(time: number) {
-    const args = lastArgs;
-    const thisArg = lastThis;
-    lastArgs = lastThis = undefined;
-    lastInvokeTime = time;
-    result = args ? func.apply(thisArg, args) : func.apply(thisArg);
+  function ready(time: number): boolean {
+    const elapsed = time - calledAt!;
+    return calledAt === undefined || elapsed >= wait || elapsed < 0 || (maxing && time - invokedAt >= limit);
+  }
+
+  function finish(time: number): Result | undefined {
+    timer = undefined;
+    if (trailing && args) return invoke(time);
+    args = receiver = undefined;
     return result;
   }
 
-  function leadingEdge(time: number) {
-    lastInvokeTime = time;
-    timerId = setTimeout(timerExpired, wait);
-    return leading ? invokeFunc(time) : result;
-  }
-
-  function remainingWait(time: number) {
-    const timeSinceLastCall = time - (lastCallTime ?? 0);
-    const timeSinceLastInvoke = time - lastInvokeTime;
-    const timeWaiting = wait - timeSinceLastCall;
-    return maxing && maxWait !== undefined ? nativeMin(timeWaiting, maxWait - timeSinceLastInvoke) : timeWaiting;
-  }
-
-  function shouldInvoke(time: number) {
-    const timeSinceLastCall = time - (lastCallTime ?? 0);
-    const timeSinceLastInvoke = time - lastInvokeTime;
-    return (
-      lastCallTime === undefined ||
-      timeSinceLastCall >= wait ||
-      timeSinceLastCall < 0 ||
-      (maxing && maxWait !== undefined && timeSinceLastInvoke >= maxWait)
-    );
-  }
-
-  function timerExpired() {
+  function expire(): void {
     const time = now();
-    if (shouldInvoke(time)) {
-      return trailingEdge(time);
+    if (ready(time)) {
+      finish(time);
+    } else {
+      const remaining = wait - (time - calledAt!);
+      timer = setTimeout(expire, maxing ? Math.min(remaining, limit - (time - invokedAt)) : remaining);
     }
-    timerId = setTimeout(timerExpired, remainingWait(time));
   }
 
-  function trailingEdge(time: number) {
-    timerId = undefined;
-    if (trailing && lastArgs) {
-      return invokeFunc(time);
-    }
-    lastArgs = lastThis = undefined;
-    return result;
-  }
-
-  function cancel() {
-    if (timerId !== undefined) {
-      clearTimeout(timerId);
-    }
-    lastInvokeTime = 0;
-    lastArgs = lastCallTime = lastThis = timerId = undefined;
-  }
-
-  function flush() {
-    return timerId === undefined ? result : trailingEdge(now());
-  }
-
-  function debounced(this: ThisType<F>, ...args: Parameters<F>): ReturnType<F> | undefined {
+  function debounced(this: This, ...latest: Args): Result | undefined {
     const time = now();
-    const isInvoking = shouldInvoke(time);
-    lastArgs = args;
-    // eslint-disable-next-line @typescript-eslint/no-this-alias
-    lastThis = this;
-    lastCallTime = time;
-    if (isInvoking) {
-      if (timerId === undefined) {
-        return leadingEdge(lastCallTime);
+    const shouldRun = ready(time);
+    args = latest;
+    receiver = this;
+    calledAt = time;
+
+    if (shouldRun) {
+      if (timer === undefined) {
+        invokedAt = time;
+        timer = setTimeout(expire, wait);
+        return leading ? invoke(time) : result;
       }
       if (maxing) {
-        clearTimeout(timerId);
-        timerId = setTimeout(timerExpired, wait);
-        return invokeFunc(lastCallTime);
+        clearTimeout(timer);
+        timer = setTimeout(expire, wait);
+        return invoke(time);
       }
     }
-    if (timerId === undefined) {
-      timerId = setTimeout(timerExpired, wait);
-    }
+
+    if (timer === undefined) timer = setTimeout(expire, wait);
     return result;
   }
-  debounced.cancel = cancel;
-  debounced.flush = flush;
+
+  debounced.cancel = () => {
+    if (timer !== undefined) clearTimeout(timer);
+    timer = args = receiver = calledAt = undefined;
+    invokedAt = 0;
+  };
+
+  debounced.flush = () => {
+    if (timer === undefined) return result;
+    clearTimeout(timer);
+    return finish(now());
+  };
+
   return debounced;
-}
-
-function now(): number {
-  return typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
-}
-
-function toNumber(value: number | string | symbol | object | undefined): number {
-  if (typeof value === 'number') return value;
-  if (typeof value === 'symbol' || value === undefined) return NaN;
-  if (typeof value === 'object' && value !== null) {
-    const other = typeof value.valueOf === 'function' ? value.valueOf() : value;
-    value = typeof other === 'object' ? other + '' : other;
-  }
-  if (typeof value !== 'string') return value === 0 ? value : +value;
-  value = value.replace(/^[\s\uFEFF\xA0]+|[\s\uFEFF\xA0]+$/g, '');
-  const isBinary = /^0b[01]+$/i.test(value);
-  return isBinary
-    ? parseInt(value.slice(2), 2)
-    : /^0o[0-7]+$/i.test(value)
-      ? parseInt(value.slice(2), 8)
-      : /^[-+]0x[0-9a-f]+$/i.test(value)
-        ? NaN
-        : +value;
-}
-
-function isObject(value: unknown): value is object {
-  const type = typeof value;
-  return value !== null && (type === 'object' || type === 'function');
 }
