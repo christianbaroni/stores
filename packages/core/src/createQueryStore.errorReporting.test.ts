@@ -209,4 +209,17 @@ describe('createQueryStore error reporting', () => {
     expect(store.getState().error).toBeNull();
     expect(store.getState().status).toBe(QueryStatuses.Success);
   });
+
+  it('rejects admission failures without throwing synchronously', async () => {
+    const error = new Error('cache policy failed');
+    const fetcher = vi.fn(() => 'data');
+    const store = createQueryStore({
+      fetcher,
+      cacheTime: () => {
+        throw error;
+      },
+    });
+    await expect(store.getState().fetch()).rejects.toBe(error);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
 });
