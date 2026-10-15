@@ -1,17 +1,8 @@
 import { IS_DEV } from '#env';
 import type { StoreApi } from '../store/types';
-import type {
-  DebounceOptions,
-  DeriveGetter,
-  DeriveOptions,
-  EqualityFn,
-  Listener,
-  Selector,
-  WithFlushUpdates,
-  WithGetSnapshot,
-} from '../types';
+import type { DebounceOptions, DeriveGetter, DeriveOptions, EqualityFn, Listener, Selector, WithGetSnapshot } from '../types';
 import { BivariantMethod } from '../types/functions';
-import { identity } from '../utils/core';
+import { identity, noop } from '../utils/core';
 import { debounce } from '../utils/debounce';
 import { pluralize } from '../utils/stringUtils';
 import {
@@ -29,6 +20,7 @@ import { DerivedSubscribers, type DerivedWatcher } from './derivedStore/derivedS
 import { PathFinder } from './derivedStore/pathFinder';
 import type { InternalSubscribeOptions, InternalUnsubscribeFn } from './internalSubscriptions';
 import { connectSelection, notifyInitial } from './selectorSubscription';
+import { READ_DEPENDENCY_STATE } from './storeUtils';
 
 // ============ Types ========================================================== //
 
@@ -46,14 +38,13 @@ const enum DerivePhase {
 
 const UNINITIALIZED = Symbol();
 const NO_CASCADE_FLUSH = Symbol();
-const READ_DEPENDENCY_STATE = Symbol('stores.derivedStore.readDependencyState');
 
 // ============ Store Creator ================================================== //
 
 export function derivedStore<DerivedState>(
   deriveFunction: ($: DeriveGetter) => DerivedState,
   optionsOrEqualityFn: DeriveOptions<DerivedState> = Object.is
-): WithGetSnapshot<WithFlushUpdates<StoreApi<DerivedState>>> {
+): WithGetSnapshot<StoreApi<DerivedState>> & { destroy: () => void } {
   let debounceOptions: number | DebounceOptions | undefined;
   let debugMode: boolean | 'verbose' = false;
   let equalityFn: EqualityFn<DerivedState>;
@@ -392,10 +383,6 @@ export function derivedStore<DerivedState>(
     return subscribe(listener, undefined, CASCADE_PARTICIPANT_SUBSCRIBE_OPTIONS);
   }
 
-  function flushUpdates(): void {
-    if (dependencyConsumerCount) debouncedDerive?.flush();
-  }
-
   function destroy(): void {
     debouncedDerive?.cancel();
     dependencies.clear();
@@ -413,7 +400,6 @@ export function derivedStore<DerivedState>(
 
   const api = {
     destroy,
-    flushUpdates,
     getSnapshot,
     getState,
     subscribe,
@@ -424,7 +410,18 @@ export function derivedStore<DerivedState>(
     [SUBSCRIBE_CASCADE_STATE]: subscribeCascadeState,
   };
 
-  return api;
+  return debounceOptions === undefined
+    ? api
+    : Object.assign(
+        api,
+        debouncedDerive
+          ? {
+              flushUpdates(): void {
+                if (dependencyConsumerCount) debouncedDerive.flush();
+              },
+            }
+          : { flushUpdates: noop }
+      );
 }
 
 // ============ Helpers ======================================================== //

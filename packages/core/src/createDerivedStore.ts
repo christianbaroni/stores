@@ -1,6 +1,6 @@
 import { attachStoreHook } from '#store/attachStoreHook';
 import { derivedStore } from './internal/runtime';
-import type { DeriveGetter, DeriveOptions, DerivedStore } from './types';
+import type { DebounceOptions, DebouncedDerivedStore, DeriveGetter, DeriveOptions, DerivedStore } from './types';
 
 // ============ Store Creator ================================================== //
 
@@ -64,6 +64,16 @@ import type { DeriveGetter, DeriveOptions, DerivedStore } from './types';
  *
  * @returns A read-only derived store. In the React build, it is also callable as a hook.
  */
+export function createDerivedStore<Derived>(
+  deriveFunction: ($: DeriveGetter) => Derived,
+  optionsOrEqualityFn: DeriveOptions<Derived> & { debounce: number | DebounceOptions }
+): DebouncedDerivedStore<Derived>;
+
+export function createDerivedStore<Derived>(
+  deriveFunction: ($: DeriveGetter) => Derived,
+  optionsOrEqualityFn?: DeriveOptions<Derived>
+): DerivedStore<Derived>;
+
 export function createDerivedStore<Derived>(
   deriveFunction: ($: DeriveGetter) => Derived,
   optionsOrEqualityFn: DeriveOptions<Derived> = Object.is

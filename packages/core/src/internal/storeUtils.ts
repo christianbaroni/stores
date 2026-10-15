@@ -12,6 +12,11 @@ export const StoreTags: Readonly<{ QueryStore: symbol; VirtualStore: symbol }> =
   VirtualStore: Symbol('virtualStore'),
 });
 
+/**
+ * Internal snapshot reader that also identifies derived stores.
+ */
+export const READ_DEPENDENCY_STATE: unique symbol = Symbol('stores.derivedStore.readDependencyState');
+
 // ============ Types ========================================================== //
 
 type StoreTag = (typeof StoreTags)[keyof typeof StoreTags];
@@ -87,10 +92,8 @@ export function isQueryStore<T extends object>(
 /**
  * Checks if a store is a `DerivedStore`.
  */
-export function isDerivedStore<T extends BaseStore<unknown> | StoreApi<unknown>>(
-  store: T
-): store is T & { destroy: () => void; flushUpdates: () => void } {
-  return 'flushUpdates' in store;
+export function isDerivedStore<T extends BaseStore<unknown> | StoreApi<unknown>>(store: T): store is T & { destroy: () => void } {
+  return READ_DEPENDENCY_STATE in store;
 }
 
 /**

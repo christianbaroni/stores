@@ -94,9 +94,7 @@ export type DeriveGetter = {
 
 // ============ Derived Store Types ============================================ //
 
-export type DerivedStore<S> = WithFlushUpdates<ReadOnlyDerivedStore<BaseStore<S>>>;
-
-export type WithFlushUpdates<Store extends StoreApi<unknown>> = Store & {
+export type DerivedStore<S> = ReadOnlyDerivedStore<BaseStore<S>> & {
   /**
    * Destroy the derived store and its subscriptions.
    *
@@ -105,8 +103,11 @@ export type WithFlushUpdates<Store extends StoreApi<unknown>> = Store & {
    * unless `keepAlive: true` is specified and explicit teardown is desired.
    */
   destroy: () => void;
+};
+
+export type DebouncedDerivedStore<S> = DerivedStore<S> & {
   /**
-   * Flush all pending updates — only applicable to **debounced** derived stores.
+   * Flushes pending debounced updates immediately.
    */
   flushUpdates: () => void;
 };
