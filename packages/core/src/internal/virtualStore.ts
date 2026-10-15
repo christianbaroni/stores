@@ -1,5 +1,6 @@
+import { createSelection, subscribeSelection, hasSelection } from './selectorSubscription';
 import type { StoreApi, WithPersist } from '../store/types';
-import { hasCascadeStateSubscription, SUBSCRIBE_CASCADE_STATE } from './cascadeSubscriptions';
+import { subscribeCascadeState as subscribeStoreCascadeState, SUBSCRIBE_CASCADE_STATE } from './cascadeSubscriptions';
 import type {
   BaseStore,
   DeriveGetter,
@@ -9,19 +10,30 @@ import type {
   SetStateArgs,
   UnsubscribeFn,
 } from '../types';
-import type { Listener } from '../types/subscribe';
-import { identity, noop } from '../utils/core';
-import { activateCascade, flushCascade } from './cascadeScheduler';
+import type { Listener, Selector } from '../types/subscribe';
+import { noop } from '../utils/core';
 import { derivedStore } from './derivedStore';
-import type { InternalSubscribeArgs, InternalUnsubscribeFn } from './types/internalSubscribeTypes';
+import type { InternalSubscribeArgs, InternalUnsubscribeFn, Selection } from './internalSubscriptions';
 import { StoreTags, destroyStore } from './storeUtils';
+
+// ============ Types ========================================================== //
 
 type VirtualStoreOptions = {
   debugMode?: boolean;
   lockDependencies?: boolean;
 };
 
-const CASCADE_PARTICIPANT_SUBSCRIBE_OPTIONS = Object.freeze({ equalityFn: Object.is, isCascadeParticipant: true });
+type SelectedSubscription<State> = {
+  selector: Selector<State, unknown>;
+  selection: Selection<unknown>;
+  /**
+   * The current unsubscribe callback, `undefined` while reconnecting, or the
+   * saved `skipAbortFetch` value after cancellation.
+   */
+  unsubscribe: InternalUnsubscribeFn | boolean | undefined;
+};
+
+type StateSubscription<State> = { listener: Listener<State>; unsubscribe: InternalUnsubscribeFn };
 
 // ============ Virtual Store Factory ========================================== //
 
@@ -31,8 +43,7 @@ export function virtualStore<Store extends BaseStore<InferStoreState<Store>>, Ov
   options?: VirtualStoreOptions
 ): WithPersist<StoreApi<InferStoreState<Store>>, InferPersistedState<Store>, void | Promise<void>> & { destroy: () => void } & Overrides {
   type State = InferStoreState<Store>;
-  type Subscription = { args: InternalSubscribeArgs<State>; unsubscribe: InternalUnsubscribeFn };
-  type CascadeStateSubscription = { listener: Listener<State>; unsubscribe: InternalUnsubscribeFn };
+  type Subscription = SelectedSubscription<State> | StateSubscription<State>;
 
   const hasOverrides = typeof overridesOrOptions === 'function';
   const parsedOverrides = hasOverrides ? overridesOrOptions : undefined;
@@ -40,69 +51,51 @@ export function virtualStore<Store extends BaseStore<InferStoreState<Store>>, Ov
 
   const ordinarySubscriptions = new Set<Subscription>();
   let cascadeSubscriptions: Set<Subscription> | undefined;
-  let cascadeStateSubscriptions: Set<CascadeStateSubscription> | undefined;
 
-  function rebindSubscriptions(oldStore: Store, newStore: Store): void {
-    const prevState = oldStore.getState();
-    const nextState = newStore.getState();
+  function rebindSubscriptions(subscriptions: Set<Subscription>, store: Store, previousStore: Store, cascade = false): void {
+    let previous!: State;
+    let readPrevious = false;
 
-    if (cascadeStateSubscriptions) {
-      for (const sub of cascadeStateSubscriptions) rebindCascadeStateSubscription(sub, newStore, prevState, nextState);
+    for (const sub of subscriptions) {
+      if ('selection' in sub) {
+        const previousUnsubscribe = sub.unsubscribe;
+        sub.unsubscribe = undefined;
+
+        if (typeof previousUnsubscribe === 'function') previousUnsubscribe();
+        if (typeof sub.unsubscribe === 'boolean') continue;
+
+        const selection = sub.selection;
+        const unsubscribe = subscribeSelection(store, sub.selector, { selection, isCascadeParticipant: cascade }, true);
+
+        if (typeof sub.unsubscribe === 'boolean') {
+          unsubscribe(sub.unsubscribe);
+          continue;
+        }
+
+        sub.unsubscribe = unsubscribe;
+        selection.refresh();
+      } else {
+        if (!readPrevious) {
+          previous = previousStore.getState();
+          store.getState();
+          readPrevious = true;
+        }
+
+        sub.unsubscribe();
+        sub.unsubscribe = cascade ? subscribeStoreCascadeState(store, sub.listener) : store.subscribe(sub.listener);
+        const current = store.getState();
+
+        if (!Object.is(current, previous)) sub.listener(current, previous);
+      }
     }
-    if (cascadeSubscriptions) for (const sub of cascadeSubscriptions) rebindCascadeSubscription(sub, newStore, prevState, nextState);
-    if (ordinarySubscriptions.size) flushCascade();
-
-    for (const sub of ordinarySubscriptions) rebindSubscription(sub, newStore, prevState, nextState);
   }
 
-  function rebindCascadeStateSubscription(sub: CascadeStateSubscription, newStore: Store, prevState: State, nextState: State): void {
-    sub.unsubscribe();
-    sub.unsubscribe = subscribeStoreCascadeState(newStore, sub.listener);
-    if (Object.is(nextState, prevState)) return;
-    activateCascade();
-    sub.listener(nextState, prevState);
-  }
-
-  function rebindCascadeSubscription(sub: Subscription, newStore: Store, prevState: State, nextState: State): void {
-    if (rebindSubscription(sub, newStore, prevState, nextState)) activateCascade();
-  }
-
-  function rebindSubscription(sub: Subscription, newStore: Store, prevState: State, nextState: State): boolean {
-    sub.unsubscribe();
-
-    const args = sub.args;
-
-    // -- Overload #1: single argument (listener)
-    if (args.length === 1) {
-      const listener = args[0];
-
-      sub.unsubscribe = newStore.subscribe(listener);
-
-      const changed = !Object.is(nextState, prevState);
-      if (changed) listener(nextState, prevState);
-      return changed;
-    }
-
-    // -- Overload #2: (selector, listener, options?)
-    const selector = args[0];
-    const listener = args[1];
-
-    let options = args[2];
-    if (options?.fireImmediately) options = { ...options, fireImmediately: false };
-
-    const prevSlice = selector(prevState);
-    const nextSlice = selector(nextState);
-
-    sub.unsubscribe = newStore.subscribe(selector, listener, options);
-
-    const equalityFn = options?.equalityFn ?? Object.is;
-    if (equalityFn(prevSlice, nextSlice)) return false;
-    listener(nextSlice, prevSlice);
-    return true;
+  function rebindCascadeStore(store: Store, previousStore: Store): void {
+    if (cascadeSubscriptions) rebindSubscriptions(cascadeSubscriptions, store, previousStore, true);
   }
 
   function rebindStore(store: Store, previousStore: Store): void {
-    rebindSubscriptions(previousStore, store);
+    if (ordinarySubscriptions.size) rebindSubscriptions(ordinarySubscriptions, store, previousStore);
     destroyStore(previousStore);
   }
 
@@ -112,44 +105,68 @@ export function virtualStore<Store extends BaseStore<InferStoreState<Store>>, Ov
   });
 
   let unsubscribeCachedStore: UnsubscribeFn | undefined;
+  let unsubscribeCachedCascadeStore: UnsubscribeFn | undefined;
 
   function getCurrentStore(): Store {
     unsubscribeCachedStore ??= useCachedStore.subscribe(rebindStore);
     return useCachedStore.getState();
   }
 
-  function portableSubscribe(...args: InternalSubscribeArgs<State>): UnsubscribeFn {
+  function portableSubscribe(...args: InternalSubscribeArgs<State>): InternalUnsubscribeFn {
     const currentStore = getCurrentStore();
-    const unsubscribe = args.length === 1 ? currentStore.subscribe(args[0]) : currentStore.subscribe(args[0], args[1], args[2]);
-    const sub: Subscription = { args, unsubscribe };
 
-    const isCascadeParticipant = args[2]?.isCascadeParticipant ?? false;
-    if (isCascadeParticipant) (cascadeSubscriptions ??= new Set()).add(sub);
-    else ordinarySubscriptions.add(sub);
+    if (args.length === 1) {
+      const sub: StateSubscription<State> = { listener: args[0], unsubscribe: currentStore.subscribe(args[0]) };
+      ordinarySubscriptions.add(sub);
+      return skipAbortFetch => {
+        sub.unsubscribe(skipAbortFetch);
+        ordinarySubscriptions.delete(sub);
+      };
+    }
 
-    return () => {
-      sub.unsubscribe();
+    const options = args[2];
+    const isCascadeParticipant = options?.isCascadeParticipant ?? false;
+    const subscribeOptions = hasSelection(options)
+      ? options
+      : { selection: createSelection(args[1], options), isCascadeParticipant, fireImmediately: options?.fireImmediately };
+
+    const unsubscribe = subscribeSelection(currentStore, args[0], subscribeOptions);
+    const sub: SelectedSubscription<State> = { selector: args[0], selection: subscribeOptions.selection, unsubscribe };
+
+    if (isCascadeParticipant) {
+      (cascadeSubscriptions ??= new Set()).add(sub);
+      unsubscribeCachedCascadeStore ??= subscribeStoreCascadeState(useCachedStore, rebindCascadeStore);
+    } else ordinarySubscriptions.add(sub);
+
+    return skipAbortFetch => {
       if (!isCascadeParticipant) ordinarySubscriptions.delete(sub);
       else if (cascadeSubscriptions?.delete(sub) && cascadeSubscriptions.size === 0) cascadeSubscriptions = undefined;
+
+      const unsubscribe = sub.unsubscribe;
+      sub.unsubscribe = skipAbortFetch ?? false;
+      if (typeof unsubscribe === 'function') unsubscribe(skipAbortFetch);
     };
   }
 
   function subscribeCascadeState(listener: Listener<State>): InternalUnsubscribeFn {
     const currentStore = getCurrentStore();
-    const sub: CascadeStateSubscription = { listener, unsubscribe: subscribeStoreCascadeState(currentStore, listener) };
-    (cascadeStateSubscriptions ??= new Set()).add(sub);
+    listener = listener.bind(undefined);
+
+    const sub: StateSubscription<State> = { listener, unsubscribe: subscribeStoreCascadeState(currentStore, listener) };
+    (cascadeSubscriptions ??= new Set()).add(sub);
+    unsubscribeCachedCascadeStore ??= subscribeStoreCascadeState(useCachedStore, rebindCascadeStore);
 
     return skipAbortFetch => {
       sub.unsubscribe(skipAbortFetch);
-      if (cascadeStateSubscriptions?.delete(sub) && cascadeStateSubscriptions.size === 0) cascadeStateSubscriptions = undefined;
+      if (cascadeSubscriptions?.delete(sub) && cascadeSubscriptions.size === 0) cascadeSubscriptions = undefined;
     };
   }
 
   const virtualStore = Object.assign(
     {
-      [SUBSCRIBE_CASCADE_STATE]: subscribeCascadeState,
-      [StoreTags.VirtualStore]: true,
       destroy: () => {
+        unsubscribeCachedCascadeStore?.();
+        unsubscribeCachedCascadeStore = undefined;
         unsubscribeCachedStore?.();
         unsubscribeCachedStore = undefined;
         useCachedStore.destroy();
@@ -159,6 +176,8 @@ export function virtualStore<Store extends BaseStore<InferStoreState<Store>>, Ov
       persist: createPersist<State, InferPersistedState<Store>>(getCurrentStore),
       setState: createSetState(getCurrentStore),
       subscribe: portableSubscribe,
+      [SUBSCRIBE_CASCADE_STATE]: subscribeCascadeState,
+      [StoreTags.VirtualStore]: true,
     },
     parsedOverrides?.(getCurrentStore)
   );
@@ -167,12 +186,6 @@ export function virtualStore<Store extends BaseStore<InferStoreState<Store>>, Ov
 }
 
 // ============ Helpers ======================================================== //
-
-function subscribeStoreCascadeState<State>(store: StoreApi<State>, listener: Listener<State>): InternalUnsubscribeFn {
-  return hasCascadeStateSubscription(store)
-    ? store[SUBSCRIBE_CASCADE_STATE](listener)
-    : store.subscribe<State>(identity, listener, CASCADE_PARTICIPANT_SUBSCRIBE_OPTIONS);
-}
 
 function createPersist<State, PersistedState>(
   getStore: () => OptionallyPersistedStore<State, PersistedState, void | Promise<void>>

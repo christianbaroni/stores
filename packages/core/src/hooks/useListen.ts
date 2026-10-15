@@ -1,5 +1,6 @@
 import { IS_DEV } from '#env';
 import { RefObject, useLayoutEffect } from 'react';
+import { createSelection, notifyInitial, subscribeSelection } from '../internal/runtime';
 import { BaseStore, EqualityFn, InferStoreState, Selector } from '../types';
 import { noop } from '../utils/core';
 import { useLazyRef as useRef } from './useLazyRef';
@@ -161,22 +162,27 @@ function attachListener<Store extends BaseStore<S>, Selected, S>(
   }
 
   const options = buildOptionsObject(listener.options);
-  const equalityFn = options.equalityFn ?? Object.is;
+  const selection = createSelection<Selected>(
+    (current, previous) => listener.react(current, previous, store.getState, listener.unsubscribe),
+    options
+  );
 
-  function check(state: S): void {
-    if (!listener.isActive) return;
-    const next = listener.selector(state);
-    if (equalityFn(selected, next)) return;
-    const previous = selected;
-    selected = next;
-    listener.react(next, previous, store.getState, listener.unsubscribe);
+  const unsubscribe = subscribeSelection(store, s => listener.selector(s), { selection }, true);
+
+  try {
+    selection.refresh();
+  } catch (error) {
+    unsubscribe();
+    throw error;
   }
 
-  const unsubscribe = store.subscribe(check);
-  let selected = listener.selector(store.getState());
+  listener.refresh = () => {
+    if (!listener.isActive) return;
+    selection.refresh();
+  };
 
-  listener.resubscribe = (options = DEFAULT_RESUBSCRIBE_OPTIONS) => attachListener(store, listenerRef, options);
-  listener.refresh = () => check(store.getState());
+  listener.resubscribe = options => attachListener(store, listenerRef, options);
+
   listener.unsubscribe = () => {
     if (!listener.isActive) return;
     listener.isActive = false;
@@ -189,7 +195,7 @@ function attachListener<Store extends BaseStore<S>, Selected, S>(
   if (IS_DEV && options.debugMode) console.log('[📡 useListen 📡] Attached listener');
 
   if (resubscribeOptions.fireImmediately || options.fireImmediately) {
-    listener.react(selected, selected, store.getState, listener.unsubscribe);
+    notifyInitial(selection);
   }
 }
 
@@ -220,18 +226,6 @@ function createListenerRef<S, Selected>(
   };
 }
 
-// ============ Utilities ====================================================== //
-
-function buildOptionsObject<Selected>(optionsOrEqualityFn: UseListenOptions<Selected> | EqualityFn<Selected>): UseListenOptions<Selected> {
-  if (typeof optionsOrEqualityFn === 'function') return { equalityFn: optionsOrEqualityFn };
-  return optionsOrEqualityFn ?? DEFAULT_OPTIONS;
-}
-
-function getEnabledOption<Selected>(optionsOrEqualityFn: UseListenOptions<Selected> | EqualityFn<Selected>): boolean {
-  if (typeof optionsOrEqualityFn === 'function') return DEFAULT_OPTIONS.enabled;
-  return optionsOrEqualityFn?.enabled ?? DEFAULT_OPTIONS.enabled;
-}
-
 function setListenerRef<S, Selected>(
   listenerRef: RefObject<ListenerRef<S, Selected>>,
   selector: Selector<S, Selected>,
@@ -242,4 +236,16 @@ function setListenerRef<S, Selected>(
   listener.selector = selector;
   listener.react = react;
   listener.options = optionsOrEqualityFn;
+}
+
+// ============ Utilities ====================================================== //
+
+function buildOptionsObject<Selected>(optionsOrEqualityFn: UseListenOptions<Selected> | EqualityFn<Selected>): UseListenOptions<Selected> {
+  if (typeof optionsOrEqualityFn === 'function') return { equalityFn: optionsOrEqualityFn };
+  return optionsOrEqualityFn;
+}
+
+function getEnabledOption<Selected>(optionsOrEqualityFn: UseListenOptions<Selected> | EqualityFn<Selected>): boolean {
+  if (typeof optionsOrEqualityFn === 'function') return DEFAULT_OPTIONS.enabled;
+  return optionsOrEqualityFn.enabled ?? DEFAULT_OPTIONS.enabled;
 }

@@ -1,7 +1,6 @@
 import type { StoreApi } from '../../store/types';
-import { hasCascadeStateSubscription, SUBSCRIBE_CASCADE_STATE } from '../cascadeSubscriptions';
-import { identity } from '../../utils/core';
-import type { InternalUnsubscribeFn } from '../types/internalSubscribeTypes';
+import { subscribeCascadeState } from '../cascadeSubscriptions';
+import type { InternalUnsubscribeFn } from '../internalSubscriptions';
 
 // ============ Types ========================================================== //
 
@@ -11,12 +10,6 @@ type StateDependency = {
   revision: number;
   unsubscribe: InternalUnsubscribeFn;
 };
-
-/** Shared options for dependency subscriptions that participate in cascade propagation. */
-export const CASCADE_PARTICIPANT_SUBSCRIBE_OPTIONS = Object.freeze({
-  equalityFn: Object.is,
-  isCascadeParticipant: true,
-});
 
 // ============ Dependency Subscriptions ======================================= //
 
@@ -75,7 +68,7 @@ export class DependencySubscriptions {
     if (!existingStore) {
       this.stateDependencyStore = store;
       this.stateDependencyRevisionStamp = this.stateDependencyRevision;
-      this.stateDependencyUnsubscribe = this.subscribeState(store);
+      this.stateDependencyUnsubscribe = subscribeCascadeState(store, this.invalidate);
       return;
     }
 
@@ -166,12 +159,6 @@ export class DependencySubscriptions {
   }
 
   private createStateDependency<State>(store: StoreApi<State>): StateDependency {
-    return { revision: this.stateDependencyRevision, unsubscribe: this.subscribeState(store) };
-  }
-
-  private subscribeState<State>(store: StoreApi<State>): InternalUnsubscribeFn {
-    return hasCascadeStateSubscription(store)
-      ? store[SUBSCRIBE_CASCADE_STATE](this.invalidate)
-      : store.subscribe(identity, this.invalidate, CASCADE_PARTICIPANT_SUBSCRIBE_OPTIONS);
+    return { revision: this.stateDependencyRevision, unsubscribe: subscribeCascadeState(store, this.invalidate) };
   }
 }

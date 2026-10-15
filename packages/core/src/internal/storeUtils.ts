@@ -2,13 +2,25 @@ import type { QueryStore, QueryStoreState } from '../queryStore/types';
 import type { StoreApi } from '../store/types';
 import type { BaseStore, InferStoreState, PersistedStore } from '../types';
 
+// ============ Constants ====================================================== //
+
+/**
+ * Private tags used to identify internal store types.
+ */
 export const StoreTags: Readonly<{ QueryStore: symbol; VirtualStore: symbol }> = Object.freeze({
   QueryStore: Symbol('queryStore'),
   VirtualStore: Symbol('virtualStore'),
 });
 
+// ============ Types ========================================================== //
+
 type StoreTag = (typeof StoreTags)[keyof typeof StoreTags];
 
+// ============ Utilities ====================================================== //
+
+/**
+ * Attaches an internal `StoreTag` identifier to a store.
+ */
 export function assignStoreTag<Store extends object>(store: Store, tag: StoreTag): Store {
   return Object.assign(store, { [tag]: true });
 }
@@ -27,10 +39,7 @@ export function destroyStore(
 
 export function destroyStores(
   stores: Partial<Record<string, BaseStore<unknown> | StoreApi<unknown>>> | (BaseStore<unknown> | StoreApi<unknown> | undefined)[],
-  options?: {
-    clearQueryCache?: boolean;
-    skipDestroy?: (store: BaseStore<unknown> | StoreApi<unknown>) => boolean;
-  }
+  options?: { clearQueryCache?: boolean; skipDestroy?: (store: BaseStore<unknown> | StoreApi<unknown>) => boolean }
 ): void {
   for (const store of Array.isArray(stores) ? stores : Object.values(stores)) {
     if (!store || options?.skipDestroy?.(store)) continue;

@@ -1,8 +1,8 @@
-import { flushMicrotasks } from './async.testUtils';
+import { deferred, flushMicrotasks } from './async.testUtils';
 import { createBaseStore } from './createBaseStore';
 import { createDerivedStore } from './createDerivedStore';
 import { createQueryStore } from './createQueryStore';
-import { hasGetSnapshot } from './internal/storeUtils';
+import { hasGetSnapshot, destroyStore } from './internal/storeUtils';
 import { QueryStatuses } from './queryStore/types';
 import { SubscribeArgs, SubscribeOverloads } from './types';
 import { deepEqual } from './utils/equality';
@@ -1586,15 +1586,20 @@ describe('createDerivedStore', () => {
       const watcher = vi.fn();
       const unsubscribe = useDerived.subscribe(watcher);
 
-      // First derive => watchers=0
-      expect(deriveCount).toBe(1);
-      expect(watcher).toHaveBeenCalledTimes(0);
-      expect(useDerived.getState()).toEqual({ status: QueryStatuses.Idle, data: null });
-
-      // Perform a fetch => might transition Idle -> Fetching -> Success => watchers see new final
-      await queryStore.getState().fetch();
+      // Subscription starts the request; the derived snapshot must reflect it.
       expect(deriveCount).toBe(2);
-      expect(watcher).not.toHaveBeenCalledTimes(0); // Watchers got at least one call
+      expect(watcher).toHaveBeenCalledTimes(0);
+      expect(useDerived.getState()).toEqual({ status: QueryStatuses.Loading, data: null });
+
+      // Complete the request started by subscription.
+      await queryStore.getState().fetch();
+      expect(deriveCount).toBe(3);
+      expect(watcher.mock.calls).toEqual([
+        [
+          { status: QueryStatuses.Success, data: 'some-data' },
+          { status: QueryStatuses.Loading, data: null },
+        ],
+      ]);
 
       const final = useDerived.getState();
       expect(final.status).toBe(QueryStatuses.Success);
@@ -2112,4 +2117,193 @@ describe('createDerivedStore', () => {
       }).toThrow();
     });
   });
+});
+
+describe('dependency attachment snapshots', () => {
+  it.each([false, true])('publishes the activated query snapshot, lockDependencies=%s', async lockDependencies => {
+    const response = deferred<string>();
+    const query = createQueryStore({ fetcher: () => response.promise, staleTime: Infinity });
+    const output = createDerivedStore($ => $(query).status, { lockDependencies });
+    const listener = vi.fn();
+    const unsubscribe = output.subscribe(state => state, listener, { fireImmediately: true });
+    try {
+      expect(output.getState()).toBe(QueryStatuses.Loading);
+      expect(query.getState().status).toBe(QueryStatuses.Loading);
+      expect(listener.mock.calls).toEqual([[QueryStatuses.Loading, QueryStatuses.Loading]]);
+      await flushMicrotasks(8);
+      expect(output.getState()).toBe(QueryStatuses.Loading);
+      expect(listener).toHaveBeenCalledTimes(1);
+      response.resolve('data');
+      await flushMicrotasks(12);
+      expect(listener.mock.calls).toEqual([
+        [QueryStatuses.Loading, QueryStatuses.Loading],
+        [QueryStatuses.Success, QueryStatuses.Loading],
+      ]);
+    } finally {
+      unsubscribe();
+      destroyStore(output);
+      destroyStore(query);
+    }
+  });
+
+  it('tracks the branch selected by activation before publishing it', async () => {
+    const choice = createBaseStore(() => false);
+    const value = createBaseStore(() => 7);
+    const query = createQueryStore({ fetcher: () => new Promise<never>(() => {}) });
+    const output = createDerivedStore($ => {
+      if (!$(choice)) return -1;
+      return $(query).status === QueryStatuses.Loading ? $(value) : 0;
+    });
+    const listener = vi.fn();
+    const unsubscribe = output.subscribe(listener);
+    try {
+      choice.setState(true);
+      await flushMicrotasks(8);
+      expect(output.getState()).toBe(7);
+      expect(listener.mock.calls).toEqual([[7, -1]]);
+      value.setState(8);
+      await flushMicrotasks(8);
+      expect(listener.mock.calls).toEqual([
+        [7, -1],
+        [8, 7],
+      ]);
+    } finally {
+      unsubscribe();
+      destroyStore(output);
+      destroyStore(query);
+    }
+  });
+
+  it('reconciles multiple newly activated dependencies before the initial notification', () => {
+    const first = createQueryStore({ fetcher: () => new Promise<never>(() => {}) });
+    const second = createQueryStore({ fetcher: () => new Promise<never>(() => {}) });
+    const output = createDerivedStore($ => [$(first).status, $(second).status]);
+    const listener = vi.fn();
+    const unsubscribe = output.subscribe(state => state, listener, { fireImmediately: true });
+    try {
+      const expected = [QueryStatuses.Loading, QueryStatuses.Loading];
+      expect(output.getState()).toEqual(expected);
+      expect(listener.mock.calls).toEqual([[expected, expected]]);
+    } finally {
+      unsubscribe();
+      destroyStore(output);
+      destroyStore(first);
+      destroyStore(second);
+    }
+  });
+
+  it('releases acquired dependencies if the corrective derivation throws', async () => {
+    const query = createQueryStore({ fetcher: () => new Promise<never>(() => {}) });
+    const subscriptions = trackSubscriptions(query);
+    const error = new Error('derive failed after activation');
+    const output = createDerivedStore($ => {
+      if ($(query).status === QueryStatuses.Loading) throw error;
+      return 0;
+    });
+    try {
+      expect(() => output.subscribe(() => {})).toThrow(error);
+      await flushMicrotasks(8);
+      expect(subscriptions.created).toBeGreaterThan(0);
+      expect(subscriptions.removed).toBe(subscriptions.created);
+    } finally {
+      destroyStore(output);
+      destroyStore(query);
+    }
+  });
+});
+
+describe('precise dependency attachment', () => {
+  it('does not rederive when query activation leaves the selected data unchanged', async () => {
+    const response = deferred<string>();
+    const query = createQueryStore({ fetcher: () => response.promise, staleTime: Infinity });
+    let derives = 0;
+    const derived = createDerivedStore($ => {
+      derives += 1;
+      return $(query).getData();
+    });
+    const listener = vi.fn();
+    const unsubscribe = derived.subscribe(value => value, listener, { fireImmediately: true });
+    expect(query.getState().status).toBe(QueryStatuses.Loading);
+    expect(derived.getState()).toBeNull();
+    expect(derives).toBe(1);
+    expect(listener.mock.calls).toEqual([[null, null]]);
+
+    response.resolve('ready');
+    await query.getState().fetch();
+    await flushMicrotasks();
+    expect(derived.getState()).toBe('ready');
+    expect(derives).toBe(2);
+    expect(listener.mock.calls).toEqual([
+      [null, null],
+      ['ready', null],
+    ]);
+    unsubscribe();
+  });
+});
+
+describe('dependency activation during attachment', () => {
+  it.each([
+    [false, false],
+    [false, true],
+    [true, false],
+    [true, true],
+  ])(
+    'settles without overlapping attachment (acquire status first: %s, read status first: %s)',
+    async (acquireStatusFirst, readStatusFirst) => {
+      const status = createBaseStore(() => ({ ready: false }));
+      const unsubscribeStatus = status.subscribe(() => {});
+      const statusSubscriptions = trackSubscriptions(status);
+      const source = createBaseStore(() => ({ value: 7 }), {
+        sync: {
+          key: 'derived-attachment',
+          engine: {
+            sessionId: 'test',
+            register: () => ({
+              destroy() {},
+              publish: null,
+              onFirstSubscribe() {
+                status.setState({ ready: true });
+              },
+            }),
+          },
+        },
+      });
+      const sourceSubscriptions = trackSubscriptions(source);
+      let derives = 0;
+      const output = createDerivedStore($ => {
+        derives += 1;
+        const connection = acquireStatusFirst ? $(status) : undefined;
+        const data = $(source);
+        const ready = connection ?? $(status);
+        return readStatusFirst ? Number(ready.ready) + data.value : data.value + Number(ready.ready);
+      });
+      const listener = vi.fn();
+      const unsubscribe = output.subscribe(value => value, listener, { fireImmediately: true });
+      try {
+        await flushMicrotasks();
+        expect(output.getState()).toBe(8);
+        expect(derives).toBe(2);
+        expect(listener.mock.calls).toEqual([[8, 8]]);
+        expect(statusSubscriptions.created - statusSubscriptions.removed).toBe(1);
+        expect(sourceSubscriptions.created - sourceSubscriptions.removed).toBe(1);
+
+        source.setState({ value: 8 });
+        await flushMicrotasks();
+        expect(output.getState()).toBe(9);
+        expect(derives).toBe(3);
+        expect(listener.mock.calls).toEqual([
+          [8, 8],
+          [9, 8],
+        ]);
+      } finally {
+        unsubscribe();
+        unsubscribeStatus();
+        destroyStore(output);
+        destroyStore(source);
+      }
+      await flushMicrotasks();
+      expect(statusSubscriptions.removed).toBe(statusSubscriptions.created);
+      expect(sourceSubscriptions.removed).toBe(sourceSubscriptions.created);
+    }
+  );
 });

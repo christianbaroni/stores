@@ -1,4 +1,5 @@
-import type { InternalSubscribeOptions } from './types/internalSubscribeTypes';
+import { connectSelection, notifyInitial } from './selectorSubscription';
+import type { InternalSubscribeOptions } from './internalSubscriptions';
 import type { Listener, Selector, SetFull, SetPartial, UnsubscribeFn } from '../types';
 import type { BivariantMethod } from '../types/functions';
 import { Primitive, Widen } from '../types/primitives';
@@ -69,15 +70,22 @@ export function createStore<State>(stateOrCreator: State | StateCreator<State>):
     options?: InternalSubscribeOptions<Selected>
   ): UnsubscribeFn {
     if (!listener) return createSubscription(selectorOrListener);
+    if (options?.selection) {
+      const isCascadeParticipant = options.isCascadeParticipant ?? false;
+      const selectedListener = connectSelection(options.selection, selectorOrListener, getState);
+      if (options.fireImmediately) notifyInitial(options.selection);
+      return isCascadeParticipant ? createCascadeSubscription(selectedListener) : createSubscription(selectedListener);
+    }
+
     return createSelectorSubscription(selectorOrListener, listener, options);
   }
 
   const api: StoreApi<State> & CascadeStateSubscribable<State> = {
-    [SUBSCRIBE_CASCADE_STATE]: subscribeCascadeState,
     getInitialState,
     getState,
     setState,
     subscribe,
+    [SUBSCRIBE_CASCADE_STATE]: subscribeCascadeState,
   };
 
   const initialState = (state = isStateCreator(stateOrCreator) ? stateOrCreator(setState, getState, api) : stateOrCreator);
@@ -124,11 +132,12 @@ export function createStore<State>(stateOrCreator: State | StateCreator<State>):
     listener: Listener<Selected>,
     options: InternalSubscribeOptions<Selected> | undefined
   ): UnsubscribeFn {
-    const equalityFn = options?.equalityFn ?? Object.is;
     const isCascadeParticipant = options?.isCascadeParticipant ?? false;
+
+    const equalityFn = options?.equalityFn ?? Object.is;
     let currentSelection = selector(state);
 
-    function selectedListener(nextState: State): void {
+    const selectedListener = (nextState: State): void => {
       const nextSelection = selector(nextState);
       if (equalityFn(currentSelection, nextSelection)) return;
 
@@ -137,7 +146,7 @@ export function createStore<State>(stateOrCreator: State | StateCreator<State>):
 
       if (isCascadeParticipant) activateCascade();
       listener(nextSelection, previousSelection);
-    }
+    };
 
     if (options?.fireImmediately) listener(currentSelection, currentSelection);
 

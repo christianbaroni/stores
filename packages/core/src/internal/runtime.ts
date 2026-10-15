@@ -36,4 +36,5 @@ export { virtualStore } from './virtualStore';
 export { DEFAULT_STORAGE_KEY_PREFIX, getOptions, getStorageConfig, markStoreCreated } from './config';
 export { ensureError } from './errors';
 export { logger, setLogger } from './logger';
+export { createSelection, notifyInitial, subscribeSelection } from './selectorSubscription';
 export { StoreTags, assignStoreTag, hasDestroy } from './storeUtils';

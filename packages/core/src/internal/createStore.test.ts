@@ -1,6 +1,6 @@
-import type { InternalSubscribeOptions } from './types/internalSubscribeTypes';
+import type { InternalSubscribeOptions } from './internalSubscriptions';
 import { createStore } from './createStore';
-import { hasCascadeStateSubscription, SUBSCRIBE_CASCADE_STATE } from './cascadeSubscriptions';
+import { hasNativeSubscriptions, SUBSCRIBE_CASCADE_STATE } from './cascadeSubscriptions';
 import type { StoreApi } from '../store/types';
 
 describe('createStore', () => {
@@ -195,7 +195,7 @@ describe('createStore', () => {
 
   it('notifies internal full-state cascade subscribers before ordinary listeners', () => {
     const store = createStore(() => ({ count: 0, label: 'initial' }));
-    if (!hasCascadeStateSubscription(store)) throw new Error('Expected createStore to expose cascade-state subscriptions.');
+    if (!hasNativeSubscriptions(store)) throw new Error('Expected createStore to expose cascade-state subscriptions.');
 
     const calls: string[] = [];
     const cascadeListener = vi.fn((nextState, previousState) => {

@@ -3,7 +3,7 @@ import { isQueryParamConfig } from '../../queryStore/queryParam';
 import { getQueryKey } from '../../queryStore/queryKey';
 import type { StoreApi } from '../../store/types';
 import type { EqualityFn, Selector } from '../../types';
-import type { InternalSubscribeOptions, InternalUnsubscribeFn } from '../types/internalSubscribeTypes';
+import type { InternalSubscribeOptions, InternalUnsubscribeFn } from '../internalSubscriptions';
 import type { NonFunction } from '../../types/functions';
 import { hasOwn } from '../../types/utils';
 import { identity, noop, nullObject } from '../../utils/core';

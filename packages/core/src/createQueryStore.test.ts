@@ -4,7 +4,7 @@ import { createDerivedStore } from './createDerivedStore';
 import { createQueryStore, getQueryKey, parseQueryKey, queryParam } from './createQueryStore';
 import { createAsyncStorageMock } from './internal/storage/storageMocks.testUtils';
 import { QueryStatuses } from './queryStore/types';
-import { hasCascadeStateSubscription, SUBSCRIBE_CASCADE_STATE } from './internal/cascadeSubscriptions';
+import { hasNativeSubscriptions, SUBSCRIBE_CASCADE_STATE } from './internal/cascadeSubscriptions';
 import { time } from './utils/time';
 
 type TestData = string;
@@ -712,7 +712,7 @@ describe('createQueryStore', () => {
         params: { id: 1 },
         staleTime: 0,
       });
-      if (!hasCascadeStateSubscription(store)) throw new Error('Expected query store to expose cascade-state subscriptions.');
+      if (!hasNativeSubscriptions(store)) throw new Error('Expected query store to expose cascade-state subscriptions.');
 
       const unsubscribe = store[SUBSCRIBE_CASCADE_STATE](() => undefined);
 

@@ -57,10 +57,7 @@ export function activateCascade(): void {
   if (scheduled) return;
   scheduled = true;
 
-  queueMicrotask(() => {
-    scheduled = false;
-    flushCascade();
-  });
+  queueMicrotask(flushScheduledCascade);
 }
 
 /**
@@ -144,6 +141,11 @@ export function enqueueDerive(task: Task, rank: Rank): void {
 }
 
 // ============ Internal Methods =============================================== //
+
+function flushScheduledCascade(): void {
+  scheduled = false;
+  flushCascade();
+}
 
 function drainCascade(): void {
   while (taskCount > 0 || hasDeferredTasks()) {

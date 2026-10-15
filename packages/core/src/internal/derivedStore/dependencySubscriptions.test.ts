@@ -1,10 +1,10 @@
 import { createStore } from '../createStore';
-import { hasCascadeStateSubscription, SUBSCRIBE_CASCADE_STATE } from '../cascadeSubscriptions';
+import { hasNativeSubscriptions, SUBSCRIBE_CASCADE_STATE } from '../cascadeSubscriptions';
 import type { StoreApi } from '../../store/types';
 import { DependencySubscriptions } from './dependencySubscriptions';
 
 describe('DependencySubscriptions', () => {
-  it('stores selector unsubscribes as one function or a promoted array', () => {
+  it('counts selector subscriptions and releases them when rebuilding', () => {
     const dependencies = new DependencySubscriptions(() => undefined);
     const first = vi.fn();
     const second = vi.fn();
@@ -21,7 +21,7 @@ describe('DependencySubscriptions', () => {
     expect(dependencies.size).toBe(0);
   });
 
-  it('retains current state dependencies, removes stale entries, and collapses back to one', () => {
+  it('reuses retained state subscriptions and releases dependencies removed by a rebuild', () => {
     const dependencies = new DependencySubscriptions(() => undefined);
     const firstStore = createStore(() => 1);
     const secondStore = createStore(() => 2);
@@ -53,7 +53,7 @@ describe('DependencySubscriptions', () => {
 });
 
 function trackCascadeSubscriptions<State>(store: StoreApi<State>): { readonly created: number; readonly removed: number } {
-  if (!hasCascadeStateSubscription(store)) throw new Error('Expected cascade-state subscription support.');
+  if (!hasNativeSubscriptions(store)) throw new Error('Expected cascade-state subscription support.');
 
   let created = 0;
   let removed = 0;

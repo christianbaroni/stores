@@ -1,7 +1,7 @@
 import { DerivedSubscribers, type DerivedWatcher } from './derivedSubscribers';
 
 describe('DerivedSubscribers', () => {
-  it('maintains idempotent collection counts and routes notification lanes', () => {
+  it('counts each subscription once and separates cascade from ordinary delivery', () => {
     const subscribers = new DerivedSubscribers<number>();
     const ordinary = vi.fn();
     const cascadeState = vi.fn();
@@ -14,11 +14,11 @@ describe('DerivedSubscribers', () => {
       selector: state => state % 2,
     };
 
-    expect(subscribers.addWatcher(ordinary)).toBe(true);
-    expect(subscribers.addWatcher(ordinary)).toBe(false);
-    expect(subscribers.addWatcher(cascadeWatcher)).toBe(true);
-    expect(subscribers.addCascadeStateListener(cascadeState)).toBe(true);
-    expect(subscribers.addCascadeStateListener(cascadeState)).toBe(false);
+    expect(subscribers.add(ordinary, false)).toBe(true);
+    expect(subscribers.add(ordinary, false)).toBe(false);
+    expect(subscribers.add(cascadeWatcher, true)).toBe(true);
+    expect(subscribers.add(cascadeState, true)).toBe(true);
+    expect(subscribers.add(cascadeState, true)).toBe(false);
 
     expect(subscribers.watcherCount).toBe(2);
     expect(subscribers.ordinaryWatcherCount).toBe(1);
@@ -26,16 +26,19 @@ describe('DerivedSubscribers', () => {
     expect(subscribers.cascadeStateListenerCount).toBe(1);
 
     subscribers.notifyCascade(1, 0);
-    subscribers.notifyOrdinary(1, 0);
 
-    expect(cascadeState).toHaveBeenCalledWith(1, 0);
-    expect(cascadeSlice).toHaveBeenCalledWith(1, 0);
-    expect(ordinary).toHaveBeenCalledWith(1, 0);
+    expect(ordinary).not.toHaveBeenCalled();
 
-    expect(subscribers.deleteWatcher(cascadeWatcher)).toBe(true);
-    expect(subscribers.deleteWatcher(cascadeWatcher)).toBe(false);
-    expect(subscribers.deleteCascadeStateListener(cascadeState)).toBe(true);
-    expect(subscribers.deleteCascadeStateListener(cascadeState)).toBe(false);
+    subscribers.notifyOrdinary(2, 1);
+
+    expect(cascadeState.mock.calls).toEqual([[1, 0]]);
+    expect(cascadeSlice.mock.calls).toEqual([[1, 0]]);
+    expect(ordinary.mock.calls).toEqual([[2, 1]]);
+
+    expect(subscribers.delete(cascadeWatcher, true)).toBe(true);
+    expect(subscribers.delete(cascadeWatcher, true)).toBe(false);
+    expect(subscribers.delete(cascadeState, true)).toBe(true);
+    expect(subscribers.delete(cascadeState, true)).toBe(false);
 
     subscribers.clear();
     expect(subscribers.watcherCount).toBe(0);
@@ -48,8 +51,8 @@ describe('DerivedSubscribers', () => {
     const subscribers = new DerivedSubscribers<number>();
     const second = vi.fn();
 
-    subscribers.addWatcher(() => subscribers.clear());
-    subscribers.addWatcher(second);
+    subscribers.add(() => subscribers.clear(), false);
+    subscribers.add(second, false);
     subscribers.notifyOrdinary(1, 0);
 
     expect(second).not.toHaveBeenCalled();

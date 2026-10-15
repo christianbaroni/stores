@@ -13,7 +13,7 @@ import type {
   RetryFailureParams,
 } from '../queryStore/types';
 import type { BaseStoreOptions, PersistConfig, SetStatePartialArgs, StateCreator, Timeout } from '../types';
-import type { InternalSubscribeArgs, InternalSubscribeOverloads, InternalUnsubscribeFn } from './types/internalSubscribeTypes';
+import type { InternalSubscribeArgs, InternalSubscribeOverloads, InternalUnsubscribeFn } from './internalSubscriptions';
 import { wrapCascadeStateSubscription } from './cascadeSubscriptions';
 import type { BivariantMethod } from '../types/functions';
 import { hasOwn } from '../types/utils';

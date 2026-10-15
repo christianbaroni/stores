@@ -18,8 +18,7 @@ type SelectorWatcher<State, Selected = unknown> = {
 // ============ Subscriber Registry ============================================ //
 
 /**
- * Owns the compact watcher and cascade-state collections used by one derived store.
- * The instance is retained across unsubscribe and destroy cycles.
+ * Manages subscriptions and notifications for a derived store.
  */
 export class DerivedSubscribers<State> {
   watcherCount = 0;
@@ -30,53 +29,46 @@ export class DerivedSubscribers<State> {
   private watchers: SingleOrSet<DerivedWatcher<State>>;
   private cascadeStateListeners: SingleOrSet<Listener<State>>;
 
-  addWatcher(watcher: DerivedWatcher<State>): boolean {
-    const next = addToSingleOrSet(this.watchers, this.watcherCount, watcher);
-    if (next === null) return false;
+  add(watcher: DerivedWatcher<State>, isCascadeParticipant: boolean): boolean {
+    if (isCascadeParticipant && typeof watcher === 'function') {
+      const next = addToSingleOrSet(this.cascadeStateListeners, this.cascadeStateListenerCount, watcher);
+      if (next === null) return false;
+      this.cascadeStateListeners = next;
+      this.cascadeStateListenerCount += 1;
+    } else {
+      const next = addToSingleOrSet(this.watchers, this.watcherCount, watcher);
+      if (next === null) return false;
+      this.watchers = next;
+      this.watcherCount += 1;
+    }
 
-    this.watchers = next;
-    this.watcherCount += 1;
-    if (isCascadeWatcher(watcher)) this.cascadeParticipantCount += 1;
+    if (isCascadeParticipant) this.cascadeParticipantCount += 1;
     else this.ordinaryWatcherCount += 1;
     return true;
   }
 
-  deleteWatcher(watcher: DerivedWatcher<State>): boolean {
-    const next = deleteFromSingleOrSet(this.watchers, this.watcherCount, watcher);
-    if (next === null) return false;
+  delete(watcher: DerivedWatcher<State>, isCascadeParticipant: boolean): boolean {
+    if (isCascadeParticipant && typeof watcher === 'function') {
+      const next = deleteFromSingleOrSet(this.cascadeStateListeners, this.cascadeStateListenerCount, watcher);
+      if (next === null) return false;
+      this.cascadeStateListeners = next;
+      this.cascadeStateListenerCount -= 1;
+    } else {
+      const next = deleteFromSingleOrSet(this.watchers, this.watcherCount, watcher);
+      if (next === null) return false;
+      this.watchers = next;
+      this.watcherCount -= 1;
+    }
 
-    this.watchers = next;
-    this.watcherCount -= 1;
-    if (isCascadeWatcher(watcher)) this.cascadeParticipantCount -= 1;
+    if (isCascadeParticipant) this.cascadeParticipantCount -= 1;
     else this.ordinaryWatcherCount -= 1;
-    return true;
-  }
-
-  addCascadeStateListener(listener: Listener<State>): boolean {
-    const next = addToSingleOrSet(this.cascadeStateListeners, this.cascadeStateListenerCount, listener);
-    if (next === null) return false;
-
-    this.cascadeStateListeners = next;
-    this.cascadeParticipantCount += 1;
-    this.cascadeStateListenerCount += 1;
-    return true;
-  }
-
-  deleteCascadeStateListener(listener: Listener<State>): boolean {
-    const next = deleteFromSingleOrSet(this.cascadeStateListeners, this.cascadeStateListenerCount, listener);
-    if (next === null) return false;
-
-    this.cascadeStateListeners = next;
-    this.cascadeParticipantCount -= 1;
-    this.cascadeStateListenerCount -= 1;
     return true;
   }
 
   notifyCascade(state: State, previousState: State): void {
     forEachSingleOrSet(this.cascadeStateListeners, this.cascadeStateListenerCount, notifyListener, state, previousState);
-    if (this.cascadeParticipantCount !== this.cascadeStateListenerCount) {
-      forEachSingleOrSet(this.watchers, this.watcherCount, notifyCascadeWatcher, state, previousState);
-    }
+    if (this.cascadeParticipantCount === this.cascadeStateListenerCount) return;
+    forEachSingleOrSet(this.watchers, this.watcherCount, notifyCascadeWatcher, state, previousState);
   }
 
   notifyOrdinary(state: State, previousState: State): void {
@@ -115,8 +107,4 @@ function notifySelectorWatcher<State>(watcher: SelectorWatcher<State>, state: St
   const previousSlice = watcher.currentSlice;
   watcher.currentSlice = nextSlice;
   watcher.listener(nextSlice, previousSlice);
-}
-
-function isCascadeWatcher<State>(watcher: DerivedWatcher<State>): boolean {
-  return typeof watcher !== 'function' && watcher.isCascadeParticipant;
 }
