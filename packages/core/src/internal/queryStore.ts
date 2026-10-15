@@ -1,5 +1,4 @@
 import { IS_DEV, IS_TEST } from '#env';
-import { SubscriptionManager } from '../queryStore/classes/SubscriptionManager';
 import { batchStoreNotifications } from '#store/batchStoreNotifications';
 import { QueryStatuses } from '../queryStore/types';
 import type {
@@ -12,20 +11,20 @@ import type {
   QueryStoreState,
   RetryFailureParams,
 } from '../queryStore/types';
-import type { BaseStoreOptions, PersistConfig, SetStatePartialArgs, StateCreator, Timeout } from '../types';
-import type { InternalSubscribeArgs, InternalSubscribeOverloads, InternalUnsubscribeFn } from './internalSubscriptions';
+import type { BaseStoreOptions, Listener, PersistConfig, StateCreator, Timeout } from '../types';
+import type { InternalSubscribeOptions, InternalSubscribeOverloads, InternalUnsubscribeFn } from './internalSubscriptions';
 import { wrapCascadeStateSubscription } from './cascadeSubscriptions';
 import type { BivariantMethod } from '../types/functions';
 import { hasOwn } from '../types/utils';
 import { buildNullObject, nullObject } from '../utils/core';
-import { createMicrotaskScheduler } from '../utils/createMicrotaskScheduler';
 import { debounce } from '../utils/debounce';
+import { time } from '../utils/time';
 import { baseStore } from './baseStore';
 import { markStoreCreated } from './config';
 import { StoresError, ensureError } from './errors';
 import { logger } from './logger';
 import { defaultRetryDelay, getQueryStoreDefaults } from './queryStore/queryStoreDefaults';
-import { createQueryParams, trackQueryValue, type QueryParams, type TrackedValue } from './queryStore/queryParams';
+import { createQueryParams, trackQueryValue } from './queryStore/queryParams';
 import { assignStoreTag, StoreTags } from './storeUtils';
 import { omitStoreMethods } from './utils/persistUtils';
 
@@ -50,30 +49,43 @@ const SHOULD_PERSIST_INTERNAL_STATE_MAP: Record<string, boolean> = {
   reset: false,
 } satisfies Record<InternalStateKeys, boolean>;
 
+const FETCH_ABORTED = Symbol();
+const CASCADE_PARTICIPANT_TRUE = Object.freeze({ isCascadeParticipant: true });
 const FORCE_TRUE = Object.freeze({ force: true });
 const ONCE_TRUE = Object.freeze({ once: true });
+const QUERY_SUBSCRIPTION_THROTTLE = time.seconds(5);
 
 // ============ Internal Types ================================================= //
 
 type QueryTask = () => void;
 
+type PendingFetch<TData> = {
+  key: string;
+  promise: Promise<TData | null> | null;
+  abortController: AbortController | null;
+  updateQueryKey: boolean | undefined;
+};
+
+type ResolvedQuery<TParams> = { params: TParams; key: string };
+
 type InternalFetch<TData, TParams extends Record<string, unknown>> = (
   params?: Partial<TParams>,
   options?: FetchOptions,
   isInternalFetch?: boolean,
-  retryCount?: number
+  retryCount?: number,
+  resolved?: ResolvedQuery<TParams>
 ) => Promise<TData | null>;
 
 type InternalSetState<TData, TParams extends Record<string, unknown>, S extends QueryStoreState<TData, TParams>> = BivariantMethod<{
   set(
     partial: Partial<QueryStoreInternalState<TData, TParams>> | ((state: S) => Partial<QueryStoreInternalState<TData, TParams>>),
     replace?: false
-  ): void;
+  ): void | Promise<void>;
 }>;
 
 type InternalQueryStore<TData, TParams extends Record<string, unknown>, S extends QueryStoreState<TData, TParams>> = ReturnType<
   typeof baseStore<S, Partial<S>, void | Promise<void>>
-> & { setState: InternalSetState<TData, TParams, S> };
+> & { persist?: { hydrationPromise?: () => Promise<void> }; setState: InternalSetState<TData, TParams, S> };
 
 // ============ Shared Query Task Queue ======================================== //
 
@@ -81,6 +93,7 @@ const queryTaskQueue = new Set<QueryTask>();
 let queryTaskFlushScheduled = false;
 
 function scheduleQueryTask(task: QueryTask): void {
+  if (queryTaskQueue.has(task)) return;
   queryTaskQueue.add(task);
   if (queryTaskFlushScheduled) return;
 
@@ -115,7 +128,6 @@ export function queryStore<
   maybeOptions?: BaseStoreOptions<QueryStoreState<TData, TParams, CustomState>, PersistedState, PersistReturn>
 ): ReturnType<typeof baseStore<QueryStoreState<TData, TParams, CustomState>, PersistedState, PersistReturn>> {
   type S = QueryStoreState<TData, TParams, CustomState>;
-  type PersistReturnType = [PersistReturn] extends Promise<void> ? PersistReturn : void;
 
   markStoreCreated();
 
@@ -159,24 +171,20 @@ export function queryStore<
     );
   }
 
-  const abortError = new Error('[createQueryStore: AbortError] Fetch interrupted');
   const cacheTimeIsFunction = typeof cacheTime === 'function';
   const enableLogs = IS_DEV && debugMode;
   const paramKeys: (keyof TParams)[] = config.params ? Object.keys(config.params) : [];
 
   // ========== Internal State ==========
 
-  let isBuildingParams = false;
-  let queryParams: QueryParams<TParams>;
-  let paramUnsubscribes: InternalUnsubscribeFn[] = [];
-  let trackedEnabled: TrackedValue<boolean> | null = null;
-  let trackedStaleTime: TrackedValue<number> | null = null;
+  const paramUnsubscribes: InternalUnsubscribeFn[] = [];
 
-  let activeAbortController: AbortController | null = null;
-  let activeFetch: { key: string; promise?: Promise<TData | null> } | null = null;
-  let activeRefetchTimeout: Timeout | null = null;
+  let initialHydration: Promise<void> | undefined;
+  let destroyed = false;
+  let activeFetch: PendingFetch<TData> | null = null;
+  let backgroundFetches: Record<string, PendingFetch<TData>> | undefined;
+  let scheduledFetch: { key: string; timeout: Timeout } | null = null;
   let lastFetchKey: string | null = null;
-  let lastHandledEnabled: boolean | null = null;
 
   const initialData = {
     enabled: typeof enabled === 'function' ? false : enabled,
@@ -187,128 +195,94 @@ export function queryStore<
     status: QueryStatuses.Idle,
   };
 
-  const subscriptionManager = new SubscriptionManager(disableAutoRefetching);
+  let subscriberCount = 0;
+  let lastSubscriptionTime: number | null = null;
+  let onQuerySubscribe: () => void;
 
-  function abortActiveFetch(): void {
-    if (activeAbortController) {
-      activeFetch = null;
-      activeAbortController.abort();
-      activeAbortController = null;
+  function selectFetch(nextFetch: PendingFetch<TData> | null): PendingFetch<TData> | null {
+    const previousFetch = activeFetch;
+    if (previousFetch?.promise && !previousFetch.abortController) {
+      (backgroundFetches ??= nullObject<Record<string, PendingFetch<TData>>>())[previousFetch.key] = previousFetch;
     }
+    activeFetch = nextFetch;
+    if (nextFetch) delete backgroundFetches?.[nextFetch.key];
+    return previousFetch;
   }
 
-  function clearActiveRefetchTimeout(): void {
-    if (activeRefetchTimeout) {
-      clearTimeout(activeRefetchTimeout);
-      activeRefetchTimeout = null;
-    }
-  }
-
-  async function fetchWithAbortControl(params: TParams): Promise<TQueryFnData> {
-    const abortController = new AbortController();
-    activeAbortController = abortController;
-
-    try {
-      return await new Promise((resolve, reject) => {
-        abortController.signal.addEventListener('abort', () => reject(abortError), ONCE_TRUE);
-        Promise.resolve(fetcher(params, abortController)).then(resolve, reject);
-      });
-    } finally {
-      if (activeAbortController === abortController) {
-        activeAbortController = null;
-      }
+  function clearScheduledFetch(): void {
+    if (scheduledFetch) {
+      clearTimeout(scheduledFetch.timeout);
+      scheduledFetch = null;
     }
   }
 
   // ========== State Creator ==========
 
   function createState(
-    set: InternalSetState<TData, TParams, S>,
+    set: InternalSetState<TData, TParams, S> & Parameters<StateCreator<S>>[0],
     get: Parameters<StateCreator<S>>[1],
     api: Parameters<StateCreator<S>>[2]
   ): S {
-    const originalSet = api.setState;
+    const originalSubscribe: InternalSubscribeOverloads<S> = api.subscribe;
 
-    function handleEnabledChange(prevEnabled: boolean, newEnabled: boolean): void {
-      if (prevEnabled !== newEnabled && lastHandledEnabled !== newEnabled) {
-        lastHandledEnabled = newEnabled;
-        if (newEnabled && subscriptionManager.hasSubscribers()) {
-          queueMicrotask(() => baseMethods.fetch(undefined, undefined, true));
-        } else if (activeRefetchTimeout || abortInterruptedFetches) {
-          if (abortInterruptedFetches) abortActiveFetch();
-          clearActiveRefetchTimeout();
-        }
-      }
-    }
-
-    function setWithEnabledHandling(update: SetStatePartialArgs<S>[0]): ReturnType<typeof originalSet> {
-      const isFunctionSetter = typeof update === 'function';
-      if (isFunctionSetter || update.enabled !== undefined) {
-        let handleNewEnabled: (() => void) | undefined;
-
-        const result = originalSet(state => {
-          const newPartial = isFunctionSetter ? update(state) : update;
-          const newEnabled = newPartial.enabled !== undefined ? newPartial.enabled : state.enabled;
-          if (newEnabled !== state.enabled) handleNewEnabled = () => handleEnabledChange(state.enabled, newEnabled);
-          return newPartial;
-        });
-
-        handleNewEnabled?.();
-        return result;
-      } else {
-        return originalSet(update);
-      }
-    }
-
-    // Override the store's set method
-    api.setState = setWithEnabledHandling;
-
-    subscriptionManager.init({
-      onSubscribe: (isFirstSubscription, shouldThrottle) => {
-        const state = get();
-        if (!state.enabled) return;
-
-        if (isFirstSubscription) {
-          const currentParams = queryParams.get();
-          const currentQueryKey = queryParams.buildKey(currentParams);
-          const storeQueryKey = state.queryKey;
-
-          if (storeQueryKey !== currentQueryKey) set({ queryKey: currentQueryKey });
-
-          if (state.isStale()) {
-            baseMethods.fetch(currentParams, undefined, true);
-          } else {
-            scheduleNextFetch(currentParams);
+    paramUnsubscribes.push(
+      originalSubscribe(
+        state => state?.enabled ?? initialData.enabled,
+        enabled => {
+          if (enabled && subscriberCount > 0) queueMicrotask(() => baseMethods.fetch(undefined, undefined, true));
+          else if (!enabled) {
+            activeFetch?.abortController?.abort();
+            clearScheduledFetch();
           }
-        } else if (disableAutoRefetching && !shouldThrottle) {
-          baseMethods.fetch(undefined, undefined, true);
-        }
-      },
+        },
+        CASCADE_PARTICIPANT_TRUE
+      )
+    );
 
-      onLastUnsubscribe: skipAbortFetch => {
-        clearActiveRefetchTimeout();
-        if (abortInterruptedFetches && !skipAbortFetch) {
-          abortActiveFetch();
-        }
-      },
-    });
+    onQuerySubscribe = () => {
+      const isFirstSubscription = subscriberCount === 0;
 
-    function scheduleNextFetch(params: TParams): void {
+      subscriberCount += 1;
+      if (!destroyed) {
+        const state = get();
+
+        if (state.enabled) {
+          if (isFirstSubscription) {
+            const currentParams = queryParams.get();
+            const currentQueryKey = queryParams.buildKey(currentParams);
+            if (state.queryKey !== currentQueryKey) set({ queryKey: currentQueryKey });
+
+            baseMethods.fetch(currentParams, undefined, true, undefined, { params: currentParams, key: currentQueryKey });
+          } else if (
+            disableAutoRefetching &&
+            (lastSubscriptionTime === null || Date.now() - lastSubscriptionTime > QUERY_SUBSCRIPTION_THROTTLE)
+          ) {
+            baseMethods.fetch(undefined, undefined, true);
+          }
+        }
+      }
+
+      if (disableAutoRefetching) lastSubscriptionTime = Date.now();
+    };
+
+    function scheduleNextFetch(params: TParams, queryKey: string): void {
       if (disableAutoRefetching || staleTime <= 0 || staleTime === Infinity) return;
-      if (!subscriptionManager.hasSubscribers()) return;
+      if (subscriberCount === 0) return;
 
-      clearActiveRefetchTimeout();
+      clearScheduledFetch();
       const state = get();
       if (!state.enabled) return;
 
-      const currentQueryKey = queryParams.buildKey(params);
       const lastFetchedAt =
-        (disableCache ? lastFetchKey === currentQueryKey && state.lastFetchedAt : state.queryCache[currentQueryKey]?.lastFetchedAt) || null;
+        (disableCache ? lastFetchKey === queryKey && state.lastFetchedAt : state.queryCache[queryKey]?.lastFetchedAt) || null;
       const timeUntilRefetch = lastFetchedAt ? staleTime - (Date.now() - lastFetchedAt) : staleTime;
 
-      activeRefetchTimeout = setTimeout(() => {
-        if (get().enabled) baseMethods.fetch(params, FORCE_TRUE, true);
-      }, timeUntilRefetch);
+      scheduledFetch = {
+        key: queryKey,
+        timeout: setTimeout(() => {
+          if (get().enabled) baseMethods.fetch(params, FORCE_TRUE, true);
+        }, timeUntilRefetch),
+      };
     }
 
     function getStatus(statusKey: keyof QueryStatusInfo): QueryStatusInfo[keyof QueryStatusInfo];
@@ -352,367 +326,381 @@ export function queryStore<
 
     // ========== Store Methods ==========
 
-    const baseMethods = {
-      ...customStateCreator(setWithEnabledHandling, get, api),
-      ...initialData,
+    function fetch(
+      params: TParams | Partial<TParams> | undefined,
+      options: FetchOptions | undefined,
+      isInternalFetch = false,
+      retryCount = 0,
+      resolved?: ResolvedQuery<TParams>
+    ): Promise<TData | null> {
+      try {
+        if (destroyed) return Promise.resolve(null);
 
-      async fetch(
-        params: TParams | Partial<TParams> | undefined,
-        options: FetchOptions | undefined,
-        isInternalFetch = false,
-        retryCount = 0
-      ): Promise<TData | null> {
-        const skipStoreUpdates = !!options?.skipStoreUpdates;
+        const skipStoreUpdates = options?.skipStoreUpdates;
+        const isResultOnly = skipStoreUpdates === true || (skipStoreUpdates === 'withCache' && disableCache && !setData);
         const state = get();
 
-        if (!skipStoreUpdates) {
-          if (!state.enabled && !options?.force) return null;
-          if (isInternalFetch && !subscriptionManager.hasSubscribers()) return null;
+        if (!skipStoreUpdates && ((!state.enabled && !options?.force) || (isInternalFetch && subscriberCount === 0))) {
+          return Promise.resolve(null);
         }
 
-        const error = state.error;
-        const storeQueryKey = state.queryKey;
-        const isLoading = state.status === QueryStatuses.Loading;
+        const effectiveParams = resolved?.params ?? queryParams.complete(params);
+        const fetchQueryKey = resolved?.key ?? queryParams.buildKey(effectiveParams);
+        const hydration = initialHydration;
 
-        const effectiveParams = queryParams.complete(params);
-        const fetchQueryKey = queryParams.buildKey(effectiveParams);
-
-        if (isLoading && activeFetch?.promise && activeFetch.key === fetchQueryKey) {
-          if (enableLogs) console.log('[🔄 Using Active Fetch 🔄] for params:', JSON.stringify(effectiveParams));
-          return activeFetch.promise;
+        if (hydration && !isResultOnly) {
+          const resume = fetch.bind(undefined, params, options, isInternalFetch, retryCount, {
+            params: effectiveParams,
+            key: fetchQueryKey,
+          });
+          return hydration.then(resume);
         }
 
-        const effectiveStaleTime = options?.staleTime ?? staleTime;
-        const shouldUpdateQueryKey =
-          typeof options?.updateQueryKey === 'boolean'
-            ? options.updateQueryKey
-            : isInternalFetch
-              ? keepPreviousData
-              : // Manual fetch call default
-                false;
+        const shouldUpdateQueryKey = options?.updateQueryKey ?? (isInternalFetch && keepPreviousData);
+        const isMainFetchPath = !skipStoreUpdates && (isInternalFetch || shouldUpdateQueryKey || state.queryKey === fetchQueryKey);
 
-        const areParamsCurrent = isInternalFetch || storeQueryKey === fetchQueryKey;
-        const isMainFetchPath = (areParamsCurrent || shouldUpdateQueryKey) && !skipStoreUpdates;
-        const hadActiveFetch = activeFetch !== null;
+        let pendingFetch = skipStoreUpdates
+          ? null
+          : activeFetch?.key === fetchQueryKey
+            ? activeFetch
+            : (backgroundFetches?.[fetchQueryKey] ?? null);
 
-        if (abortInterruptedFetches && isMainFetchPath) {
-          abortActiveFetch();
-        }
+        let promise = pendingFetch?.promise;
+        let startFetch: (() => void) | undefined;
+        let rejectFetch: ((error: unknown) => void) | undefined;
 
-        if (!options?.force) {
-          /* Check for valid cached data */
-          const storeLastFetchedAt = state.lastFetchedAt;
-          const cacheEntry = disableCache ? undefined : state.queryCache[fetchQueryKey];
-          const cachedLastFetchedAt = cacheEntry?.lastFetchedAt;
-          const errorInfo = cacheEntry?.errorInfo;
+        if (!promise) {
+          if (!options?.force) {
+            /* Check for valid cached data */
+            const effectiveStaleTime = options?.staleTime ?? staleTime;
+            const cacheEntry = disableCache ? undefined : state.queryCache[fetchQueryKey];
+            const errorInfo = cacheEntry?.errorInfo;
+            const lastFetchedAt =
+              (disableCache ? lastFetchKey === fetchQueryKey && state.lastFetchedAt : cacheEntry?.lastFetchedAt) || null;
 
-          const lastFetchedAt = (disableCache ? lastFetchKey === fetchQueryKey && storeLastFetchedAt : cachedLastFetchedAt) || null;
-          const isStale = !lastFetchedAt || Date.now() - lastFetchedAt >= effectiveStaleTime;
+            const isStale = !lastFetchedAt || Date.now() - lastFetchedAt >= effectiveStaleTime;
 
-          if (!isStale && (!errorInfo || !errorInfo.retryAllowed || skipStoreUpdates)) {
-            if (isMainFetchPath && !activeRefetchTimeout && staleTime !== 0 && staleTime !== Infinity) {
-              scheduleNextFetch(effectiveParams);
+            if (!isStale && (!errorInfo || !errorInfo.retryAllowed || skipStoreUpdates)) {
+              if (isMainFetchPath) {
+                const previousFetch = selectFetch(null);
+                if (scheduledFetch?.key !== fetchQueryKey) clearScheduledFetch();
+                if (!scheduledFetch) scheduleNextFetch(effectiveParams, fetchQueryKey);
+
+                try {
+                  const error = disableCache && state.queryKey === fetchQueryKey ? state.error : (errorInfo?.error ?? null);
+                  const queryKey = shouldUpdateQueryKey ? fetchQueryKey : state.queryKey;
+                  const status = error ? QueryStatuses.Error : QueryStatuses.Success;
+
+                  if (
+                    state.error !== error ||
+                    state.lastFetchedAt !== lastFetchedAt ||
+                    state.queryKey !== queryKey ||
+                    state.status !== status
+                  ) {
+                    set({ error, lastFetchedAt, queryKey, status });
+                  }
+                } finally {
+                  previousFetch?.abortController?.abort();
+                }
+
+                if (destroyed) return Promise.resolve(null);
+              }
+
+              if (enableLogs) console.log('[💾 Returning Cached Data 💾] for params:', JSON.stringify(effectiveParams));
+              return Promise.resolve(cacheEntry?.data ?? null);
             }
-            if (shouldUpdateQueryKey) set(state => (state.queryKey !== fetchQueryKey ? { queryKey: fetchQueryKey } : state));
-            if (enableLogs) console.log('[💾 Returning Cached Data 💾] for params:', JSON.stringify(effectiveParams));
-            return cacheEntry?.data ?? null;
           }
-        }
 
-        const currentFetch: NonNullable<typeof activeFetch> | null = isMainFetchPath ? { key: fetchQueryKey } : null;
-        const effectiveCacheTime = options?.cacheTime ?? (cacheTimeIsFunction ? cacheTime(effectiveParams) : cacheTime);
-
-        if (currentFetch) {
-          clearActiveRefetchTimeout();
-          if (shouldUpdateQueryKey && !hadActiveFetch && state.lastFetchedAt === null && storeQueryKey !== fetchQueryKey) {
-            set({ error: null, queryKey: fetchQueryKey, status: QueryStatuses.Loading });
-          } else if (error || !isLoading) {
-            set({ error: null, status: QueryStatuses.Loading });
-          }
-          activeFetch = currentFetch;
-        }
-
-        async function fetchOperation(): Promise<TData | null> {
+          const effectiveCacheTime = options?.cacheTime ?? (cacheTimeIsFunction ? cacheTime(effectiveParams) : cacheTime);
           const storeIdentifier = storeOptions?.storageKey || fetchQueryKey;
+          const abortController = abortInterruptedFetches && isMainFetchPath ? new AbortController() : null;
+          const request: PendingFetch<TData> = { key: fetchQueryKey, promise: null, abortController, updateQueryKey: undefined };
 
-          try {
-            if (enableLogs) {
-              const isPartialFetch = !isInternalFetch && params && paramKeys.some(key => !(key in params));
-              if (isPartialFetch) {
-                console.log(
-                  '[🔄 Fetching with Partial Params 🔄]\n',
-                  '- Provided params:',
-                  `${JSON.stringify(params)}\n`,
-                  '- Filled in params:',
-                  `${JSON.stringify(
-                    Object.fromEntries(
-                      Object.keys(effectiveParams)
-                        .filter(key => !(key in params))
-                        .map(key => [key, effectiveParams[key]])
-                    )
-                  )}`
-                );
-              } else {
-                console.log('[🔄 Fetching 🔄] for params:', JSON.stringify(effectiveParams));
-              }
-            }
+          pendingFetch = request;
 
-            const rawResult = await (abortInterruptedFetches && isMainFetchPath
-              ? fetchWithAbortControl(effectiveParams)
-              : fetcher(effectiveParams, null));
-
-            const lastFetchedAt = Date.now();
-            if (enableLogs) console.log('[✅ Fetch Successful ✅] for params:', JSON.stringify(effectiveParams));
-
-            let transformedData: TData;
+          let response: Promise<TQueryFnData>;
+          if (skipStoreUpdates) {
             try {
-              transformedData = transformQueryData(rawResult, effectiveParams, transform);
-            } catch (transformError) {
-              throw queryStoreError(storeIdentifier, 'transform', transformError);
+              if (enableLogs) logFetch(params, effectiveParams, isInternalFetch, paramKeys);
+              response = Promise.resolve(fetcher(effectiveParams, null));
+            } catch (error) {
+              response = Promise.reject(error);
             }
-
-            if (skipStoreUpdates) {
-              if (enableLogs) console.log('[🥷 Successful Parallel Fetch 🥷] for params:', JSON.stringify(effectiveParams));
-              if (options.skipStoreUpdates === 'withCache') {
-                set(state => {
-                  if (!setData) {
-                    if (disableCache) return state;
-                    return {
-                      queryCache: {
-                        ...state.queryCache,
-                        [fetchQueryKey]: {
-                          cacheTime: effectiveCacheTime,
-                          data: transformedData,
-                          errorInfo: null,
-                          lastFetchedAt,
-                        } satisfies CacheEntry<TData>,
-                      },
-                    };
-                  }
-
-                  let newState = state;
-                  const cacheEntryBeforeSetData = disableCache ? undefined : newState.queryCache[fetchQueryKey];
-                  try {
-                    setData({
-                      data: transformedData,
-                      params: effectiveParams,
-                      queryKey: fetchQueryKey,
-                      set: partial => {
-                        newState = typeof partial === 'function' ? { ...newState, ...partial(newState) } : { ...newState, ...partial };
-                      },
-                    });
-                  } catch (setDataError) {
-                    throw queryStoreError(storeIdentifier, 'setData', setDataError);
-                  }
-
-                  if (!disableCache && Object.is(cacheEntryBeforeSetData, newState.queryCache[fetchQueryKey])) {
-                    newState = {
-                      ...newState,
-                      queryCache: {
-                        ...newState.queryCache,
-                        [fetchQueryKey]: {
-                          cacheTime: effectiveCacheTime,
-                          data: null,
-                          errorInfo: null,
-                          lastFetchedAt,
-                        } satisfies CacheEntry<TData>,
-                      },
-                    };
-                  }
-
-                  return newState;
-                });
+          } else {
+            // Prepare completion before publishing the loading state.
+            response = new Promise<TQueryFnData>((resolve, reject) => {
+              function rejectResponse(error: unknown): void {
+                if (error === FETCH_ABORTED) {
+                  if (backgroundFetches?.[fetchQueryKey] === request) delete backgroundFetches[fetchQueryKey];
+                  if (activeFetch === request) activeFetch = null;
+                }
+                request.abortController = null;
+                reject(error);
               }
 
-              return transformedData;
-            }
+              rejectFetch = rejectResponse;
+              abortController?.signal.addEventListener('abort', () => rejectResponse(FETCH_ABORTED), ONCE_TRUE);
 
-            (setData ? setWithEnabledHandling : set)(state => {
-              let newState: S =
-                currentFetch && activeFetch === currentFetch
-                  ? {
-                      ...state,
-                      error: null,
-                      lastFetchedAt,
-                      queryKey: shouldUpdateQueryKey ? fetchQueryKey : state.queryKey,
-                      status: QueryStatuses.Success,
-                    }
-                  : { ...state };
+              startFetch = () => {
+                if (abortController?.signal.aborted) return;
+                try {
+                  if (enableLogs) logFetch(params, effectiveParams, isInternalFetch, paramKeys);
 
-              if (!setData && !disableCache) {
-                if (enableLogs)
-                  console.log(
-                    '[💾 Setting Cache 💾] for params:',
-                    JSON.stringify(effectiveParams),
-                    '| Has previous data?:',
-                    !!newState.queryCache[fetchQueryKey]?.data
-                  );
-                newState.queryCache = {
-                  ...newState.queryCache,
-                  [fetchQueryKey]: {
-                    cacheTime: effectiveCacheTime,
-                    data: transformedData,
-                    errorInfo: null,
+                  Promise.resolve(fetcher(effectiveParams, abortController)).then(result => {
+                    request.abortController = null;
+                    resolve(result);
+                  }, rejectResponse);
+                } catch (error) {
+                  rejectResponse(error);
+                }
+              };
+            });
+          }
+
+          const handleResponse = (rawResult: TQueryFnData): TData | null => {
+            try {
+              if (!isResultOnly && destroyed) return null;
+
+              const lastFetchedAt = Date.now();
+              let transformedData: TData;
+
+              if (enableLogs) console.log('[✅ Fetch Successful ✅] for params:', JSON.stringify(effectiveParams));
+
+              try {
+                transformedData = transformQueryData(rawResult, effectiveParams, transform);
+              } catch (transformError) {
+                throw queryStoreError(storeIdentifier, 'transform', transformError);
+              }
+
+              if (isResultOnly) return transformedData;
+
+              const state = get();
+              const isCurrentFetch = activeFetch === request;
+              let update: Partial<QueryStoreInternalState<TData, TParams>> = isCurrentFetch
+                ? {
+                    error: null,
                     lastFetchedAt,
-                  } satisfies CacheEntry<TData>,
-                };
-              } else if (setData) {
-                if (enableLogs) console.log('[💾 Setting Data 💾] for params:', JSON.stringify(effectiveParams));
+                    queryKey: request.updateQueryKey ? fetchQueryKey : state.queryKey,
+                    status: QueryStatuses.Success,
+                  }
+                : {};
 
-                const cacheEntryBeforeSetData = disableCache ? undefined : newState.queryCache[fetchQueryKey];
+              if (setData) {
+                let composedState: S = skipStoreUpdates && disableCache ? state : { ...state, ...update };
+
                 try {
                   setData({
                     data: transformedData,
                     params: effectiveParams,
                     queryKey: fetchQueryKey,
                     set: partial => {
-                      newState = typeof partial === 'function' ? { ...newState, ...partial(newState) } : { ...newState, ...partial };
+                      composedState = { ...composedState, ...(typeof partial === 'function' ? partial(composedState) : partial) };
                     },
                   });
                 } catch (setDataError) {
                   throw queryStoreError(storeIdentifier, 'setData', setDataError);
                 }
 
-                if (!disableCache && Object.is(cacheEntryBeforeSetData, newState.queryCache[fetchQueryKey])) {
-                  newState.queryCache = {
-                    ...newState.queryCache,
-                    [fetchQueryKey]: {
-                      cacheTime: effectiveCacheTime,
-                      data: null,
-                      errorInfo: null,
-                      lastFetchedAt,
-                    } satisfies CacheEntry<TData>,
-                  };
+                update = composedState;
+              }
+
+              const queryCache = update.queryCache ?? state.queryCache;
+              if (!disableCache && (!setData || Object.is(state.queryCache[fetchQueryKey], queryCache[fetchQueryKey]))) {
+                update.queryCache = {
+                  ...queryCache,
+                  [fetchQueryKey]: {
+                    cacheTime: effectiveCacheTime,
+                    data: setData ? null : transformedData,
+                    errorInfo: null,
+                    lastFetchedAt,
+                  } satisfies CacheEntry<TData>,
+                };
+              }
+
+              if (isCurrentFetch) lastFetchKey = fetchQueryKey;
+              request.promise = null;
+
+              if (!skipStoreUpdates && !disableCache && cacheTime !== Infinity) {
+                update.queryCache = pruneCache(
+                  update.queryCache ?? queryCache,
+                  fetchQueryKey,
+                  keepPreviousData ? (update.queryKey ?? state.queryKey) : undefined
+                );
+              }
+
+              if (setData || !disableCache || isCurrentFetch) set(update);
+
+              if (destroyed) return null;
+              if (skipStoreUpdates) return transformedData;
+              if (activeFetch === request) scheduleNextFetch(effectiveParams, fetchQueryKey);
+
+              if (onFetched) {
+                try {
+                  onFetched({ data: transformedData, fetch: baseMethods.fetch, params: effectiveParams, set });
+                } catch (onFetchedError) {
+                  logger.error(queryStoreError(storeIdentifier, 'onFetched callback', onFetchedError));
                 }
               }
 
-              return disableCache || cacheTime === Infinity
-                ? newState
-                : pruneCache<S, TData, TParams>(keepPreviousData, fetchQueryKey, newState);
-            });
-
-            if (currentFetch && activeFetch === currentFetch) {
-              lastFetchKey = fetchQueryKey;
-              scheduleNextFetch(effectiveParams);
+              return transformedData ?? null;
+            } catch (error) {
+              return handleFailure(error);
+            } finally {
+              if (activeFetch === request) activeFetch = null;
+              if (backgroundFetches?.[fetchQueryKey] === request) delete backgroundFetches[fetchQueryKey];
             }
+          };
 
-            if (onFetched) {
-              try {
-                onFetched({ data: transformedData, fetch: baseMethods.fetch, params: effectiveParams, set: setWithEnabledHandling });
-              } catch (onFetchedError) {
-                logger.error(queryStoreError(storeIdentifier, 'onFetched callback', onFetchedError));
+          const handleFailure = (error: unknown): null => {
+            try {
+              if (error === FETCH_ABORTED) {
+                if (enableLogs) console.log('[❌ Fetch Aborted ❌] for params:', JSON.stringify(effectiveParams));
+                return null;
               }
-            }
 
-            return transformedData ?? null;
-          } catch (error) {
-            if (error === abortError) {
-              if (enableLogs) console.log('[❌ Fetch Aborted ❌] for params:', JSON.stringify(effectiveParams));
-              return null;
-            }
+              if (!isResultOnly && destroyed) return null;
 
-            const shouldThrow = !isInternalFetch && options?.throwOnError === true;
-            const typedError = ensureError(error);
+              const typedError = ensureError(error);
+              if (typedError instanceof StoresError) logger.error(typedError);
+              if (request.updateQueryKey === undefined) throw typedError;
 
-            if (typedError instanceof StoresError) logger.error(typedError);
+              const lastFailedAt = Date.now();
+              let failure: RetryFailureParams<TParams> | undefined;
+              let retryAllowed: boolean;
 
-            if (!isMainFetchPath) {
-              if (shouldThrow) throw typedError;
-              return null;
-            }
-
-            const entry = disableCache ? undefined : get().queryCache[fetchQueryKey];
-            let failure: RetryFailureParams<TParams> | undefined;
-            let retryAllowed: boolean;
-
-            if (typeof retry === 'function') {
-              failure = { error: typedError, params: effectiveParams, queryKey: fetchQueryKey, retryCount };
-              try {
-                retryAllowed = retry(failure);
-              } catch (retryError) {
-                logger.error(queryStoreError(storeIdentifier, 'retry callback', retryError));
-                retryAllowed = false;
-              }
-            } else {
-              retryAllowed = retry !== false && retryCount < retry;
-            }
-
-            let retryAfter: number | undefined;
-            if (retryAllowed && activeFetch === currentFetch && get().enabled && subscriptionManager.hasSubscribers()) {
-              if (retryDelay === undefined) retryAfter = defaultRetryDelay(retryCount);
-              else if (typeof retryDelay === 'number') retryAfter = retryDelay;
-              else {
-                failure ??= { error: typedError, params: effectiveParams, queryKey: fetchQueryKey, retryCount };
+              if (typeof retry === 'function') {
+                failure = { error: typedError, params: effectiveParams, queryKey: fetchQueryKey, retryCount };
                 try {
-                  retryAfter = retryDelay(failure);
-                } catch (retryDelayError) {
-                  logger.error(queryStoreError(storeIdentifier, 'retryDelay callback', retryDelayError));
+                  retryAllowed = retry(failure);
+                } catch (retryError) {
+                  logger.error(queryStoreError(storeIdentifier, 'retry callback', retryError));
                   retryAllowed = false;
                 }
+              } else {
+                retryAllowed = retry !== false && retryCount < retry;
               }
-            }
 
-            if (retryAfter !== undefined) {
-              clearActiveRefetchTimeout();
-              activeRefetchTimeout = setTimeout(() => {
-                if (get().enabled) baseMethods.fetch(effectiveParams, FORCE_TRUE, true, retryCount + 1);
-              }, retryAfter);
-            }
+              let retryAfter: number | undefined;
 
-            set(state => {
-              const newState: S = { ...state };
-              if (activeFetch === currentFetch) {
-                newState.error = typedError;
-                if (shouldUpdateQueryKey) newState.queryKey = fetchQueryKey;
-                newState.status = QueryStatuses.Error;
+              if (retryAllowed && activeFetch === request && get().enabled && subscriberCount > 0) {
+                if (retryDelay === undefined) retryAfter = defaultRetryDelay(retryCount);
+                else if (typeof retryDelay === 'number') retryAfter = retryDelay;
+                else {
+                  failure ??= { error: typedError, params: effectiveParams, queryKey: fetchQueryKey, retryCount };
+                  try {
+                    retryAfter = retryDelay(failure);
+                  } catch (retryDelayError) {
+                    logger.error(queryStoreError(storeIdentifier, 'retryDelay callback', retryDelayError));
+                    retryAllowed = false;
+                  }
+                }
               }
+
+              const state = get();
+              const update: Partial<QueryStoreInternalState<TData, TParams>> =
+                activeFetch === request
+                  ? {
+                      error: typedError,
+                      queryKey: request.updateQueryKey ? fetchQueryKey : state.queryKey,
+                      status: QueryStatuses.Error,
+                    }
+                  : {};
 
               if (!disableCache) {
-                newState.queryCache = {
+                const entry = state.queryCache[fetchQueryKey];
+                update.queryCache = {
                   ...state.queryCache,
                   [fetchQueryKey]: {
                     cacheTime: entry?.cacheTime ?? effectiveCacheTime,
                     data: entry?.data ?? null,
                     lastFetchedAt: entry?.lastFetchedAt ?? null,
-                    errorInfo: {
-                      error: typedError,
-                      lastFailedAt: Date.now(),
-                      retryAllowed,
-                      retryCount,
-                    },
+                    errorInfo: { error: typedError, lastFailedAt, retryAllowed, retryCount },
                   } satisfies CacheEntry<TData>,
                 };
               }
 
-              return newState;
-            });
+              request.promise = null;
+              set(update);
 
-            if (onError) {
-              try {
-                onError({
-                  error: typedError,
-                  params: effectiveParams,
-                  queryKey: fetchQueryKey,
-                  retryCount,
-                  willRetry: retryAfter !== undefined,
-                });
-              } catch (onErrorError) {
-                logger.error(queryStoreError(storeIdentifier, 'onError callback', onErrorError));
+              if (destroyed) return null;
+              if (activeFetch !== request || !get().enabled || subscriberCount === 0) retryAfter = undefined;
+              if (retryAfter !== undefined) {
+                clearScheduledFetch();
+                scheduledFetch = {
+                  key: fetchQueryKey,
+                  timeout: setTimeout(() => {
+                    if (get().enabled) baseMethods.fetch(effectiveParams, FORCE_TRUE, true, retryCount + 1);
+                  }, retryAfter),
+                };
               }
-            }
 
-            if (shouldThrow) throw typedError;
-            return null;
+              if (onError) {
+                try {
+                  onError({
+                    error: typedError,
+                    params: effectiveParams,
+                    queryKey: fetchQueryKey,
+                    retryCount,
+                    willRetry: retryAfter !== undefined,
+                  });
+                } catch (onErrorError) {
+                  logger.error(queryStoreError(storeIdentifier, 'onError callback', onErrorError));
+                }
+              }
+
+              throw typedError;
+            } finally {
+              if (activeFetch === request) activeFetch = null;
+              if (backgroundFetches?.[fetchQueryKey] === request) delete backgroundFetches[fetchQueryKey];
+            }
+          };
+
+          promise = response.then(handleResponse, handleFailure);
+          request.promise = promise;
+
+          if (!skipStoreUpdates && !isMainFetchPath) {
+            (backgroundFetches ??= nullObject<Record<string, PendingFetch<TData>>>())[fetchQueryKey] = request;
+          }
+        } else if (enableLogs) {
+          console.log('[🔄 Using Active Fetch 🔄] for params:', JSON.stringify(effectiveParams));
+        }
+
+        if (isMainFetchPath && pendingFetch && activeFetch !== pendingFetch) {
+          const previousFetch = selectFetch(pendingFetch);
+          pendingFetch.updateQueryKey = shouldUpdateQueryKey;
+          clearScheduledFetch();
+
+          try {
+            const queryKey = shouldUpdateQueryKey && !previousFetch && state.lastFetchedAt === null ? fetchQueryKey : state.queryKey;
+            if (state.error !== null || state.queryKey !== queryKey || state.status !== QueryStatuses.Loading) {
+              set({ error: null, queryKey, status: QueryStatuses.Loading });
+            }
+          } catch (error) {
+            if (activeFetch === pendingFetch) selectFetch(null);
+            rejectFetch?.(FETCH_ABORTED);
+            throw error;
           } finally {
-            if (activeFetch === currentFetch) activeFetch = null;
+            previousFetch?.abortController?.abort();
           }
         }
 
-        if (!currentFetch) return fetchOperation();
+        if (destroyed) rejectFetch?.(FETCH_ABORTED);
+        else startFetch?.();
 
-        currentFetch.promise = fetchOperation();
-        return currentFetch.promise;
-      },
+        startFetch = undefined;
+        rejectFetch = undefined;
+
+        return isInternalFetch || !options?.throwOnError ? promise.catch(returnNull) : promise;
+      } catch (error) {
+        return Promise.reject(error);
+      }
+    }
+
+    const baseMethods = {
+      ...customStateCreator(set, get, api),
+      ...initialData,
+
+      fetch,
 
       getCacheEntry(paramsOrQueryKey?: TParams | Partial<TParams> | string): CacheEntry<TData> | null {
         if (disableCache) return null;
@@ -767,45 +755,22 @@ export function queryStore<
       },
 
       reset(resetStoreState = false): void {
+        if (destroyed) return;
+        destroyed = true;
         for (const unsub of paramUnsubscribes) unsub();
-        paramUnsubscribes = [];
-        queryParams = createQueryParams<TParams, S>(undefined, queryStore, paramKeys);
-        trackedEnabled = null;
-        trackedStaleTime = null;
+        paramUnsubscribes.length = 0;
 
-        abortActiveFetch();
-        clearActiveRefetchTimeout();
+        activeFetch?.abortController?.abort();
+        clearScheduledFetch();
         throttledParamChange?.cancel();
 
         activeFetch = null;
+        backgroundFetches = undefined;
         lastFetchKey = null;
 
         if (resetStoreState) set(initialData);
       },
     };
-
-    // ========== Subscribe Override ==========
-
-    const originalSubscribe: InternalSubscribeOverloads<S> = api.subscribe;
-    api.subscribe = (...args: InternalSubscribeArgs<S>) => {
-      const internalUnsubscribe = isBuildingParams ? undefined : subscriptionManager.subscribe();
-      const unsubscribe = args.length === 1 ? originalSubscribe(args[0]) : originalSubscribe(args[0], args[1], args[2]);
-      return (skipAbortFetch?: boolean) => {
-        internalUnsubscribe?.(skipAbortFetch);
-        unsubscribe(skipAbortFetch);
-      };
-    };
-
-    wrapCascadeStateSubscription(api, originalSubscribeCascadeState => {
-      return listener => {
-        const internalUnsubscribe = isBuildingParams ? undefined : subscriptionManager.subscribe();
-        const unsubscribe = originalSubscribeCascadeState(listener);
-        return (skipAbortFetch?: boolean) => {
-          internalUnsubscribe?.(skipAbortFetch);
-          unsubscribe(skipAbortFetch);
-        };
-      };
-    });
 
     return baseMethods;
   }
@@ -813,16 +778,25 @@ export function queryStore<
   // ========== Store Initialization ==========
 
   const queryStore: InternalQueryStore<TData, TParams, S> = storeOptions?.storageKey
-    ? baseStore<S, PersistedState, PersistReturnType>(
+    ? baseStore<S, PersistedState, PersistReturn>(
         createState,
-        buildNullObject<BaseStoreOptions<S, PersistedState, PersistReturnType>, { partialize: (state: S) => PersistedState }>(
-          storeOptions,
-          { partialize: createBlendedPartialize<TData, TParams, S, CustomState, PersistedState>(keepPreviousData, storeOptions.partialize) }
-        )
+        buildNullObject<BaseStoreOptions<S, PersistedState, PersistReturn>, { partialize: (state: S) => PersistedState }>(storeOptions, {
+          partialize: createBlendedPartialize<TData, TParams, S, CustomState, PersistedState>(keepPreviousData, storeOptions.partialize),
+        })
       )
     : options && !('storageKey' in options)
-      ? baseStore<S, PersistedState, PersistReturnType>(createState, options)
-      : baseStore<S, PersistedState, PersistReturnType>(createState);
+      ? baseStore<S, PersistedState, PersistReturn>(createState, options)
+      : baseStore<S, PersistedState, PersistReturn>(createState);
+
+  if (queryStore.persist?.hydrationPromise) {
+    function finishHydration(): void {
+      initialHydration = undefined;
+      if (destroyed) return;
+      const queryKey = queryParams.buildKey();
+      if (queryStore.getState().queryKey !== queryKey) queryStore.setState({ queryKey });
+    }
+    initialHydration = queryStore.persist.hydrationPromise().then(finishHydration, finishHydration);
+  }
 
   const initialState = queryStore.getState();
   const error = initialState.error;
@@ -834,31 +808,26 @@ export function queryStore<
 
   // ========== Params ==========
 
-  isBuildingParams = true;
+  const queryParams = createQueryParams<TParams, S>(params, queryStore, paramKeys);
+  const trackedEnabled = typeof enabled === 'function' ? trackQueryValue(enabled, queryStore) : undefined;
+  const trackedStaleTime = typeof config.staleTime === 'function' ? trackQueryValue(config.staleTime, queryStore) : undefined;
 
-  queryParams = createQueryParams<TParams, S>(params, queryStore, paramKeys);
+  if (trackedStaleTime) staleTime = trackedStaleTime.initialValue;
 
-  if (typeof enabled === 'function') {
-    trackedEnabled = trackQueryValue(enabled, queryStore);
+  let pendingQuery: ResolvedQuery<TParams> | undefined;
+
+  function flushParamFetch(): void {
+    const query = pendingQuery;
+    pendingQuery = undefined;
+    void queryStoreFetch(query?.params, undefined, true, undefined, query);
   }
-
-  if (typeof config.staleTime === 'function') {
-    trackedStaleTime = trackQueryValue(config.staleTime, queryStore);
-    staleTime = trackedStaleTime.initialValue;
-  }
-
-  const queueParamFetch = createMicrotaskScheduler((params: TParams | undefined) => {
-    void queryStoreFetch(params, undefined, true);
-  }, scheduleQueryTask);
 
   function applyParamChange(): void {
-    if (!keepPreviousData) {
-      const currentParams = queryParams.get();
-      queryStore.setState({ queryKey: queryParams.buildKey(currentParams) });
-      queueParamFetch(currentParams);
-    } else {
-      queueParamFetch(undefined);
-    }
+    const params = keepPreviousData ? undefined : queryParams.get();
+    const query = params ? { params, key: queryParams.buildKey(params) } : undefined;
+    if (query) queryStore.setState({ queryKey: query.key });
+    pendingQuery = query;
+    scheduleQueryTask(flushParamFetch);
   }
 
   const throttledParamChange =
@@ -871,7 +840,7 @@ export function queryStore<
         );
 
   function handleParamChange(): void {
-    clearActiveRefetchTimeout();
+    clearScheduledFetch();
 
     if (throttledParamChange) {
       const state = queryStore.getState();
@@ -891,16 +860,13 @@ export function queryStore<
   );
 
   if (trackedStaleTime) {
-    let oldVal = trackedStaleTime.initialValue;
-    if (enableLogs) console.log('[🌀 StaleTime Subscription 🌀] Initial value:', oldVal);
-
+    if (enableLogs) console.log('[🌀 StaleTime Subscription 🌀] Initial value:', staleTime);
     paramUnsubscribes.push(
       trackedStaleTime.subscribe(newVal => {
-        if (newVal !== oldVal) {
-          if (enableLogs) console.log('[🌀 StaleTime Change 🌀] - [Old]:', `${oldVal},`, '[New]:', newVal);
-          oldVal = newVal;
+        if (newVal !== staleTime) {
+          if (enableLogs) console.log('[🌀 StaleTime Change 🌀] - [Old]:', `${staleTime},`, '[New]:', newVal);
           staleTime = newVal;
-          clearActiveRefetchTimeout();
+          clearScheduledFetch();
           queryStoreFetch(undefined, undefined, true);
         }
       })
@@ -911,7 +877,6 @@ export function queryStore<
 
   if (trackedEnabled) {
     let oldVal = trackedEnabled.initialValue;
-    if (initialStoreEnabled !== oldVal) (initialStatePatch ??= {}).enabled = oldVal;
     if (enableLogs) console.log('[🌀 Enabled Subscription 🌀] Initial value:', oldVal);
 
     paramUnsubscribes.push(
@@ -923,6 +888,7 @@ export function queryStore<
         }
       })
     );
+    if (queryStore.getState().enabled !== oldVal) (initialStatePatch ??= {}).enabled = oldVal;
   } else if (initialStoreEnabled !== initialData.enabled) {
     (initialStatePatch ??= {}).enabled = initialData.enabled;
   }
@@ -931,7 +897,46 @@ export function queryStore<
   if (resolvedQueryKey !== queryKey) (initialStatePatch ??= {}).queryKey = resolvedQueryKey;
   if (initialStatePatch) queryStore.setState(initialStatePatch);
 
-  isBuildingParams = false;
+  // ========== Subscribe Override ==========
+
+  function onQueryUnsubscribe(skipAbortFetch?: boolean): void {
+    if (--subscriberCount !== 0) return;
+    clearScheduledFetch();
+    if (!skipAbortFetch) activeFetch?.abortController?.abort();
+    lastSubscriptionTime = null;
+  }
+
+  function wrapQuerySubscribe(subscribe: InternalSubscribeOverloads<S>): InternalSubscribeOverloads<S> {
+    return (
+      selectorOrListener: BivariantMethod<{ callback(state: S, previousState: S): unknown }>,
+      listener?: Listener<unknown>,
+      options?: InternalSubscribeOptions<unknown>
+    ) => {
+      let unsubscribe: InternalUnsubscribeFn | undefined;
+
+      try {
+        onQuerySubscribe();
+        if (listener) {
+          const selector: BivariantMethod<{ select(state: S, previousState?: S): unknown }> = selectorOrListener;
+          unsubscribe = subscribe(selector, listener, options);
+        } else unsubscribe = subscribe(selectorOrListener);
+      } catch (error) {
+        onQueryUnsubscribe();
+        throw error;
+      }
+
+      return (skipAbortFetch?: boolean) => {
+        if (!unsubscribe) return;
+        const remove = unsubscribe;
+        unsubscribe = undefined;
+        onQueryUnsubscribe(skipAbortFetch);
+        remove(skipAbortFetch);
+      };
+    };
+  }
+
+  queryStore.subscribe = wrapQuerySubscribe(queryStore.subscribe);
+  wrapCascadeStateSubscription(queryStore, wrapQuerySubscribe);
 
   return assignStoreTag(queryStore, StoreTags.QueryStore);
 }
@@ -963,47 +968,86 @@ function createBlendedPartialize<
       }
     }
 
-    return {
-      ...(userPartialize ? userPartialize(clonedState) : omitStoreMethods(clonedState)),
-      ...pruneCache<S, TData, TParams>(keepPreviousData, null, internalStateToPersist),
-    } satisfies PersistedState;
+    const persistedCustomState: PersistedState = userPartialize ? userPartialize(clonedState) : omitStoreMethods(clonedState);
+
+    if (internalStateToPersist.queryCache) {
+      internalStateToPersist.queryCache = pruneCache(
+        internalStateToPersist.queryCache,
+        null,
+        keepPreviousData ? internalStateToPersist.queryKey : undefined
+      );
+    }
+
+    return { ...persistedCustomState, ...internalStateToPersist } satisfies PersistedState;
   };
 }
 
-function pruneCache<S extends QueryStoreState<TData, TParams>, TData, TParams extends Record<string, unknown>>(
-  keepPreviousData: boolean,
+function pruneCache<TData>(
+  queryCache: Record<string, CacheEntry<TData> | undefined>,
   keyToPreserve: string | null,
-  state: S | Partial<S>
-): S | Partial<S> {
-  if (!state.queryCache) return state;
+  previousKey: string | undefined
+): Record<string, CacheEntry<TData> | undefined> {
   const pruneTime = Date.now();
-  const newCache: Record<string, CacheEntry<TData>> = nullObject();
+  let prunedCache: typeof queryCache | undefined;
 
-  let prunedSomething = false;
+  for (const key in queryCache) {
+    if (!hasOwn(queryCache, key)) continue;
+    const entry = queryCache[key];
 
-  for (const key in state.queryCache) {
-    if (!hasOwn(state.queryCache, key)) continue;
-    const entry = state.queryCache[key];
-    const isValid =
-      !!entry &&
-      (pruneTime - (entry.lastFetchedAt ?? entry.errorInfo.lastFailedAt) < entry.cacheTime ||
-        key === keyToPreserve ||
-        (keepPreviousData && key === state.queryKey));
+    if (
+      entry &&
+      (pruneTime - (entry.lastFetchedAt ?? entry.errorInfo.lastFailedAt) < entry.cacheTime || key === keyToPreserve || key === previousKey)
+    ) {
+      if (prunedCache) prunedCache[key] = entry;
+      continue;
+    }
 
-    if (!isValid) {
-      prunedSomething = true;
-    } else newCache[key] = entry;
+    if (prunedCache) continue;
+    prunedCache = nullObject<typeof queryCache>();
+
+    for (const retainedKey in queryCache) {
+      if (retainedKey === key) break;
+      if (hasOwn(queryCache, retainedKey)) prunedCache[retainedKey] = queryCache[retainedKey];
+    }
   }
 
-  if (!prunedSomething) return state;
-
-  return { ...state, queryCache: newCache };
+  return prunedCache ?? queryCache;
 }
 
 // ============ Internal Helpers =============================================== //
 
+function logFetch(
+  params: Record<string, unknown> | undefined,
+  effectiveParams: Record<string, unknown>,
+  isInternalFetch: boolean,
+  paramKeys: readonly PropertyKey[]
+): void {
+  const isPartialFetch = !isInternalFetch && params && paramKeys.some(key => !(key in params));
+  if (isPartialFetch) {
+    console.log(
+      '[🔄 Fetching with Partial Params 🔄]\n',
+      '- Provided params:',
+      `${JSON.stringify(params)}\n`,
+      '- Filled in params:',
+      `${JSON.stringify(
+        Object.fromEntries(
+          Object.keys(effectiveParams)
+            .filter(key => !(key in params))
+            .map(key => [key, effectiveParams[key]])
+        )
+      )}`
+    );
+  } else {
+    console.log('[🔄 Fetching 🔄] for params:', JSON.stringify(effectiveParams));
+  }
+}
+
 function createEmptyState<CustomState>(): CustomState {
   return Object.create(null);
+}
+
+function returnNull(): null {
+  return null;
 }
 
 function queryStoreError(storeIdentifier: string, stage: string, cause: unknown): StoresError {

@@ -74,7 +74,7 @@ describe('createQueryStore error reporting', () => {
     expect(store.getState().status).toBe(QueryStatuses.Error);
   });
 
-  it('reports setData failures as store lifecycle failures', async () => {
+  it.each([false, true])('reports setData failures as store lifecycle failures, updater=%s', async inUpdater => {
     type CustomState = { customData: TestData | null };
 
     const setDataError = new Error('Bad setData');
@@ -85,8 +85,12 @@ describe('createQueryStore error reporting', () => {
         fetcher: async params => `data-${params.id}`,
         retry: 0,
         params: TEST_PARAMS,
-        setData: () => {
-          throw setDataError;
+        setData: ({ set }) => {
+          if (inUpdater)
+            set(() => {
+              throw setDataError;
+            });
+          else throw setDataError;
         },
       },
       () => ({ customData: null })

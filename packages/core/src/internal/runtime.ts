@@ -5,6 +5,7 @@ export { configureStores } from './config';
 export { StoresError } from './errors';
 
 /* -- Query --------- */
+export { queryParam } from '../queryStore/queryParam';
 export { QueryStatuses } from '../queryStore/types';
 export { defaultRetryDelay } from './queryStore/queryStoreDefaults';
 

@@ -88,6 +88,9 @@ function resolveQueryParam<TParams extends Record<string, unknown>, State, K ext
   return resolveQueryParamValue(current, input, key, store);
 }
 
+/**
+ * Evaluates a reactive query value and records the dependencies needed to observe changes.
+ */
 export function trackQueryValue<T, State>(getValue: ReactiveParam<T, State>, ownerStore: StoreApi<State>): TrackedValue<T> {
   const selectorDependencies: SubscribeDependency[] = [];
   let proxyPaths: PathFinder | undefined;
@@ -132,8 +135,17 @@ export function trackQueryValue<T, State>(getValue: ReactiveParam<T, State>, own
   return {
     initialValue,
     subscribe(listener) {
-      const notify = () => listener(getValue(snapshotGetter, ownerStore));
+      let revision = 0;
+
+      function notify(): void {
+        const currentRevision = ++revision;
+        const value = getValue(snapshotGetter, ownerStore);
+        if (currentRevision === revision) listener(value);
+      }
+
       const unsubscribes = selectorDependencies.map(subscribe => subscribe(notify));
+      notify();
+
       return skipAbortFetch => {
         for (const unsubscribe of unsubscribes) unsubscribe(skipAbortFetch);
       };
@@ -162,7 +174,7 @@ function resolveQueryParamValue<TParams extends Record<string, unknown>, State, 
 
 function copyCurrent<TParams extends Record<string, unknown>>(current: TParams): TParams {
   const currentParams = nullObject<TParams>();
-  for (const key in current) if (hasOwn(current, key)) currentParams[key] = current[key];
+  for (const key in current) currentParams[key] = current[key];
   return currentParams;
 }
 

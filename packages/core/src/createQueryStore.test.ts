@@ -1,4 +1,4 @@
-import { flushMacrotask, flushMicrotasks } from './async.testUtils';
+import { deferred, flushMacrotask, flushMicrotasks } from './async.testUtils';
 import { createBaseStore } from './createBaseStore';
 import { createDerivedStore } from './createDerivedStore';
 import { createQueryStore, getQueryKey, parseQueryKey, queryParam } from './createQueryStore';
@@ -151,45 +151,40 @@ describe('createQueryStore', () => {
       }
     });
 
-    it('should not let an aborted fetch clear a same-key replacement fetch', async () => {
-      vi.useFakeTimers();
+    it('preserves a same-key replacement through cancellation and late completion of the old request', async () => {
+      const firstResponse = deferred<string>();
+      const replacementResponse = deferred<string>();
+      const fetcher = vi
+        .fn((_params: TestParams, _controller: AbortController | null) => replacementResponse.promise)
+        .mockReturnValueOnce(firstResponse.promise);
 
-      const fetcher = vi.fn((params: TestParams) => {
-        return new Promise<TestData>(resolve => {
-          setTimeout(() => resolve(`data-${params.id}`), 100);
-        });
-      });
-
-      const store = createQueryStore<TestData, TestParams>({
-        fetcher,
-        params: { id: 1 },
-      });
-
-      const unsubscribeFirst = store.subscribe(() => {
-        return;
-      });
-      expect(fetcher).toHaveBeenCalledTimes(1);
+      const store = createQueryStore({ fetcher, params: { id: 1 }, staleTime: Infinity });
+      const unsubscribeFirst = store.subscribe(() => {});
+      const firstFetch = store.getState().fetch();
 
       unsubscribeFirst();
-
-      const unsubscribeSecond = store.subscribe(() => {
-        return;
-      });
+      const unsubscribeReplacement = store.subscribe(() => {});
 
       try {
         expect(fetcher).toHaveBeenCalledTimes(2);
+        expect(fetcher.mock.calls[0][1]?.signal.aborted).toBe(true);
+        expect(await firstFetch).toBeNull();
 
-        await Promise.resolve();
-
-        const activeFetchPromise = store.getState().fetch(undefined, { updateQueryKey: true });
+        const replacementFetch = store.getState().fetch();
         expect(fetcher).toHaveBeenCalledTimes(2);
 
-        await vi.advanceTimersByTimeAsync(100);
-        await activeFetchPromise;
-        expect(store.getState().getData()).toBe('data-1');
+        replacementResponse.resolve('replacement');
+        expect(await replacementFetch).toBe('replacement');
+
+        firstResponse.resolve('old result');
+        await flushMacrotask();
+
+        expect(store.getState().getData()).toBe('replacement');
+        expect(store.getState().status).toBe(QueryStatuses.Success);
+        expect(fetcher).toHaveBeenCalledTimes(2);
       } finally {
-        unsubscribeSecond();
-        vi.useRealTimers();
+        unsubscribeReplacement();
+        store.getState().reset();
       }
     });
   });

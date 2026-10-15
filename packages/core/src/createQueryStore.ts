@@ -5,7 +5,7 @@ import type { BaseStoreOptions, OptionallyPersistedStore, PersistedStore, StateC
 
 export { defaultRetryDelay };
 export { getQueryKey, parseQueryKey } from './queryStore/queryKey';
-export { queryParam } from './queryStore/queryParam';
+export { queryParam } from './internal/runtime';
 export type { QueryParam, QueryParamConfig, QueryParamKey, ReactiveParam } from './queryStore/queryParam';
 
 // ============ Query Store Factory ============================================ //

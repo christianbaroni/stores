@@ -22,9 +22,9 @@ export type ReactiveParam<T, State> = ($: DeriveGetter, store: StoreApi<State>) 
  * Query parameter wrapper for values whose fetcher value and key value differ.
  */
 export type QueryParamConfig<T, State> = {
-  readonly [QUERY_PARAM_CONFIG]: true;
   readonly key: QueryParamKey<T>;
   readonly value: NonFunction<T> | ReactiveParam<T, State>;
+  readonly [QUERY_PARAM_CONFIG]: true;
 };
 
 /**
@@ -42,7 +42,7 @@ export function queryParam<T, State>(
   value: NonFunction<T> | ReactiveParam<T, State>,
   options: { key: QueryParamKey<T> }
 ): QueryParamConfig<T, State> {
-  return { [QUERY_PARAM_CONFIG]: true, key: options.key, value };
+  return { key: options.key, value, [QUERY_PARAM_CONFIG]: true };
 }
 
 // ============ Type Guards ==================================================== //

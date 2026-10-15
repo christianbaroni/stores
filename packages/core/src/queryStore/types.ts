@@ -44,9 +44,10 @@ export type QueryStoreConfig<
    * Returns either a promise or a raw data value of type TQueryFnData.
    *
    * ---
-   * `abortController` is by default available, unless either:
-   *  - `abortInterruptedFetches` is set to `false` in the store's config
-   *  - The fetch was manually triggered with `skipStoreUpdates: true`
+   * `abortController` is available unless:
+   *  - `abortInterruptedFetches` is `false` in the store's config
+   *  - `skipStoreUpdates` is `true` or `'withCache'`
+   *  - A manual fetch uses a different query key without `updateQueryKey: true`
    */
   fetcher: (params: TParams, abortController: AbortController | null) => TQueryFnData | Promise<TQueryFnData>;
 
@@ -59,12 +60,17 @@ export type QueryStoreConfig<
   /**
    * **A callback invoked whenever fresh data is successfully fetched.**
    * Receives the transformed data and the store's set function, which can optionally be used to update store state.
+   * With asynchronous persistence, this callback runs after initial hydration. Callback failures are logged without failing the query.
    */
   onFetched?: (info: OnFetchedParams<TData, TParams, CustomState, S>) => void;
 
   /**
    * **A function that overrides the default behavior of setting the fetched data in the store's query cache.**
-   * Receives an object containing the transformed data, the query parameters, the query key, and the store's set function.
+   * Receives the transformed data, query parameters, query key, and a `set` function for updating state.
+   * Updates submitted through `set` compose synchronously and are published together after the callback returns.
+   * Functional updates read the store state with earlier submitted updates applied.
+   * The query store maintains its selected key, status, error, and fetch time; custom cache entries retain their own metadata.
+   * A callback failure leaves updates submitted through this `set` unapplied and follows the query's normal failure path.
    *
    * When using `setData`, it’s important to note that you are taking full responsibility for managing query data. If your
    * query supports variable parameters (and thus multiple query keys) and you want to cache data for each key, you’ll need
@@ -182,9 +188,14 @@ export type QueryStoreInternalState<TData, TParams extends Record<string, unknow
   /**
    * Initiates a data fetch for the given parameters. If no parameters are provided,
    * the store's current parameters are used.
+   * Concurrent calls for the same key share one operation unless `skipStoreUpdates` requests an independent fetch.
+   * Selecting a key with a pending background fetch reuses that operation and applies its outcome to the selected state.
+   * Background requests remain uncancellable when selected later.
    * @param params - Optional parameters to pass to the fetcher function.
    * @param options - Optional {@link FetchOptions} to customize the fetch behavior.
-   * @returns A promise that resolves when the fetch operation completes.
+   * With asynchronous storage, stateful calls wait for the initial hydration attempt before checking the cache or starting a request.
+   * A failed hydration does not prevent fetching fresh data. Later rehydration and persistence writes are not awaited.
+   * @returns A promise that resolves after the result and its state updates are applied.
    */
   fetch: (params?: Partial<TParams>, options?: FetchOptions) => Promise<TData | null>;
 
@@ -233,8 +244,10 @@ export type QueryStoreInternalState<TData, TParams extends Record<string, unknow
   isStale: (override?: number) => boolean;
 
   /**
-   * Tears down param subscriptions and timers and resets fetch state. Optionally resets store state.
-   * @param resetStoreState - If `true`, the store's state will be reset to its initial state.
+   * Permanently stops query work and tears down subscriptions and timers. Create a new store to resume fetching.
+   * Earlier stateful fetches cannot publish further updates; already-started result-only fetches can still complete.
+   * Calls waiting for initial hydration settle after that attempt finishes.
+   * @param resetStoreState - If `true`, also clears internal query state. Custom state is preserved.
    * @default false
    */
   reset: (resetStoreState?: boolean) => void;
@@ -246,12 +259,13 @@ export type QueryStoreInternalState<TData, TParams extends Record<string, unknow
   enabled: boolean;
 
   /**
-   * The most recent error encountered during a fetch operation, if any.
+   * The query's current fetch error, or null.
    */
   error: Error | null;
 
   /**
-   * The timestamp of the last successful fetch, or null if no successful fetch has occurred.
+   * The last successful fetch time tracked by the query, or null if none is available.
+   * Reusing a cached result restores its original fetch time.
    */
   lastFetchedAt: number | null;
 
@@ -298,7 +312,7 @@ export type FetchOptions = {
   /**
    * Forces a fetch request even if there is fresh data available in the cache.
    *
-   * Note: If a pending fetch matches the forced fetch's params, the pending promise *will* be returned.
+   * A matching pending fetch is reused, including background requests, unless `skipStoreUpdates` requests an independent fetch.
    * @default false
    */
   force?: boolean;
