@@ -1,27 +1,22 @@
-import { SyncEngine, SyncHandle, SyncRegistration } from '../../sync/types';
+import { SyncEngine } from '../../sync/types';
+import { noop } from '../../utils/core';
 
 // ============ Noop Sync Engine =============================================== //
 
-class NoopSyncHandle<T extends Record<string, unknown>> implements SyncHandle<T> {
-  destroy(): void {
-    return;
-  }
-  publish(): void {
-    return;
-  }
-}
+let sharedEngine: SyncEngine | undefined;
 
-class NoopSyncEngine implements SyncEngine {
-  readonly sessionId = 'noop';
-
-  register<T extends Record<string, unknown>>(_registration: SyncRegistration<T>): SyncHandle<T> {
-    return new NoopSyncHandle<T>();
-  }
-}
-
-let sharedNoopEngine: NoopSyncEngine | undefined;
-
+/**
+ * Returns the inert default sync engine used outside browsers.
+ */
 export function createNoopSyncEngine(): SyncEngine {
-  if (!sharedNoopEngine) sharedNoopEngine = new NoopSyncEngine();
-  return sharedNoopEngine;
+  if (!sharedEngine) {
+    const noopHandle = { destroy: noop, publish: noop };
+
+    sharedEngine = {
+      sessionId: 'noop',
+      register: () => noopHandle,
+    };
+  }
+
+  return sharedEngine;
 }
