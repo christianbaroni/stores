@@ -26,7 +26,7 @@ import { SUBSCRIBE_CASCADE_STATE } from './cascadeSubscriptions';
 import { CASCADE_PARTICIPANT_SUBSCRIBE_OPTIONS, DependencySubscriptions } from './derivedStore/dependencySubscriptions';
 import { DerivedSubscribers, type DerivedWatcher } from './derivedStore/derivedSubscribers';
 import { getOrCreateProxy, stripProxies } from './derivedStore/deriveProxy';
-import { createPathFinder, type PathFinder } from './derivedStore/pathFinder';
+import { PathFinder } from './derivedStore/pathFinder';
 
 // ============ Types ========================================================== //
 
@@ -106,8 +106,8 @@ export function derivedStore<DerivedState>(
       }
 
       if (!rootProxyCache) rootProxyCache = new WeakMap();
-      if (!pathFinder) pathFinder = createPathFinder();
-      return getOrCreateProxy(store, snapshot, rootProxyCache, pathFinder.trackPath);
+      if (!pathFinder) pathFinder = new PathFinder();
+      return getOrCreateProxy(store, snapshot, rootProxyCache, pathFinder);
     }
 
     // -- Overload #2: $(store, selector, equalityFn?)

@@ -3,15 +3,15 @@ import { createBaseStore } from '../../createBaseStore';
 import { createDerivedStore } from '../../createDerivedStore';
 import type { StoreApi } from '../../store/types';
 import { getOrCreateProxy } from './deriveProxy';
-import { createPathFinder } from './pathFinder';
+import { PathFinder } from './pathFinder';
 
 function collectTrackedPaths<State>(store: StoreApi<State>, read: (state: State) => void): string[][] {
-  const pathFinder = createPathFinder();
-  const state = getOrCreateProxy(store, store.getState(), new WeakMap(), pathFinder.trackPath);
+  const pathFinder = new PathFinder();
+  const state = getOrCreateProxy(store, store.getState(), new WeakMap(), pathFinder);
   const paths: string[][] = [];
 
   read(state);
-  pathFinder.buildProxySubscriptions((_store, _selector, path) => paths.push(path), false);
+  pathFinder.buildProxySubscriptions((_store, _selector, path) => paths.push(path.slice()), false);
 
   return paths;
 }
@@ -140,12 +140,12 @@ describe('derive proxy array tracking', () => {
   it('tracks a direct array item read at the array path and returns the raw item', () => {
     const row = { value: 1 };
     const sourceStore = createBaseStore(() => ({ rows: [row] }));
-    const pathFinder = createPathFinder();
-    const state = getOrCreateProxy(sourceStore, sourceStore.getState(), new WeakMap(), pathFinder.trackPath);
+    const pathFinder = new PathFinder();
+    const state = getOrCreateProxy(sourceStore, sourceStore.getState(), new WeakMap(), pathFinder);
     const paths: string[][] = [];
 
     expect(state.rows[0]).toBe(row);
-    pathFinder.buildProxySubscriptions((_store, _selector, path) => paths.push(path), false);
+    pathFinder.buildProxySubscriptions((_store, _selector, path) => paths.push(path.slice()), false);
 
     expect(paths).toEqual([['rows']]);
   });

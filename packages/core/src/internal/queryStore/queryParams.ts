@@ -9,8 +9,7 @@ import { hasOwn } from '../../types/utils';
 import { identity, noop, nullObject } from '../../utils/core';
 import { dequal } from '../../utils/equality';
 import { getOrCreateProxy, stripProxies } from '../derivedStore/deriveProxy';
-import type { PathFinder } from '../derivedStore/pathFinder';
-import { createPathFinder } from '../derivedStore/pathFinder';
+import { PathFinder } from '../derivedStore/pathFinder';
 import { hasGetSnapshot } from '../storeUtils';
 
 // ============ Types ========================================================== //
@@ -100,9 +99,9 @@ export function trackQueryValue<T, State>(getValue: ReactiveParam<T, State>, own
     equalityFn?: EqualityFn<Selected>
   ): Source | Selected {
     if (!selector) {
-      proxyPaths ??= createPathFinder();
+      proxyPaths ??= new PathFinder();
       rootProxyCache ??= new WeakMap();
-      return getOrCreateProxy(store, readStore(store), rootProxyCache, proxyPaths.trackPath);
+      return getOrCreateProxy(store, readStore(store), rootProxyCache, proxyPaths);
     }
 
     selectorDependencies.push(listener => {

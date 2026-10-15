@@ -1,6 +1,6 @@
 import type { StoreApi } from '../../store/types';
 import { hasOwn, isArrayIndex, isPlainObject } from '../../types/utils';
-import { TrackPathFn } from './pathFinder';
+import { trackChild, trackInvocation, trackLeaf, type PathFinder, type TrieNode } from './pathFinder';
 
 // ============ Constants ====================================================== //
 
@@ -9,131 +9,125 @@ const TRACKING_PROXY_UNWRAP = Symbol('stores.deriveProxy.unwrap');
 // ============ Proxy Creator ================================================== //
 
 /**
- * Gets or creates a lightweight tracking proxy that records path access and store
- * method invocations via proxy traps. Used to auto-generate selectors that point
- * to either the accessed path or the value returned by an invoked store method.
+ * Returns a store snapshot with automatic dependency tracking.
  */
-export function getOrCreateProxy<S>(store: StoreApi<S>, snapshot: S, rootProxyCache: WeakMap<object, unknown>, trackPath: TrackPathFn): S {
+export function getOrCreateProxy<S>(store: StoreApi<S>, snapshot: S, rootProxyCache: WeakMap<object, unknown>, pathFinder: PathFinder): S {
   const cachedProxy = rootProxyCache.get(store);
   if (isCachedProxy<S>(cachedProxy)) return cachedProxy;
 
-  const newProxy = createTrackingProxy(snapshot, store, trackPath);
-  rootProxyCache.set(store, newProxy);
-  return newProxy;
+  const proxy = createTrackingProxy(snapshot, () => pathFinder.root(store, snapshot));
+  rootProxyCache.set(store, proxy);
+  return proxy;
 }
 
-function createTrackingProxy<S>(snapshot: S, store: StoreApi<S>, trackPath: TrackPathFn, path: string[] = []): S {
+function createTrackingProxy<S>(snapshot: S, root: () => TrieNode): S {
   // -- If the store state is a primitive or nullish, track as a leaf and return directly
   if (!snapshot || typeof snapshot !== 'object') {
-    trackPath(store, path, true);
+    trackLeaf(root());
     return snapshot;
   }
 
-  const bailedOutObjects = new WeakSet<object>();
-  const subProxyCache = new WeakMap<object, object>();
-  return buildProxy(snapshot, path, store, trackPath, bailedOutObjects, subProxyCache);
+  const proxy = new Proxy(snapshot, new TrackingHandler(root, new WeakMap(), new WeakSet()));
+  return proxy;
 }
 
-function buildProxy<T extends object, S>(
-  value: T,
-  path: string[],
-  store: StoreApi<S>,
-  trackPath: TrackPathFn,
-  bailedOutObjects: WeakSet<object>,
-  subProxyCache: WeakMap<object, object>
-): T {
-  const isArray = Array.isArray(value);
+class TrackingHandler<T extends object> implements ProxyHandler<T> {
+  constructor(
+    private readonly node: TrieNode | (() => TrieNode),
+    private readonly proxies: WeakMap<object, object>,
+    private readonly bailedOutObjects: WeakSet<object>
+  ) {}
 
-  return new Proxy<T>(value, {
-    get(target, propKey, receiver) {
-      if (propKey === TRACKING_PROXY_UNWRAP) {
-        trackPath(store, path, true);
-        return target;
+  get(target: T, propKey: string | symbol, receiver: unknown): unknown {
+    if (propKey === TRACKING_PROXY_UNWRAP) {
+      trackLeaf(this.getNode());
+      return target;
+    }
+
+    // -- If we've already bailed out on this object, no further sub-proxies
+    if (this.bailedOutObjects.has(target)) {
+      return Reflect.get(target, propKey, receiver);
+    }
+
+    // -- If it's a symbol or __proto__, handle normally (and bail out on iteration)
+    if (propKey === '__proto__' || typeof propKey === 'symbol') {
+      // If enumerating or iterating, treat that as a leaf usage on the parent
+      if (propKey === Symbol.iterator) this.bailOut(target);
+      return Reflect.get(target, propKey, receiver);
+    }
+
+    // -- Array elements depend on the full array
+    if (Array.isArray(target) && isArrayIndex(propKey)) {
+      this.bailOut(target);
+      return Reflect.get(target, propKey, receiver);
+    }
+
+    // -- Get the property value
+    const childValue = Reflect.get(target, propKey, target);
+
+    // -- Handle functions
+    if (typeof childValue === 'function') {
+      if (hasOwn(target, propKey)) {
+        // Return a wrapped function that tracks invocation when called. This allows
+        // building a selector that points to the value *returned* by the method call.
+        return (...args: unknown[]) => {
+          const value = Reflect.apply(childValue, target, args);
+          trackInvocation(trackChild(this.getNode(), propKey, childValue), args, value);
+          return value;
+        };
       }
 
-      // -- If we've already bailed out on this object, no further sub-proxies
-      if (bailedOutObjects.has(target)) {
-        return Reflect.get(target, propKey, receiver);
-      }
+      // Built-in prototype function (e.g. .toString), track as final usage (a leaf)
+      trackLeaf(this.getNode());
+      return childValue.bind(target);
+    }
 
-      // -- If it's a symbol or __proto__, handle normally (and bail out on iteration)
-      if (propKey === '__proto__' || typeof propKey === 'symbol') {
-        // If enumerating or iterating, treat that as a leaf usage on the parent
-        if (propKey === Symbol.iterator) {
-          trackPath(store, path, true);
-          bailedOutObjects.add(target);
-        }
-        return Reflect.get(target, propKey, receiver);
-      }
-
-      // Array elements depend on the collection, not individual indexes.
-      if (isArray && isArrayIndex(propKey)) {
-        trackPath(store, path, true);
-        bailedOutObjects.add(target);
-        return Reflect.get(target, propKey, receiver);
-      }
-
-      // -- Get the property value
-      const childValue = Reflect.get(target, propKey, target);
-      const propKeyString = String(propKey);
-      const newPath = path.concat(propKeyString);
-
-      // -- Handle functions
-      if (typeof childValue === 'function') {
-        const isStoreMethod = hasOwn(target, propKey);
-
-        if (isStoreMethod) {
-          // Return a wrapped function that tracks invocation when called. This allows
-          // building a selector that points to the value *returned* by the method call.
-          return function (...args: unknown[]) {
-            trackPath(store, newPath, true, { args: args.length ? args : undefined });
-            return Reflect.apply(childValue, target, args);
-          };
-        }
-
-        // Built-in prototype function (e.g. .toString), track as final usage (a leaf)
-        trackPath(store, path, true);
-        return childValue.bind(value);
-      }
-
-      // -- Handle non-function property tracking
-      // Primitives or nullish values: track as a leaf
-      // Objects: track as ancestor usage
-      const isObject = !!childValue && typeof childValue === 'object';
-      trackPath(store, newPath, !isObject);
-
-      // -- For objects, return a sub-proxy
-      if (isObject) {
-        if (!subProxyCache.has(childValue)) {
-          subProxyCache.set(childValue, buildProxy(childValue, newPath, store, trackPath, bailedOutObjects, subProxyCache));
-        }
-        return subProxyCache.get(childValue);
-      }
-
-      // -- Otherwise it's a primitive or nullish, so return directly
+    // -- Handle non-function property tracking
+    // Primitives or nullish values: track as a leaf
+    // Objects: track as ancestor usage and return a sub-proxy
+    const childNode = trackChild(this.getNode(), propKey, childValue);
+    if (!childValue || typeof childValue !== 'object') {
+      trackLeaf(childNode);
       return childValue;
-    },
+    }
 
-    getOwnPropertyDescriptor(target, prop) {
-      // Bail out on reflection and track as a leaf
-      trackPath(store, path, true);
-      bailedOutObjects.add(target);
-      return Reflect.getOwnPropertyDescriptor(target, prop);
-    },
+    const proxies = this.proxies;
+    let proxy = proxies.get(childValue);
 
-    has(target, prop) {
-      // Track `in` operator usage as a leaf
-      trackPath(store, path, true);
-      return Reflect.has(target, prop);
-    },
+    if (!proxy) {
+      proxy = new Proxy(childValue, new TrackingHandler(childNode, proxies, this.bailedOutObjects));
+      proxies.set(childValue, proxy);
+    }
 
-    ownKeys(target) {
-      // Bail out on enumeration and track as a leaf
-      trackPath(store, path, true);
-      bailedOutObjects.add(target);
-      return Reflect.ownKeys(target);
-    },
-  });
+    return proxy;
+  }
+
+  getOwnPropertyDescriptor(target: T, prop: string | symbol): PropertyDescriptor | undefined {
+    // Bail out on reflection and track as a leaf
+    this.bailOut(target);
+    return Reflect.getOwnPropertyDescriptor(target, prop);
+  }
+
+  has(target: T, prop: string | symbol): boolean {
+    // Track `in` operator usage as a leaf
+    trackLeaf(this.getNode());
+    return Reflect.has(target, prop);
+  }
+
+  ownKeys(target: T): (string | symbol)[] {
+    // Bail out on enumeration and track as a leaf
+    this.bailOut(target);
+    return Reflect.ownKeys(target);
+  }
+
+  private getNode(): TrieNode {
+    return typeof this.node === 'function' ? this.node() : this.node;
+  }
+
+  private bailOut(target: object): void {
+    trackLeaf(this.getNode());
+    this.bailedOutObjects.add(target);
+  }
 }
 
 // ============ Proxy Stripping ================================================= //
@@ -150,26 +144,22 @@ export function stripProxies(value: unknown, seen?: WeakSet<object>): unknown {
   const target = unwrapTrackingProxy(value);
   if (target) return target;
 
-  if (Array.isArray(value)) stripArrayProxyValues(value, seen);
-  else if (isPlainObject(value)) stripOwnProxyValues(value, seen);
+  stripProxyValues(value, seen);
 
   return value;
 }
 
-function stripArrayProxyValues(value: unknown[], seen?: WeakSet<object>): void {
-  const visited = enterContainer(value, seen);
-  if (!visited) return;
+function stripProxyValues(value: object, seen?: WeakSet<object>): void {
+  const isArray = Array.isArray(value);
+  if (!isArray && !isPlainObject(value)) return;
 
-  for (let i = 0; i < value.length; i++) {
-    stripPropertyValue(value, String(i), visited);
-  }
-}
+  const visited = seen ?? new WeakSet<object>();
+  if (visited.has(value)) return;
 
-function stripOwnProxyValues(value: object, seen?: WeakSet<object>): void {
-  const visited = enterContainer(value, seen);
-  if (!visited) return;
+  visited.add(value);
 
-  for (const key of Reflect.ownKeys(value)) stripPropertyValue(value, key, visited);
+  if (isArray) for (let i = 0; i < value.length; i++) stripPropertyValue(value, String(i), visited);
+  else for (const key of Reflect.ownKeys(value)) stripPropertyValue(value, key, visited);
 }
 
 function stripPropertyValue(target: object, key: PropertyKey, seen: WeakSet<object>): void {
@@ -188,15 +178,8 @@ function unwrapTrackingProxy(value: object): object | undefined {
   return target && typeof target === 'object' ? target : undefined;
 }
 
-function enterContainer(value: object, seen?: WeakSet<object>): WeakSet<object> | null {
-  const visited = seen ?? new WeakSet<object>();
-  if (visited.has(value)) return null;
-  visited.add(value);
-  return visited;
-}
-
 // ============ Type Guards ==================================================== //
 
-function isCachedProxy<S>(cachedProxyState: unknown | undefined): cachedProxyState is S {
-  return cachedProxyState !== undefined;
+function isCachedProxy<S>(cachedProxy: unknown): cachedProxy is S {
+  return cachedProxy !== undefined;
 }
