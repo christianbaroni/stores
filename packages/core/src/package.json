@@ -16,6 +16,10 @@
     "#store/batchStoreNotifications": {
       "react-native": "./store/batchStoreNotifications.native.ts",
       "default": "./store/batchStoreNotifications.web.ts"
+    },
+    "#types/useStoreCallSignatures": {
+      "vanilla": "./types/useStoreCallSignatures.vanilla.ts",
+      "default": "./types/useStoreCallSignatures.react.ts"
     }
   }
 }

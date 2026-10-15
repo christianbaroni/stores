@@ -4,8 +4,7 @@
     "composite": false,
     "declarationMap": false,
     "declarationDir": "dist/vanilla",
-    "customConditions": ["vanilla"],
-    "moduleSuffixes": [".vanilla", ""]
+    "customConditions": ["vanilla"]
   },
   "include": ["src/index.vanilla.ts"]
 }

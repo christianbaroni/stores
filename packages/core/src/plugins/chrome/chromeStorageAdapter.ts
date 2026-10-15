@@ -14,8 +14,6 @@ export type ChromeStorageAdapterOptions = {
   storageKeyPrefix?: string;
 };
 
-export type ChromeStorageValue<PersistedState = unknown> = StorageValue<PersistedState>;
-
 export class ChromeStorageAdapter implements AsyncStorageInterface {
   readonly area: AreaName;
   readonly storageKeyPrefix: string;

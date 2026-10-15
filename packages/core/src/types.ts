@@ -4,16 +4,11 @@ import type { SyncConfig } from './sync/types';
 import type { FunctionKeys } from './types/functions';
 import type { SetFull, SetPartial, SetStateArgs } from './types/setState';
 import type { EqualityFn, Selector, SubscribeOverloads } from './types/subscribe';
-import type { UseStoreCallSignatures } from './types/useStoreCallSignatures';
+import type { UseStoreCallSignatures } from '#types/useStoreCallSignatures';
 
-export type { StoreMutators } from './store/types';
+export type { StoreMutators, UseStoreCallSignatures };
 export type * from './types/setState';
 export type * from './types/subscribe';
-export type * from './types/useStoreCallSignatures';
-
-// ============ Store Mutators ================================================= //
-
-export type StoreMutatorsWithSelector<Mutators extends StoreMutators = StoreMutators> = Mutators;
 
 // ============ Core Store Types =============================================== //
 

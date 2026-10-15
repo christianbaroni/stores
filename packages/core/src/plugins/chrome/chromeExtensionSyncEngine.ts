@@ -3,13 +3,7 @@ import { StorageValue } from '../../storage/storageTypes';
 import { SyncEngine, SyncHandle, SyncRegistration, SyncValues } from '../../sync/types';
 import { hasOwn } from '../../types/utils';
 import { nullObject } from '../../utils/core';
-import {
-  AreaName,
-  ChromeStorageAdapter,
-  ChromeStorageAdapterOptions,
-  ChromeStorageValue,
-  deserializeChromeStorageValue,
-} from './chromeStorageAdapter';
+import { AreaName, ChromeStorageAdapter, ChromeStorageAdapterOptions, deserializeChromeStorageValue } from './chromeStorageAdapter';
 
 const ENABLE_LOGS = false;
 const ENABLE_METADATA_LOGS = false;
@@ -161,7 +155,7 @@ export class ChromeExtensionSyncEngine implements SyncEngine {
   private extractChangedFields(
     container: RegistrationContainer<Record<string, unknown>>,
     incomingState: Record<string, unknown>,
-    metadata: ChromeStorageValue['syncMetadata'] | undefined,
+    metadata: StorageValue<unknown>['syncMetadata'] | undefined,
     oldValue: unknown
   ): SyncValues<Record<string, unknown>> {
     const values: SyncValues<Record<string, unknown>> = nullObject();

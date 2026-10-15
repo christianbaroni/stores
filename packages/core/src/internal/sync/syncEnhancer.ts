@@ -34,9 +34,7 @@ export type SyncContext = {
   setIsApplyingRemote: (value: boolean) => void;
   setSessionId: (sessionId: string) => void;
   setTimestamp: (timestamp: number) => void;
-  setWithoutPersist:
-    | (<_T extends (..._: unknown[]) => void | Promise<void>, Args extends unknown[]>(..._: Args) => void | Promise<void>)
-    | undefined;
+  setWithoutPersist: (<Args extends unknown[]>(..._: Args) => void | Promise<void>) | undefined;
 };
 
 type PendingUpdate<T extends Record<string, unknown>> = {
