@@ -1,21 +1,15 @@
 import { SyncStorageInterface } from './types';
 
+/**
+ * Creates a `localStorage` adapter scoped to a key prefix.
+ */
 export function createStoresStorage(storageKeyPrefix: string): SyncStorageInterface {
   return {
     clearAll(): void {
       try {
         const localStorage = getLocalStorage();
         if (!localStorage) return;
-        const keysToRemove: string[] = [];
-
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i);
-          if (key?.startsWith(storageKeyPrefix)) {
-            keysToRemove.push(key);
-          }
-        }
-
-        for (const key of keysToRemove) localStorage.removeItem(key);
+        for (const key of getPrefixedKeys(localStorage, storageKeyPrefix)) localStorage.removeItem(key);
       } catch (error) {
         console.error('Error clearing localStorage:', error);
       }
@@ -23,7 +17,7 @@ export function createStoresStorage(storageKeyPrefix: string): SyncStorageInterf
 
     contains(key: string): boolean {
       const localStorage = getLocalStorage();
-      return localStorage?.getItem(`${storageKeyPrefix}${key}`) !== null;
+      return localStorage?.getItem(`${storageKeyPrefix}${key}`) != null;
     },
 
     delete(key: string): void {
@@ -38,7 +32,10 @@ export function createStoresStorage(storageKeyPrefix: string): SyncStorageInterf
     getAllKeys(): string[] {
       try {
         const localStorage = getLocalStorage();
-        return localStorage ? Array.from(localStorage.keys()) : [];
+        if (!localStorage) return [];
+        const keys = getPrefixedKeys(localStorage, storageKeyPrefix);
+        for (let i = 0; i < keys.length; i++) keys[i] = keys[i].slice(storageKeyPrefix.length);
+        return keys;
       } catch (error) {
         console.error('Error getting keys from localStorage:', error);
         return [];
@@ -68,4 +65,13 @@ export function createStoresStorage(storageKeyPrefix: string): SyncStorageInterf
 
 function getLocalStorage(): Storage | null {
   return typeof window !== 'undefined' ? window.localStorage : null;
+}
+
+function getPrefixedKeys(localStorage: Storage, storageKeyPrefix: string): string[] {
+  const keys: string[] = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key?.startsWith(storageKeyPrefix)) keys.push(key);
+  }
+  return keys;
 }
