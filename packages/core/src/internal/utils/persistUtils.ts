@@ -24,7 +24,10 @@ export function omitStoreMethods(state: unknown): unknown {
   return result;
 }
 
-export function defaultSerializeState<PersistedState>(storageValue: StorageValue<PersistedState>, shouldUseReplacer: boolean): string {
+/**
+ * Encodes Maps and Sets by default.
+ */
+export function defaultSerializeState<PersistedState>(storageValue: StorageValue<PersistedState>, shouldUseReplacer = true): string {
   try {
     return JSON.stringify(storageValue, shouldUseReplacer ? replacer : undefined);
   } catch (error) {
@@ -33,7 +36,17 @@ export function defaultSerializeState<PersistedState>(storageValue: StorageValue
   }
 }
 
-export function defaultDeserializeState<PersistedState>(serializedState: string, shouldUseReviver: boolean): StorageValue<PersistedState> {
+/**
+ * Decodes persisted Maps and Sets by default.
+ * Throws for non-string input or invalid JSON.
+ */
+export function defaultDeserializeState<PersistedState>(serializedState: unknown, shouldUseReviver = true): StorageValue<PersistedState> {
+  if (typeof serializedState !== 'string') {
+    throw new StoresError(
+      '[createBaseStore]: Received non-string serialized state without a custom deserializer. ' +
+        'Provide a deserializer on the store or storage adapter.'
+    );
+  }
   try {
     return JSON.parse(serializedState, shouldUseReviver ? reviver : undefined);
   } catch (error) {
