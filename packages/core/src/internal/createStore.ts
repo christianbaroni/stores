@@ -26,7 +26,6 @@ export function createStore<State, Mutators extends StoreMutators = []>(
 
 export function createStore<State>(stateOrCreator: State | StateCreator<State>): StoreApi<State> {
   let state: State;
-
   let listeners: Set<Listener<State>> | undefined;
   let cascadeListeners: SingleOrSet<Listener<State>>;
   let cascadeListenerCount = 0;
@@ -46,7 +45,7 @@ export function createStore<State>(stateOrCreator: State | StateCreator<State>):
 
     if (listeners) {
       flushCascade();
-      for (const listener of listeners) listener(state, previousState);
+      if (listeners) for (const listener of listeners) listener(state, previousState);
     }
   }
 

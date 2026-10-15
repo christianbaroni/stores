@@ -297,10 +297,10 @@ export function derivedStore<DerivedState>(
       }
 
       if (invalidated) return;
-      invalidated = true;
 
       // Stores without cascade participants during active cascade: enlist for lazy derive and flush
       if (isCascadeActive()) {
+        invalidated = true;
         if (prevStateForFlush === NO_CASCADE_FLUSH) {
           prevStateForFlush = UNINITIALIZED;
           joinCascade(onCascadeFlush);

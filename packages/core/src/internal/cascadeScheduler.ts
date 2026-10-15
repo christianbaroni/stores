@@ -190,9 +190,11 @@ function flushDeferredTasks(): void {
     const queue = flushQueue;
     if (!queue) return;
 
-    while (flushIndex < queue.length) queue[flushIndex++]();
-    flushQueue = undefined;
-    flushIndex = 0;
+    while (flushQueue === queue && flushIndex < queue.length) queue[flushIndex++]();
+    if (flushQueue === queue) {
+      flushQueue = undefined;
+      flushIndex = 0;
+    }
     return;
   }
 }
