@@ -189,10 +189,7 @@ function readStoredValue<PersistedState>(
 
   if (typeof value.version !== 'number' || value.version === options.version) return { migrated: false, state: value.state };
 
-  if (!options.migrate) {
-    console.error("State loaded from storage couldn't be migrated since no migrate function was provided");
-    return EMPTY_STORAGE_READ;
-  }
+  if (!options.migrate) return EMPTY_STORAGE_READ;
 
   const migratedState = options.migrate(value.state, value.version);
 
