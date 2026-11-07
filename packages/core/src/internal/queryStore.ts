@@ -561,7 +561,7 @@ export function queryStore<
               if (!isResultOnly && destroyed) return null;
 
               const typedError = ensureError(error);
-              if (typedError instanceof StoresError) logger.error(typedError);
+              logger.error(typedError instanceof StoresError ? typedError : queryStoreError(storeIdentifier, 'fetch', typedError));
               if (request.updateQueryKey === undefined) throw typedError;
 
               const lastFailedAt = Date.now();
