@@ -73,7 +73,7 @@ export function flushCascade(): void {
 
   flushing = true;
   try {
-    batchStoreNotifications(drainCascade);
+    while (hasPendingWork()) batchStoreNotifications(drainCascade);
   } finally {
     resetCascade();
   }
@@ -148,7 +148,7 @@ function flushScheduledCascade(): void {
 }
 
 function drainCascade(): void {
-  while (taskCount > 0 || hasDeferredTasks()) {
+  while (hasPendingWork()) {
     settleDerivations();
     flushDeferredTasks();
   }
@@ -213,6 +213,6 @@ function resetCascade(): void {
   minRank = Infinity;
 }
 
-function hasDeferredTasks(): boolean {
-  return !!flushTask || !!flushQueue;
+function hasPendingWork(): boolean {
+  return taskCount > 0 || !!flushTask || !!flushQueue;
 }
