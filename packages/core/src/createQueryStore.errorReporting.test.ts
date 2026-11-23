@@ -34,7 +34,7 @@ function expectStoreError(value: unknown, stage: string, cause: Error): StoresEr
 }
 
 describe('createQueryStore error reporting', () => {
-  it('reports fetcher failures through the configured logger', async () => {
+  it('keeps fetcher failures out of the global logger by default', async () => {
     const fetchError = new Error('Fetch failed');
     const loggerError = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
 
@@ -47,8 +47,7 @@ describe('createQueryStore error reporting', () => {
 
     await expect(store.getState().fetch()).resolves.toBeNull();
 
-    expect(loggerError).toHaveBeenCalledTimes(1);
-    expectStoreError(loggerError.mock.calls[0]?.[0], 'fetch', fetchError);
+    expect(loggerError).not.toHaveBeenCalled();
     expect(store.getState().error).toBe(fetchError);
     expect(store.getState().status).toBe(QueryStatuses.Error);
   });
@@ -123,8 +122,8 @@ describe('createQueryStore error reporting', () => {
 
     await expect(store.getState().fetch()).resolves.toBeNull();
 
-    expect(loggerError).toHaveBeenCalledTimes(2);
-    expectStoreError(loggerError.mock.calls[1]?.[0], 'retry callback', retryError);
+    expect(loggerError).toHaveBeenCalledTimes(1);
+    expectStoreError(loggerError.mock.calls[0]?.[0], 'retry callback', retryError);
     expect(onError).toHaveBeenCalledTimes(1);
     expect(onError.mock.calls[0]?.[0]).toMatchObject({ error: fetchError, willRetry: false });
     expect(store.getState().error).toBe(fetchError);
@@ -154,8 +153,8 @@ describe('createQueryStore error reporting', () => {
     try {
       await flushMicrotasks(3);
 
-      expect(loggerError).toHaveBeenCalledTimes(2);
-      expectStoreError(loggerError.mock.calls[1]?.[0], 'retryDelay callback', retryDelayError);
+      expect(loggerError).toHaveBeenCalledTimes(1);
+      expectStoreError(loggerError.mock.calls[0]?.[0], 'retryDelay callback', retryDelayError);
       expect(onError).toHaveBeenCalledTimes(1);
       expect(onError.mock.calls[0]?.[0]).toMatchObject({ error: fetchError, willRetry: false });
       expect(store.getState().error).toBe(fetchError);
@@ -184,8 +183,8 @@ describe('createQueryStore error reporting', () => {
 
     await expect(store.getState().fetch()).resolves.toBeNull();
 
-    expect(loggerError).toHaveBeenCalledTimes(2);
-    expectStoreError(loggerError.mock.calls[1]?.[0], 'onError callback', onErrorError);
+    expect(loggerError).toHaveBeenCalledTimes(1);
+    expectStoreError(loggerError.mock.calls[0]?.[0], 'onError callback', onErrorError);
     expect(store.getState().error).toBe(fetchError);
     expect(store.getState().status).toBe(QueryStatuses.Error);
   });

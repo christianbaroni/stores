@@ -18,6 +18,7 @@ function buildQueryDefaults(): ResolvedDefaults {
     debugMode: userDefaults?.debugMode ?? false,
     disableAutoRefetching: userDefaults?.disableAutoRefetching ?? false,
     keepPreviousData: userDefaults?.keepPreviousData ?? false,
+    logFetchErrors: userDefaults?.logFetchErrors ?? false,
     minStaleTime: userDefaults?.minStaleTime ?? false,
     onError: userDefaults?.onError,
     paramChangeThrottle: userDefaults?.paramChangeThrottle ?? false,

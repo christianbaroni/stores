@@ -53,6 +53,14 @@ export type QueryStoreDefaults = Prettify<
   >
 > & {
   /**
+   * Logs each failed fetch attempt through the configured logger.
+   * To log only when no retry was scheduled, leave this disabled
+   * and check `willRetry` in `onError`.
+   * @default false
+   */
+  logFetchErrors?: boolean;
+
+  /**
    * Minimum stale time for auto-refetching query stores under which to log warnings in development.
    * `false` disables warnings.
    * @default false
