@@ -17,15 +17,9 @@ export function createStoresStorage(storageKeyPrefix: string): SyncStorageInterf
       const mmkv = createMMKVInstance(storageKeyPrefix);
       let deleteFn: SyncStorageInterface<string>['delete'] | undefined;
 
-      if (typeof mmkv.delete === 'function') {
-        deleteFn = mmkv.delete.bind(mmkv);
-      } else if (typeof mmkv.remove === 'function') {
-        deleteFn = mmkv.remove.bind(mmkv);
-      }
-
-      if (typeof deleteFn !== 'function') {
-        throw new Error('[stores]: Storage instance does not conform to expected interface');
-      }
+      if (typeof mmkv.delete === 'function') deleteFn = mmkv.delete.bind(mmkv);
+      else if (typeof mmkv.remove === 'function') deleteFn = mmkv.remove.bind(mmkv);
+      else throw new Error('[stores]: Storage instance does not conform to expected interface');
 
       const adapter: SyncStorageInterface<string> = {
         clearAll: mmkv.clearAll.bind(mmkv),
