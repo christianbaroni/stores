@@ -1,3 +1,5 @@
+import type { UnknownFunction } from './functions';
+
 const hasOwnProperty = Object.prototype.hasOwnProperty;
 
 /**
@@ -15,6 +17,13 @@ export function isArrayIndex(key: string): boolean {
   if (code < 48 || code > 57) return false;
   const index = Number(key);
   return Number.isInteger(index) && index < 0xffffffff && String(index) === key;
+}
+
+/**
+ * Narrows a function-or-non-function union to its function type.
+ */
+export function isFunction(value: unknown): value is UnknownFunction {
+  return typeof value === 'function';
 }
 
 /**

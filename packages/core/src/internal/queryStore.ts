@@ -864,12 +864,11 @@ export function queryStore<
     if (enableLogs) console.log('[🌀 StaleTime Subscription 🌀] Initial value:', staleTime);
     paramUnsubscribes.push(
       trackedStaleTime.subscribe(newVal => {
-        if (newVal !== staleTime) {
-          if (enableLogs) console.log('[🌀 StaleTime Change 🌀] - [Old]:', `${staleTime},`, '[New]:', newVal);
-          staleTime = newVal;
-          clearScheduledFetch();
-          queryStoreFetch(undefined, undefined, true);
-        }
+        if (newVal === staleTime) return;
+        if (enableLogs) console.log('[🌀 StaleTime Change 🌀] - [Old]:', `${staleTime},`, '[New]:', newVal);
+        staleTime = newVal;
+        clearScheduledFetch();
+        queryStoreFetch(undefined, undefined, true);
       })
     );
   }
@@ -882,13 +881,13 @@ export function queryStore<
 
     paramUnsubscribes.push(
       trackedEnabled.subscribe(newVal => {
-        if (newVal !== oldVal) {
-          if (enableLogs) console.log('[🌀 Enabled Change 🌀] - [Old]:', `${oldVal},`, '[New]:', newVal);
-          oldVal = newVal;
-          queryStore.setState({ enabled: newVal });
-        }
+        if (newVal === oldVal) return;
+        if (enableLogs) console.log('[🌀 Enabled Change 🌀] - [Old]:', `${oldVal},`, '[New]:', newVal);
+        oldVal = newVal;
+        queryStore.setState({ enabled: newVal });
       })
     );
+
     if (queryStore.getState().enabled !== oldVal) (initialStatePatch ??= {}).enabled = oldVal;
   } else if (initialStoreEnabled !== initialData.enabled) {
     (initialStatePatch ??= {}).enabled = initialData.enabled;

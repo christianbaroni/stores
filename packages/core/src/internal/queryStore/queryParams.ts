@@ -5,7 +5,7 @@ import type { StoreApi } from '../../store/types';
 import type { EqualityFn, Selector } from '../../types';
 import type { InternalSubscribeOptions, InternalUnsubscribeFn } from '../internalSubscriptions';
 import type { NonFunction } from '../../types/functions';
-import { hasOwn } from '../../types/utils';
+import { hasOwn, isFunction } from '../../types/utils';
 import { identity, noop, nullObject } from '../../utils/core';
 import { dequal } from '../../utils/equality';
 import { getOrCreateProxy, stripProxies } from '../derivedStore/deriveProxy';
@@ -26,10 +26,12 @@ export type QueryParams<TParams extends Record<string, unknown>> = {
   subscribe(onChange: (key: keyof TParams, oldValue: unknown, newValue: unknown) => void): InternalUnsubscribeFn;
 };
 
-type Entry<T> = { key?: QueryParamKey<T>; subscribe?: TrackedValue<T>['subscribe'] };
+type Subscriptions<TParams extends Record<string, unknown>> = {
+  [K in keyof TParams]?: TrackedValue<TParams[K]>['subscribe'];
+};
 
-type Entries<TParams extends Record<string, unknown>> = {
-  [K in keyof TParams]?: Entry<TParams[K]>;
+type KeyConfigs<TParams extends Record<string, unknown>> = {
+  [K in keyof TParams]?: QueryParamKey<TParams[K]>;
 };
 
 type SubscribeDependency = (listener: () => void) => InternalUnsubscribeFn;
@@ -46,23 +48,32 @@ export function createQueryParams<TParams extends Record<string, unknown>, State
   requiredKeys: (keyof TParams)[]
 ): QueryParams<TParams> {
   const current = nullObject<TParams>();
-  let entries: Entries<TParams> | null = null;
-  let hasCustomKeys = false;
+  let subscriptions: Subscriptions<TParams> | null = null;
+  let keyConfigs: KeyConfigs<TParams> | null = null;
 
-  if (params) {
-    for (const key in params) {
-      if (!hasOwn(params, key)) continue;
-      const entry = resolveQueryParam<TParams, State, typeof key>(current, params[key], key, store);
-      if (entry) {
-        (entries ??= nullObject<Entries<TParams>>())[key] = entry;
-        if (entry.key !== undefined) hasCustomKeys = true;
-      }
+  function resolve<K extends keyof TParams>(key: K, input: QueryParam<TParams[K], State>): void {
+    let value: NonFunction<TParams[K]> | ReactiveParam<TParams[K], State>;
+
+    if (!isQueryParamConfig(input)) value = input;
+    else {
+      value = input.value;
+      (keyConfigs ??= nullObject<KeyConfigs<TParams>>())[key] = input.key;
+    }
+
+    if (isFunction(value)) {
+      const { initialValue, subscribe } = trackQueryValue(value, store);
+      current[key] = initialValue;
+      (subscriptions ??= nullObject<Subscriptions<TParams>>())[key] = subscribe;
+    } else {
+      current[key] = value;
     }
   }
 
+  if (params) for (const key in params) if (hasOwn(params, key)) resolve(key, params[key]);
+
   return {
     buildKey(params = current) {
-      return getQueryKey(hasCustomKeys ? buildKeyParams(entries, params) : params);
+      return getQueryKey(keyConfigs ? buildKeyParams(keyConfigs, params) : params);
     },
     complete(params) {
       if (!params) return copyCurrent(current);
@@ -73,19 +84,9 @@ export function createQueryParams<TParams extends Record<string, unknown>, State
       return copyCurrent(current);
     },
     subscribe(onChange) {
-      return subscribeEntries(entries, current, onChange);
+      return subscriptions ? subscribeAll(subscriptions, current, onChange) : noop;
     },
   };
-}
-
-function resolveQueryParam<TParams extends Record<string, unknown>, State, K extends keyof TParams>(
-  current: TParams,
-  input: QueryParam<TParams[K], State>,
-  key: K,
-  store: StoreApi<State>
-): Entry<TParams[K]> | null {
-  if (isQueryParamConfig(input)) return resolveQueryParamValue(current, input.value, key, store, input.key);
-  return resolveQueryParamValue(current, input, key, store);
 }
 
 /**
@@ -153,23 +154,6 @@ export function trackQueryValue<T, State>(getValue: ReactiveParam<T, State>, own
   };
 }
 
-function resolveQueryParamValue<TParams extends Record<string, unknown>, State, K extends keyof TParams>(
-  current: TParams,
-  value: NonFunction<TParams[K]> | ReactiveParam<TParams[K], State>,
-  key: K,
-  store: StoreApi<State>,
-  keyConfig?: QueryParamKey<TParams[K]>
-): Entry<TParams[K]> | null {
-  if (isReactiveParam(value)) {
-    const { initialValue, subscribe } = trackQueryValue(value, store);
-    current[key] = initialValue;
-    return keyConfig === undefined ? { subscribe } : { key: keyConfig, subscribe };
-  }
-
-  current[key] = value;
-  return keyConfig === undefined ? null : { key: keyConfig };
-}
-
 // ============ Current Values ================================================= //
 
 function copyCurrent<TParams extends Record<string, unknown>>(current: TParams): TParams {
@@ -180,19 +164,18 @@ function copyCurrent<TParams extends Record<string, unknown>>(current: TParams):
 
 // ============ Subscriptions ================================================== //
 
-function subscribeEntries<TParams extends Record<string, unknown>>(
-  entries: Entries<TParams> | null,
+function subscribeAll<TParams extends Record<string, unknown>>(
+  subscriptions: Subscriptions<TParams>,
   current: TParams,
   onChange: (key: keyof TParams, oldValue: unknown, newValue: unknown) => void
 ): InternalUnsubscribeFn {
-  if (!entries) return noop;
+  const unsubscribes: InternalUnsubscribeFn[] = [];
 
-  let unsubscribes: InternalUnsubscribeFn[] | undefined;
-  for (const key in entries) {
-    const subscribe = entries[key]?.subscribe;
+  for (const key in subscriptions) {
+    const subscribe = subscriptions[key];
     if (!subscribe) continue;
 
-    (unsubscribes ??= []).push(
+    unsubscribes.push(
       subscribe(nextValue => {
         const previousValue = current[key];
         if (dequal(previousValue, nextValue)) return;
@@ -202,8 +185,6 @@ function subscribeEntries<TParams extends Record<string, unknown>>(
     );
   }
 
-  if (!unsubscribes) return noop;
-
   return skipAbortFetch => {
     for (const unsubscribe of unsubscribes) unsubscribe(skipAbortFetch);
   };
@@ -212,18 +193,18 @@ function subscribeEntries<TParams extends Record<string, unknown>>(
 // ============ Key Utilities ================================================== //
 
 function buildKeyParams<TParams extends Record<string, unknown>>(
-  entries: Entries<TParams> | null,
+  keyConfigs: KeyConfigs<TParams>,
   params: TParams
 ): Record<string, unknown> {
   const keyParams = nullObject<Record<string, unknown>>();
 
   for (const key in params) {
     if (!hasOwn(params, key)) continue;
-    const entry = entries?.[key];
-    if (entry?.key === false) continue;
+    const keyConfig = keyConfigs[key];
+    if (keyConfig === false) continue;
 
     const value = params[key];
-    keyParams[key] = entry?.key ? entry.key(value) : value;
+    keyParams[key] = keyConfig ? keyConfig(value) : value;
   }
 
   return keyParams;
@@ -245,8 +226,4 @@ function hasAllRequiredParams<TParams extends Record<string, unknown>>(
 ): params is TParams {
   for (const key of requiredKeys) if (!(key in params)) return false;
   return true;
-}
-
-function isReactiveParam<T, S>(value: NonFunction<T> | ReactiveParam<T, S>): value is ReactiveParam<T, S> {
-  return typeof value === 'function';
 }

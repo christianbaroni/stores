@@ -53,9 +53,8 @@ export type QueryStoreDefaults = Prettify<
   >
 > & {
   /**
-   * Logs each failed fetch attempt through the configured logger.
-   * To log only when no retry was scheduled, leave this disabled
-   * and check `willRetry` in `onError`.
+   * Logs each failed fetch attempt through the configured logger. To log only when
+   * no retry was scheduled, leave this disabled and check `willRetry` in `onError`.
    * @default false
    */
   logFetchErrors?: boolean;

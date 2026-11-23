@@ -3,6 +3,7 @@ import type { InternalSubscribeOptions } from './internalSubscriptions';
 import type { Listener, Selector, SetFull, SetPartial, UnsubscribeFn } from '../types';
 import type { BivariantMethod } from '../types/functions';
 import { Primitive, Widen } from '../types/primitives';
+import { isFunction } from '../types/utils';
 import { notifyListener } from '../utils/core';
 import { addToSingleOrSet, deleteFromSingleOrSet, forEachSingleOrSet, type SingleOrSet } from '../utils/singleOrSet';
 import { activateCascade, notifyAfterCascade } from './cascadeScheduler';
@@ -89,7 +90,7 @@ export function createStore<State>(stateOrCreator: State | StateCreator<State>):
     [SUBSCRIBE_CASCADE_STATE]: subscribeCascadeState,
   };
 
-  const initialState = (state = isStateCreator(stateOrCreator) ? stateOrCreator(setState, getState, api) : stateOrCreator);
+  const initialState = (state = isFunction(stateOrCreator) ? stateOrCreator(setState, getState, api) : stateOrCreator);
 
   return api;
 
@@ -151,8 +152,4 @@ export function createStore<State>(stateOrCreator: State | StateCreator<State>):
 
     return isCascadeParticipant ? createCascadeSubscription(selectedListener) : createSubscription(selectedListener);
   }
-}
-
-function isStateCreator<S>(initial: S | StateCreator<S>): initial is StateCreator<S> {
-  return typeof initial === 'function';
 }
