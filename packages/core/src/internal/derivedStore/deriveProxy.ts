@@ -30,15 +30,10 @@ function createTrackingProxy<S>(snapshot: S, root: () => TrieNode): S {
   return new Proxy(snapshot, new TrackingHandler(root));
 }
 
-type TrackingContext = {
-  proxies?: WeakMap<object, object>;
-  bailedOutObjects?: WeakSet<object>;
-};
-
 class TrackingHandler<T extends object> implements ProxyHandler<T> {
   constructor(
     private readonly node: TrieNode | (() => TrieNode),
-    private context?: TrackingContext
+    private context?: { proxies?: WeakMap<object, object>; bailedOutObjects?: WeakSet<object> }
   ) {}
 
   get(target: T, propKey: string | symbol, receiver: unknown): unknown {
