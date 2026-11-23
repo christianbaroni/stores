@@ -44,6 +44,10 @@ export type InternalSubscribeOverloads<S> = {
   <Selected>(...args: InternalSelectorArgs<S, Selected>): InternalUnsubscribeFn;
 };
 
+export type InternalSubscribe<S> = <Selected>(
+  ...args: [...ListenerArgs<S>, selectedListener?: undefined] | InternalSelectorArgs<S, Selected>
+) => InternalUnsubscribeFn;
+
 /**
  * Selection state shared by store updates and manual refreshes.
  * Equal results retain the previously accepted value.

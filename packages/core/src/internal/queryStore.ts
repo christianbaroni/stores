@@ -11,8 +11,8 @@ import type {
   QueryStoreState,
   RetryFailureParams,
 } from '../queryStore/types';
-import type { BaseStoreOptions, Listener, PersistConfig, StateCreator, Timeout } from '../types';
-import type { InternalSubscribeOptions, InternalSubscribeOverloads, InternalUnsubscribeFn } from './internalSubscriptions';
+import type { BaseStoreOptions, PersistConfig, StateCreator, Timeout } from '../types';
+import type { InternalSubscribe, InternalSubscribeOverloads, InternalUnsubscribeFn } from './internalSubscriptions';
 import { wrapCascadeStateSubscription } from './cascadeSubscriptions';
 import type { BivariantMethod } from '../types/functions';
 import { hasOwn } from '../types/utils';
@@ -906,20 +906,13 @@ export function queryStore<
     lastSubscriptionTime = null;
   }
 
-  function wrapQuerySubscribe(subscribe: InternalSubscribeOverloads<S>): InternalSubscribeOverloads<S> {
-    return (
-      selectorOrListener: BivariantMethod<{ callback(state: S, previousState: S): unknown }>,
-      listener?: Listener<unknown>,
-      options?: InternalSubscribeOptions<unknown>
-    ) => {
+  function wrapQuerySubscribe(subscribe: InternalSubscribeOverloads<S>): InternalSubscribe<S> {
+    return (selectorOrListener, listener?, options?) => {
       let unsubscribe: InternalUnsubscribeFn | undefined;
 
       try {
         onQuerySubscribe();
-        if (listener) {
-          const selector: BivariantMethod<{ select(state: S, previousState?: S): unknown }> = selectorOrListener;
-          unsubscribe = subscribe(selector, listener, options);
-        } else unsubscribe = subscribe(selectorOrListener);
+        unsubscribe = listener ? subscribe(selectorOrListener, listener, options) : subscribe(selectorOrListener);
       } catch (error) {
         onQueryUnsubscribe();
         throw error;

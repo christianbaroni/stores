@@ -1,16 +1,15 @@
-import { connectSelection, notifyInitial } from './selectorSubscription';
-import type { InternalSubscribeOptions } from './internalSubscriptions';
-import type { Listener, Selector, SetFull, SetPartial, UnsubscribeFn } from '../types';
-import type { BivariantMethod } from '../types/functions';
-import { Primitive, Widen } from '../types/primitives';
+import { RETURN_STATE_CHANGE, STATE_UNCHANGED } from '../store/rootStateCreator';
+import { applyStateUpdate } from '../store/stateUpdate';
+import type { Mutate, StateCreator, StoreApi, StoreMutators } from '../store/types';
+import type { EqualityFn, Listener, Selector, SetFull, SetPartial, UnsubscribeFn } from '../types';
+import type { Primitive, Widen } from '../types/primitives';
 import { isFunction } from '../types/utils';
 import { notifyListener } from '../utils/core';
 import { addToSingleOrSet, deleteFromSingleOrSet, forEachSingleOrSet, type SingleOrSet } from '../utils/singleOrSet';
 import { activateCascade, notifyAfterCascade } from './cascadeScheduler';
 import { SUBSCRIBE_CASCADE_STATE, type CascadeStateSubscribable } from './cascadeSubscriptions';
-import { applyStateUpdate } from '../store/stateUpdate';
-import { RETURN_STATE_CHANGE, STATE_UNCHANGED } from '../store/rootStateCreator';
-import type { Mutate, StateCreator, StoreApi, StoreMutators } from '../store/types';
+import type { InternalSubscribe } from './internalSubscriptions';
+import { connectSelection, notifyInitial } from './selectorSubscription';
 
 /**
  * Creates a store from its initial state.
@@ -59,28 +58,25 @@ export function createStore<State>(stateOrCreator: State | StateCreator<State>):
     return initialState;
   }
 
-  function subscribe(listener: Listener<State>): UnsubscribeFn;
-  function subscribe<Selected>(
-    selector: Selector<State, Selected>,
-    listener: Listener<Selected>,
-    options?: InternalSubscribeOptions<Selected>
-  ): UnsubscribeFn;
-  function subscribe<Selected>(
-    selectorOrListener: BivariantMethod<{ callback(state: State, previousState: State): Selected }>,
-    listener?: Listener<Selected>,
-    options?: InternalSubscribeOptions<Selected>
-  ): UnsubscribeFn {
+  const subscribe: InternalSubscribe<State> = (selectorOrListener, listener?, options?): UnsubscribeFn => {
     if (!listener) return createSubscription(selectorOrListener);
 
-    if (options?.selection) {
-      const isCascadeParticipant = options.isCascadeParticipant ?? false;
-      const selectedListener = connectSelection(options.selection, selectorOrListener, getState);
-      if (options.fireImmediately) notifyInitial(options.selection);
-      return isCascadeParticipant ? createCascadeSubscription(selectedListener) : createSubscription(selectedListener);
+    const isCascadeParticipant = options?.isCascadeParticipant ?? false;
+    const selection = options?.selection;
+
+    if (selection) {
+      const selectedListener = connectSelection(selection, selectorOrListener, getState);
+      if (options.fireImmediately) notifyInitial(selection);
+      return createSubscription(selectedListener, isCascadeParticipant);
     }
 
-    return createSelectorSubscription(selectorOrListener, listener, options);
-  }
+    const equalityFn = options?.equalityFn ?? Object.is;
+    const initialSelection = selectorOrListener(state);
+    if (options?.fireImmediately) listener(initialSelection, initialSelection);
+
+    const selectedListener = createSelectorListener(selectorOrListener, listener, equalityFn, isCascadeParticipant, initialSelection);
+    return createSubscription(selectedListener, isCascadeParticipant);
+  };
 
   const api: StoreApi<State> & CascadeStateSubscribable<State> = {
     getInitialState,
@@ -94,15 +90,15 @@ export function createStore<State>(stateOrCreator: State | StateCreator<State>):
 
   return api;
 
-  function createSubscription(listener: Listener<State>): UnsubscribeFn {
-    (listeners ??= new Set()).add(listener);
-    return () => {
-      listeners?.delete(listener);
-      if (listeners?.size === 0) listeners = undefined;
-    };
-  }
+  function createSubscription(listener: Listener<State>, isCascadeParticipant?: boolean): UnsubscribeFn {
+    if (!isCascadeParticipant) {
+      (listeners ??= new Set()).add(listener);
+      return () => {
+        listeners?.delete(listener);
+        if (listeners?.size === 0) listeners = undefined;
+      };
+    }
 
-  function createCascadeSubscription(listener: Listener<State>): UnsubscribeFn {
     const nextListeners = addToSingleOrSet(cascadeListeners, cascadeListenerCount, listener);
     if (nextListeners) {
       cascadeListeners = nextListeners;
@@ -124,32 +120,25 @@ export function createStore<State>(stateOrCreator: State | StateCreator<State>):
       listener(nextState, previousState);
     }
 
-    return createCascadeSubscription(cascadeStateListener);
+    return createSubscription(cascadeStateListener, true);
   }
+}
 
-  function createSelectorSubscription<Selected>(
-    selector: BivariantMethod<{ selector(state: State, previousState?: State): Selected }>,
-    listener: Listener<Selected>,
-    options: InternalSubscribeOptions<Selected> | undefined
-  ): UnsubscribeFn {
-    const isCascadeParticipant = options?.isCascadeParticipant ?? false;
+function createSelectorListener<State, Selected>(
+  selector: Selector<State, Selected>,
+  listener: Listener<Selected>,
+  equalityFn: EqualityFn<Selected>,
+  isCascadeParticipant: boolean,
+  currentSelection: Selected
+): Listener<State> {
+  return nextState => {
+    const nextSelection = selector(nextState);
+    if (equalityFn(currentSelection, nextSelection)) return;
 
-    const equalityFn = options?.equalityFn ?? Object.is;
-    let currentSelection = selector(state);
+    const previousSelection = currentSelection;
+    currentSelection = nextSelection;
 
-    const selectedListener = (nextState: State): void => {
-      const nextSelection = selector(nextState);
-      if (equalityFn(currentSelection, nextSelection)) return;
-
-      const previousSelection = currentSelection;
-      currentSelection = nextSelection;
-
-      if (isCascadeParticipant) activateCascade();
-      listener(nextSelection, previousSelection);
-    };
-
-    if (options?.fireImmediately) listener(currentSelection, currentSelection);
-
-    return isCascadeParticipant ? createCascadeSubscription(selectedListener) : createSubscription(selectedListener);
-  }
+    if (isCascadeParticipant) activateCascade();
+    listener(nextSelection, previousSelection);
+  };
 }
