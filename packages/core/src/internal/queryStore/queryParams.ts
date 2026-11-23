@@ -26,7 +26,7 @@ export type QueryParams<TParams extends Record<string, unknown>> = {
   subscribe(onChange: (key: keyof TParams, oldValue: unknown, newValue: unknown) => void): InternalUnsubscribeFn;
 };
 
-type Entry<T> = { key?: QueryParamKey<T>; tracked?: TrackedValue<T> };
+type Entry<T> = { key?: QueryParamKey<T>; subscribe?: TrackedValue<T>['subscribe'] };
 
 type Entries<TParams extends Record<string, unknown>> = {
   [K in keyof TParams]?: Entry<TParams[K]>;
@@ -161,9 +161,9 @@ function resolveQueryParamValue<TParams extends Record<string, unknown>, State, 
   keyConfig?: QueryParamKey<TParams[K]>
 ): Entry<TParams[K]> | null {
   if (isReactiveParam(value)) {
-    const tracked = trackQueryValue(value, store);
-    current[key] = tracked.initialValue;
-    return keyConfig === undefined ? { tracked } : { key: keyConfig, tracked };
+    const { initialValue, subscribe } = trackQueryValue(value, store);
+    current[key] = initialValue;
+    return keyConfig === undefined ? { subscribe } : { key: keyConfig, subscribe };
   }
 
   current[key] = value;
@@ -189,11 +189,11 @@ function subscribeEntries<TParams extends Record<string, unknown>>(
 
   let unsubscribes: InternalUnsubscribeFn[] | undefined;
   for (const key in entries) {
-    const tracked = entries[key]?.tracked;
-    if (!tracked) continue;
+    const subscribe = entries[key]?.subscribe;
+    if (!subscribe) continue;
 
     (unsubscribes ??= []).push(
-      tracked.subscribe(nextValue => {
+      subscribe(nextValue => {
         const previousValue = current[key];
         if (dequal(previousValue, nextValue)) return;
         current[key] = nextValue;
