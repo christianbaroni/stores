@@ -27,15 +27,18 @@ function createTrackingProxy<S>(snapshot: S, root: () => TrieNode): S {
     return snapshot;
   }
 
-  const proxy = new Proxy(snapshot, new TrackingHandler(root, new WeakMap(), new WeakSet()));
-  return proxy;
+  return new Proxy(snapshot, new TrackingHandler(root));
 }
+
+type TrackingContext = {
+  proxies?: WeakMap<object, object>;
+  bailedOutObjects?: WeakSet<object>;
+};
 
 class TrackingHandler<T extends object> implements ProxyHandler<T> {
   constructor(
     private readonly node: TrieNode | (() => TrieNode),
-    private readonly proxies: WeakMap<object, object>,
-    private readonly bailedOutObjects: WeakSet<object>
+    private context?: TrackingContext
   ) {}
 
   get(target: T, propKey: string | symbol, receiver: unknown): unknown {
@@ -45,7 +48,7 @@ class TrackingHandler<T extends object> implements ProxyHandler<T> {
     }
 
     // -- If we've already bailed out on this object, no further sub-proxies
-    if (this.bailedOutObjects.has(target)) {
+    if (this.context?.bailedOutObjects?.has(target)) {
       return Reflect.get(target, propKey, receiver);
     }
 
@@ -91,11 +94,12 @@ class TrackingHandler<T extends object> implements ProxyHandler<T> {
       return childValue;
     }
 
-    const proxies = this.proxies;
+    const context = (this.context ??= {});
+    const proxies = (context.proxies ??= new WeakMap());
     let proxy = proxies.get(childValue);
 
     if (!proxy) {
-      proxy = new Proxy(childValue, new TrackingHandler(childNode, proxies, this.bailedOutObjects));
+      proxy = new Proxy(childValue, new TrackingHandler(childNode, context));
       proxies.set(childValue, proxy);
     }
 
@@ -126,7 +130,7 @@ class TrackingHandler<T extends object> implements ProxyHandler<T> {
 
   private bailOut(target: object): void {
     trackLeaf(this.getNode());
-    this.bailedOutObjects.add(target);
+    ((this.context ??= {}).bailedOutObjects ??= new WeakSet()).add(target);
   }
 }
 
