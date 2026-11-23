@@ -1,6 +1,7 @@
 import { flushMicrotasks } from './async.testUtils';
 import { createBaseStore } from './createBaseStore';
 import { createDerivedStore } from './createDerivedStore';
+import { createQueryStore } from './createQueryStore';
 
 describe('createDerivedStore cascade consistency', () => {
   it('keeps derived dependency subscriptions alive after an ordinary subscriber unsubscribes', async () => {
@@ -408,6 +409,45 @@ describe('createDerivedStore cascade consistency', () => {
       unsubscribe();
       currentStore.destroy();
     }
+  });
+
+  it('delivers nested Query updates before resuming the source listeners', async () => {
+    const source = createBaseStore(() => 0);
+    const selected = createDerivedStore($ => $(source));
+    const query = createQueryStore<number, { id: number }>({
+      enabled: false,
+      fetcher: async ({ id }) => id,
+      params: { id: $ => $(selected) },
+    });
+    const acceptedKey = createBaseStore(() => query.getState().queryKey);
+    const keys = createDerivedStore($ => ({
+      accepted: $(acceptedKey),
+      selected: $(query, state => state.queryKey),
+    }));
+    const confirmed = createDerivedStore($ => $(keys, state => state.accepted === state.selected));
+
+    const reads: boolean[] = [];
+    confirmed.subscribe(() => undefined);
+    query.subscribe(
+      state => state.queryKey,
+      key => {
+        acceptedKey.setState(key);
+        reads.push(confirmed.getState());
+      }
+    );
+
+    const sibling = createDerivedStore($ => $(source) * 10);
+    const label = createDerivedStore($ => String($(sibling)));
+    const events: string[] = [];
+    label.subscribe(value => events.push(`label:${value}`));
+    source.subscribe(value => events.push(`source:${value}`));
+
+    await flushMicrotasks();
+    source.setState(1);
+    source.setState(2);
+
+    expect(reads).toEqual([true, true]);
+    expect(events).toEqual(['label:10', 'source:1', 'label:20', 'source:2']);
   });
 
   it('settles reentrant cascade work before same-source ordinary listeners observe', async () => {

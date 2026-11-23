@@ -5,14 +5,7 @@ import { BivariantMethod } from '../types/functions';
 import { identity, noop } from '../utils/core';
 import { debounce } from '../utils/debounce';
 import { pluralize } from '../utils/stringUtils';
-import {
-  activateCascade,
-  enqueueDerive,
-  getCurrentDeriveRank,
-  isCascadeActive,
-  joinCascade,
-  settleCascadeDerivations,
-} from './cascadeScheduler';
+import { activateCascade, isCascadeActive, joinCascade, ScheduledDerivation, settleCascadeDerivations } from './cascadeScheduler';
 import { CASCADE_PARTICIPANT_SUBSCRIBE_OPTIONS, SUBSCRIBE_CASCADE_STATE } from './cascadeSubscriptions';
 import { DependencySubscriptions } from './derivedStore/dependencySubscriptions';
 import { getOrCreateProxy, stripProxies } from './derivedStore/deriveProxy';
@@ -66,6 +59,9 @@ export function derivedStore<DerivedState>(
   // Subscriptions created by `$` within `deriveFunction`
   const dependencies = new DependencySubscriptions(invalidate);
 
+  // Reusable task for recomputing this store during a cascade
+  const derivation = new ScheduledDerivation(runScheduledDerive);
+
   // Dictates whether dependency subscriptions are built and retained
   let dependencyConsumerCount = keepAlive ? 1 : 0;
 
@@ -78,9 +74,6 @@ export function derivedStore<DerivedState>(
   let derivePhase = DerivePhase.Idle;
   let invalidated = true;
   let shouldRebuildSubscriptions = true;
-
-  // Cascade coordination state
-  let enqueuedAtRank: number | null = null;
 
   // NO_CASCADE_FLUSH means idle; UNINITIALIZED means enlisted before a previous state exists
   let prevStateForFlush: CascadeFlushState<DerivedState> = NO_CASCADE_FLUSH;
@@ -263,14 +256,6 @@ export function derivedStore<DerivedState>(
     if (!dependencyConsumerCount && !keepAlive) destroy();
   }
 
-  function deriveTask(): void {
-    const rank = enqueuedAtRank;
-    if (rank !== getCurrentDeriveRank()) return;
-
-    runScheduledDerive();
-    if (enqueuedAtRank === rank) enqueuedAtRank = null;
-  }
-
   function invalidate(): void {
     if (derivePhase !== DerivePhase.Idle) {
       if (derivePhase === DerivePhase.Attaching) invalidated = true;
@@ -279,14 +264,7 @@ export function derivedStore<DerivedState>(
 
     if (!debouncedDerive && subscribers.cascadeParticipantCount) {
       invalidated = true;
-      activateCascade();
-
-      const upstream = getCurrentDeriveRank();
-      const rank = upstream === null ? 0 : upstream + 1;
-      if (enqueuedAtRank !== null && rank <= enqueuedAtRank) return;
-
-      enqueuedAtRank = rank;
-      enqueueDerive(deriveTask, rank);
+      derivation.schedule();
       return;
     }
 
@@ -322,7 +300,7 @@ export function derivedStore<DerivedState>(
   // ========== Public Methods ==========
 
   function getState(): DerivedState {
-    if (isCascadeActive() && getCurrentDeriveRank() === null) settleCascadeDerivations();
+    settleCascadeDerivations();
 
     if (invalidated || !isInitialized(derivedState)) {
       // If there are watchers, build subscriptions, otherwise compute directly
@@ -395,7 +373,7 @@ export function derivedStore<DerivedState>(
     invalidated = true;
     derivedState = UNINITIALIZED;
     prevStateForFlush = NO_CASCADE_FLUSH;
-    enqueuedAtRank = null;
+    derivation.cancel();
   }
 
   const api = {

@@ -4,20 +4,25 @@ import { batchStoreNotifications } from '#store/batchStoreNotifications';
  * Cascade Scheduler
  *
  * - Coalesces derivations into a single microtask.
- * - Derive tasks run by rank; callers own duplicate and stale-rank suppression.
+ * - Derivations run in dependency waves before ordinary listeners.
  * - Doesn't retain snapshots or dependency graphs.
  * - Deferred listeners run after all derivations have settled.
  */
 
 // ============ Types ========================================================== //
 
-type Rank = number;
 type Task = () => void;
+
+const enum Phase {
+  Idle,
+  Pending,
+  Flushing,
+  Deriving,
+}
 
 // ============ State ========================================================== //
 
-let active = false;
-let flushing = false;
+let phase = Phase.Idle;
 let scheduled = false;
 
 // Deferred listener flushes. A single deferred task needs no queue; callers own
@@ -26,33 +31,42 @@ let flushTask: Task | undefined;
 let flushQueue: Task[] | undefined;
 let flushIndex = 0;
 
-// Ranked dirty tasks (per cascade)
-const buckets = new Map<Rank, Task[]>();
-let taskCount = 0;
-
-// Rank context during the currently executing derive batch
-let activeDeriveRank: Rank | null = null;
-let minRank = Infinity;
+const waves: (Set<ScheduledDerivation> | undefined)[] = [];
+let depth = 0;
 
 // ============ Public API ===================================================== //
 
 export function isCascadeActive(): boolean {
-  return active;
+  return phase !== Phase.Idle;
 }
 
 /**
- * Rank of the currently running derive batch, or null if not in a batch.
+ * Settles pending work before delivering a source change to its listeners.
  */
-export function getCurrentDeriveRank(): Rank | null {
-  return activeDeriveRank;
+export function notifyAfterCascade<State>(notify: (previous: State) => void, previous: State): void {
+  if (phase === Phase.Idle) return notify(previous);
+  if (phase === Phase.Pending) {
+    flushCascade();
+    notify(previous);
+    return;
+  }
+
+  const parent = phase;
+  phase = Phase.Flushing;
+  try {
+    drainCascade();
+    notify(previous);
+  } finally {
+    phase = parent;
+  }
 }
 
 /**
  * Arms the cascade and schedules a single microtask flush.
  */
 export function activateCascade(): void {
-  if (active) return;
-  active = true;
+  if (phase !== Phase.Idle) return;
+  phase = Phase.Pending;
 
   if (scheduled) return;
   scheduled = true;
@@ -61,44 +75,39 @@ export function activateCascade(): void {
 }
 
 /**
- * Synchronously drains the active cascade.
- */
-export function flushCascade(): void {
-  if (!active) return;
-
-  if (flushing) {
-    drainCascade();
-    return;
-  }
-
-  flushing = true;
-  try {
-    while (hasPendingWork()) batchStoreNotifications(drainCascade);
-  } finally {
-    resetCascade();
-  }
-}
-
-/**
- * Synchronously settles derivations without delivering deferred listeners.
+ * Settles pending derivations for a public read without delivering listeners
+ * or interrupting a derivation that is still propagating its change.
  */
 export function settleCascadeDerivations(): void {
-  if (!active) return;
+  if (phase === Phase.Idle || phase === Phase.Deriving || waves.length <= depth) return;
 
-  if (flushing) {
-    if (activeDeriveRank === null) settleDerivations();
-    return;
-  }
+  let resume: Phase = phase;
+  const start = depth;
+  phase = Phase.Deriving;
 
-  flushing = true;
   try {
-    settleDerivations();
+    for (let level = start; level < waves.length; level++) {
+      const wave = waves[level];
+      if (!wave) continue;
+
+      depth = level + 1;
+      try {
+        for (const task of wave) task.run();
+      } finally {
+        waves[level] = undefined;
+      }
+    }
+
+    waves.length = start;
   } catch (error) {
-    resetCascade();
+    if (resume === Phase.Pending) {
+      clearQueues();
+      resume = Phase.Idle;
+    }
     throw error;
   } finally {
-    flushing = false;
-    activeDeriveRank = null;
+    depth = start;
+    phase = resume;
   }
 }
 
@@ -106,7 +115,7 @@ export function settleCascadeDerivations(): void {
  * Enlist a deferred listener flush task.
  */
 export function joinCascade(task: Task): void {
-  if (!active) return;
+  if (phase === Phase.Idle) return;
 
   if (flushQueue) {
     flushQueue.push(task);
@@ -123,61 +132,54 @@ export function joinCascade(task: Task): void {
 }
 
 /**
- * Enqueue a derive task with the given rank.
- * The derived store owns duplicate suppression and stale-rank skips.
+ * Reusable cascade task that a derived store schedules on invalidation
+ * and cancels on teardown.
  */
-export function enqueueDerive(task: Task, rank: Rank): void {
-  if (!active) return;
+export class ScheduledDerivation {
+  private level = -1;
 
-  const r = rank < 0 ? 0 : rank | 0;
-  let bucket = buckets.get(r);
-  if (!bucket) {
-    bucket = [];
-    buckets.set(r, bucket);
+  constructor(readonly run: Task) {}
+
+  schedule(): void {
+    activateCascade();
+
+    if (this.level !== depth) {
+      const previous = waves[this.level];
+      if (this.level > depth && previous?.has(this)) return;
+      previous?.delete(this);
+      this.level = depth;
+    }
+
+    (waves[depth] ??= new Set()).add(this);
   }
-  bucket.push(task);
-  taskCount += 1;
-  if (r < minRank) minRank = r;
+
+  cancel(): void {
+    waves[this.level]?.delete(this);
+  }
 }
 
 // ============ Internal Methods =============================================== //
 
 function flushScheduledCascade(): void {
   scheduled = false;
-  flushCascade();
+  if (phase === Phase.Pending) flushCascade();
+}
+
+function flushCascade(): void {
+  phase = Phase.Flushing;
+  try {
+    while (hasPendingWork()) batchStoreNotifications(drainCascade);
+  } finally {
+    clearQueues();
+    phase = Phase.Idle;
+  }
 }
 
 function drainCascade(): void {
   while (hasPendingWork()) {
-    settleDerivations();
+    settleCascadeDerivations();
     flushDeferredTasks();
   }
-}
-
-function settleDerivations(): void {
-  // Tasks may enqueue other tasks with higher ranks during execution
-  while (taskCount > 0) {
-    const r = minRank;
-    const batch = buckets.get(r);
-    if (!batch) {
-      minRank = Infinity;
-      for (const k of buckets.keys()) if (k < minRank) minRank = k;
-      continue;
-    }
-
-    buckets.delete(r);
-    taskCount -= batch.length;
-    recomputeMinRank();
-
-    activeDeriveRank = r;
-    for (let i = 0; i < batch.length; i++) batch[i]();
-    activeDeriveRank = null;
-  }
-}
-
-function recomputeMinRank(): void {
-  minRank = Infinity;
-  for (const k of buckets.keys()) if (k < minRank) minRank = k;
 }
 
 function flushDeferredTasks(): void {
@@ -193,6 +195,7 @@ function flushDeferredTasks(): void {
     if (!queue) return;
 
     while (flushQueue === queue && flushIndex < queue.length) queue[flushIndex++]();
+
     if (flushQueue === queue) {
       flushQueue = undefined;
       flushIndex = 0;
@@ -201,18 +204,13 @@ function flushDeferredTasks(): void {
   }
 }
 
-function resetCascade(): void {
-  active = false;
-  flushing = false;
-  activeDeriveRank = null;
+function clearQueues(): void {
   flushTask = undefined;
   flushQueue = undefined;
   flushIndex = 0;
-  buckets.clear();
-  taskCount = 0;
-  minRank = Infinity;
+  waves.length = 0;
 }
 
 function hasPendingWork(): boolean {
-  return taskCount > 0 || !!flushTask || !!flushQueue;
+  return waves.length > depth || !!flushTask || !!flushQueue;
 }

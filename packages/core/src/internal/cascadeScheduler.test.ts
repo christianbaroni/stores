@@ -1,7 +1,7 @@
-import { activateCascade, enqueueDerive, flushCascade, getCurrentDeriveRank, joinCascade } from './cascadeScheduler';
+import { activateCascade, joinCascade, ScheduledDerivation, settleCascadeDerivations } from './cascadeScheduler';
 
 describe('cascadeScheduler', () => {
-  it('runs deferred tasks in insertion order after queue promotion', () => {
+  it('runs deferred tasks in insertion order after queue promotion', async () => {
     const events: string[] = [];
 
     function first(): void {
@@ -15,12 +15,12 @@ describe('cascadeScheduler', () => {
     activateCascade();
     joinCascade(first);
     joinCascade(second);
-    flushCascade();
+    await Promise.resolve();
 
     expect(events).toEqual(['first', 'second']);
   });
 
-  it('runs deferred tasks enqueued while flushing in insertion order', () => {
+  it('runs deferred tasks enqueued while flushing in insertion order', async () => {
     const events: string[] = [];
 
     function first(): void {
@@ -35,12 +35,12 @@ describe('cascadeScheduler', () => {
     activateCascade();
     joinCascade(first);
     joinCascade(second);
-    flushCascade();
+    await Promise.resolve();
 
     expect(events).toEqual(['first', 'second', 'first']);
   });
 
-  it('runs a task enqueued by the single deferred task', () => {
+  it('runs a task enqueued by the single deferred task', async () => {
     const events: string[] = [];
 
     function first(): void {
@@ -54,32 +54,43 @@ describe('cascadeScheduler', () => {
 
     activateCascade();
     joinCascade(first);
-    flushCascade();
+    await Promise.resolve();
 
     expect(events).toEqual(['first', 'second']);
   });
 
-  it('lets a derive task skip a stale rank after being requeued from the active batch', () => {
+  it('moves a pending derivation behind the wave that invalidated it', () => {
     const events: string[] = [];
-    let secondRank: number | null = null;
-
-    function first(): void {
+    const second = new ScheduledDerivation(() => events.push('second'));
+    const first = new ScheduledDerivation(() => {
       events.push('first');
-      secondRank = 1;
-      enqueueDerive(second, 1);
-    }
+      second.schedule();
+    });
+    const third = new ScheduledDerivation(() => events.push('third'));
 
-    function second(): void {
-      if (secondRank !== getCurrentDeriveRank()) return;
-      events.push('second');
-    }
+    first.schedule();
+    second.schedule();
+    third.schedule();
+    settleCascadeDerivations();
 
-    activateCascade();
-    enqueueDerive(first, 0);
-    secondRank = 0;
-    enqueueDerive(second, 0);
-    flushCascade();
+    expect(events).toEqual(['first', 'third', 'second']);
+  });
 
-    expect(events).toEqual(['first', 'second']);
+  it('can reschedule a sibling after its wave throws', () => {
+    const error = new Error('failed derivation');
+    const first = new ScheduledDerivation(() => {
+      throw error;
+    });
+    const run = vi.fn();
+    const sibling = new ScheduledDerivation(run);
+
+    first.schedule();
+    sibling.schedule();
+    expect(settleCascadeDerivations).toThrow(error);
+    expect(run).not.toHaveBeenCalled();
+
+    sibling.schedule();
+    settleCascadeDerivations();
+    expect(run).toHaveBeenCalledTimes(1);
   });
 });

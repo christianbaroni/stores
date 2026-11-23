@@ -5,7 +5,7 @@ import type { BivariantMethod } from '../types/functions';
 import { Primitive, Widen } from '../types/primitives';
 import { notifyListener } from '../utils/core';
 import { addToSingleOrSet, deleteFromSingleOrSet, forEachSingleOrSet, type SingleOrSet } from '../utils/singleOrSet';
-import { activateCascade, flushCascade } from './cascadeScheduler';
+import { activateCascade, notifyAfterCascade } from './cascadeScheduler';
 import { SUBSCRIBE_CASCADE_STATE, type CascadeStateSubscribable } from './cascadeSubscriptions';
 import { applyStateUpdate } from '../store/stateUpdate';
 import { RETURN_STATE_CHANGE, STATE_UNCHANGED } from '../store/rootStateCreator';
@@ -42,12 +42,12 @@ export function createStore<State>(stateOrCreator: State | StateCreator<State>):
     const previousState = state;
     state = nextState;
 
-    forEachSingleOrSet(cascadeListeners, cascadeListenerCount, notifyListener, state, previousState);
+    if (cascadeListeners) forEachSingleOrSet(cascadeListeners, cascadeListenerCount, notifyListener, state, previousState);
+    if (listeners) notifyAfterCascade(notifyListeners, previousState);
+  }
 
-    if (listeners) {
-      flushCascade();
-      if (listeners) for (const listener of listeners) listener(state, previousState);
-    }
+  function notifyListeners(previousState: State): void {
+    if (listeners) for (const listener of listeners) listener(state, previousState);
   }
 
   function getState(): State {
@@ -70,6 +70,7 @@ export function createStore<State>(stateOrCreator: State | StateCreator<State>):
     options?: InternalSubscribeOptions<Selected>
   ): UnsubscribeFn {
     if (!listener) return createSubscription(selectorOrListener);
+
     if (options?.selection) {
       const isCascadeParticipant = options.isCascadeParticipant ?? false;
       const selectedListener = connectSelection(options.selection, selectorOrListener, getState);
@@ -102,12 +103,18 @@ export function createStore<State>(stateOrCreator: State | StateCreator<State>):
 
   function createCascadeSubscription(listener: Listener<State>): UnsubscribeFn {
     const nextListeners = addToSingleOrSet(cascadeListeners, cascadeListenerCount, listener);
-    if (nextListeners !== null) {
+    if (nextListeners) {
       cascadeListeners = nextListeners;
       cascadeListenerCount += 1;
     }
 
-    return () => removeCascadeSubscription(listener);
+    return () => {
+      const nextListeners = deleteFromSingleOrSet(cascadeListeners, cascadeListenerCount, listener);
+      if (nextListeners === null) return;
+
+      cascadeListeners = nextListeners;
+      cascadeListenerCount -= 1;
+    };
   }
 
   function subscribeCascadeState(listener: Listener<State>): UnsubscribeFn {
@@ -117,14 +124,6 @@ export function createStore<State>(stateOrCreator: State | StateCreator<State>):
     }
 
     return createCascadeSubscription(cascadeStateListener);
-  }
-
-  function removeCascadeSubscription(listener: Listener<State>): void {
-    const nextListeners = deleteFromSingleOrSet(cascadeListeners, cascadeListenerCount, listener);
-    if (nextListeners === null) return;
-
-    cascadeListeners = nextListeners;
-    cascadeListenerCount -= 1;
   }
 
   function createSelectorSubscription<Selected>(
