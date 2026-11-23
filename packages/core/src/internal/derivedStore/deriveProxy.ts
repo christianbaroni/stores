@@ -141,45 +141,39 @@ class TrackingHandler<T extends object> implements ProxyHandler<T> {
  * proxies remain confined to internal tracking contexts.
  */
 export function stripProxies<T>(value: T): T;
-export function stripProxies(value: unknown, seen?: WeakSet<object>): unknown;
-export function stripProxies(value: unknown, seen?: WeakSet<object>): unknown {
-  if (!value || typeof value !== 'object') return value;
-
-  const target = unwrapTrackingProxy(value);
-  if (target) return target;
-
-  stripProxyValues(value, seen);
-
-  return value;
+export function stripProxies(value: unknown): unknown {
+  return value && typeof value === 'object' ? stripProxyValues(value) : value;
 }
 
-function stripProxyValues(value: object, seen?: WeakSet<object>): void {
+function stripProxyValues(value: object, seen?: WeakSet<object>): object {
+  const target: unknown = Reflect.get(value, TRACKING_PROXY_UNWRAP);
+  if (target && typeof target === 'object') return target;
+
   const isArray = Array.isArray(value);
-  if (!isArray && !isPlainObject(value)) return;
+  if (!isArray && !isPlainObject(value)) return value;
 
   const visited = seen ?? new WeakSet<object>();
-  if (visited.has(value)) return;
+  if (visited.has(value)) return value;
 
   visited.add(value);
-
   if (isArray) for (let i = 0; i < value.length; i++) stripPropertyValue(value, String(i), visited);
   else for (const key of Reflect.ownKeys(value)) stripPropertyValue(value, key, visited);
+
+  return value;
 }
 
 function stripPropertyValue(target: object, key: PropertyKey, seen: WeakSet<object>): void {
   const descriptor = Reflect.getOwnPropertyDescriptor(target, key);
   if (!descriptor || !('value' in descriptor)) return;
 
-  const nextValue = stripProxies(descriptor.value, seen);
-  if (nextValue === descriptor.value) return;
+  const value: unknown = descriptor.value;
+  if (!value || typeof value !== 'object') return;
+
+  const nextValue = stripProxyValues(value, seen);
+  if (nextValue === value) return;
 
   descriptor.value = nextValue;
   Reflect.defineProperty(target, key, descriptor);
-}
-
-function unwrapTrackingProxy(value: object): object | undefined {
-  const target = Reflect.get(value, TRACKING_PROXY_UNWRAP);
-  return target && typeof target === 'object' ? target : undefined;
 }
 
 // ============ Type Guards ==================================================== //
