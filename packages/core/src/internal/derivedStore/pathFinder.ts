@@ -114,8 +114,7 @@ export class PathFinder {
  */
 export type TrieNode = {
   value: unknown;
-  child?: TrieNode;
-  childKey?: string;
+  child?: TrieNode & { readonly key: string };
   children?: Record<string, TrieNode>;
   extraInvocations?: TrackedInvocation[];
   invocation?: TrackedInvocation;
@@ -133,25 +132,16 @@ export function trackChild(node: TrieNode, segment: string, value: unknown): Tri
 
   const child = node.child;
   if (!child) {
-    const created = { value };
-    node.child = created;
-    node.childKey = segment;
-    return created;
+    node.child = { key: segment, value };
+    return node.child;
   }
 
-  const childKey = node.childKey;
-  if (childKey === segment) return child;
-  if (childKey === undefined) {
-    node.childKey = segment;
-    return child;
-  }
+  if (child.key === segment) return child;
 
   const branches = nullObject<RootNode>();
-  branches[childKey] = child;
-
+  branches[child.key] = child;
   const created = (branches[segment] = { value });
   node.child = undefined;
-  node.childKey = undefined;
   node.children = branches;
 
   return created;
@@ -179,16 +169,12 @@ function visitRoot(this: SubscriptionBuild, root: StoreRoot): void {
 function visitSubscriptionPaths(node: TrieNode, root: StoreRoot, path: string[], depth: number, build: SubscriptionBuild): void {
   const child = node.child;
   if (child) {
-    const childKey = node.childKey;
     if (node.isLeaf) {
       visitPath(node, root, path, build);
-      if (!child.invocation || childKey === undefined) return;
-    } else if (childKey === undefined) {
-      visitPath(node, root, path, build);
-      return;
+      if (!child.invocation) return;
     }
 
-    path.push(childKey);
+    path.push(child.key);
     visitSubscriptionPaths(child, root, path, depth + 1, build);
     path.pop();
     return;
