@@ -35,6 +35,23 @@ function trackSubscriptions<State>(store: { subscribe: SubscribeOverloads<State>
 }
 
 describe('createDerivedStore', () => {
+  it('retries a failed initial calculation with current source values', () => {
+    const session = createBaseStore(() => ({ account: '' }));
+    const account = createDerivedStore(
+      $ => {
+        const value = $(session).account;
+        if (!value) throw new Error('No active account');
+        return value;
+      },
+      { keepAlive: true }
+    );
+
+    expect(() => account.getState()).toThrow('No active account');
+    session.setState({ account: 'primary' });
+    expect(account.getState()).toBe('primary');
+    account.destroy();
+  });
+
   // ──────────────────────────────────────────────
   // Basic Usage (Single Dependency)
   // ──────────────────────────────────────────────

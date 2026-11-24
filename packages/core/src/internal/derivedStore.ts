@@ -117,28 +117,29 @@ export function derivedStore<DerivedState>(
     const prevState = derivedState;
     const hasPreviousState = isInitialized(prevState);
 
-    derivePhase = DerivePhase.Computing;
+    let retry = false;
     try {
-      const derived = deriveFunction($);
-      newState = pathFinder ? stripProxies(derived) : derived;
-    } finally {
-      derivePhase = DerivePhase.Idle;
-      if (shouldRebuildSubscriptions) dependencies.finishRebuild(true);
-    }
-
-    const shouldLogSubscriptions = debugMode && (!hasPreviousState || (debugMode === 'verbose' && shouldRebuildSubscriptions));
-
-    if (shouldLogSubscriptions) {
-      if (!hasPreviousState) console.log('[🌀 Initial Derive Complete 🌀]: Created…');
-      else if (debugMode === 'verbose') console.log('[🌀 Rebuilding Subscriptions 🌀]: Created…');
-      const subscriptionCount = dependencies.size;
-      console.log(`[🎯 ${subscriptionCount} ${pluralize('Selector Subscription', subscriptionCount)} 🎯]`);
-    }
-
-    if (pathFinder && shouldRebuildSubscriptions) {
-      // Create subscriptions for each proxy-generated dependency path
-      derivePhase = DerivePhase.Attaching;
+      derivePhase = DerivePhase.Computing;
       try {
+        const derived = deriveFunction($);
+        newState = pathFinder ? stripProxies(derived) : derived;
+      } finally {
+        derivePhase = DerivePhase.Idle;
+        if (shouldRebuildSubscriptions) dependencies.finishRebuild(true);
+      }
+
+      const shouldLogSubscriptions = debugMode && (!hasPreviousState || (debugMode === 'verbose' && shouldRebuildSubscriptions));
+
+      if (shouldLogSubscriptions) {
+        if (!hasPreviousState) console.log('[🌀 Initial Derive Complete 🌀]: Created…');
+        else if (debugMode === 'verbose') console.log('[🌀 Rebuilding Subscriptions 🌀]: Created…');
+        const subscriptionCount = dependencies.size;
+        console.log(`[🎯 ${subscriptionCount} ${pluralize('Selector Subscription', subscriptionCount)} 🎯]`);
+      }
+
+      if (pathFinder && shouldRebuildSubscriptions) {
+        // Create subscriptions for each proxy-generated dependency path
+        derivePhase = DerivePhase.Attaching;
         if (
           pathFinder.buildProxySubscriptions(
             (store, selector) => {
@@ -149,18 +150,18 @@ export function derivedStore<DerivedState>(
           )
         )
           invalidated = true;
-      } finally {
-        derivePhase = DerivePhase.Idle;
+        retry = invalidated;
       }
-
-      // Reset proxy tracking state
-      rootProxyCache = undefined;
-      if (lockDependencies) pathFinder = undefined;
-      else pathFinder.reset();
-
-      if (invalidated) return getSnapshot();
+    } finally {
+      derivePhase = DerivePhase.Idle;
+      if (pathFinder && shouldRebuildSubscriptions) {
+        rootProxyCache = undefined;
+        pathFinder.reset();
+        if (lockDependencies) pathFinder = undefined;
+      }
     }
 
+    if (retry) return getSnapshot();
     if (lockDependencies) shouldRebuildSubscriptions = false;
     if (hasPreviousState && equalityFn(prevState, newState)) {
       if (debugMode) console.log('[🥷 Derive Complete 🥷]: No change detected');
