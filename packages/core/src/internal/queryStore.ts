@@ -111,7 +111,7 @@ function flushQueryTasks(): void {
   }
 }
 
-// ============ Query Store Factory ================================================== //
+// ============ Query Store Factory ============================================ //
 
 export function queryStore<
   TQueryFnData,

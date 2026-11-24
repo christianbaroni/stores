@@ -16,7 +16,7 @@ export type SyncValues<T extends Record<string, unknown>> = Partial<T> & {
   [K in SyncStateKey<T>]?: T[K];
 };
 
-// ============ Sync Update =================================================== //
+// ============ Sync Update ==================================================== //
 
 export type SyncUpdate<T extends Record<string, unknown>> = {
   replace: boolean;
@@ -25,7 +25,7 @@ export type SyncUpdate<T extends Record<string, unknown>> = {
   values: SyncValues<T>;
 };
 
-// ============ Sync Registration ============================================= //
+// ============ Sync Registration ============================================== //
 
 /**
  * Passed to `SyncEngine.register()` to connect a store to the sync system.
@@ -78,7 +78,7 @@ export interface SyncHandle<T extends Record<string, unknown>> {
   publish: ((update: SyncUpdate<T>) => void) | null;
 }
 
-// ============ Sync Engine =================================================== //
+// ============ Sync Engine ==================================================== //
 
 /**
  * Interface for multi-client state synchronization. Stores register to send and receive updates.
@@ -104,7 +104,7 @@ export interface SyncEngine {
 
 export type SyncMergeFn<T, TState = unknown> = (incoming: T, current: T, currentState: TState, incomingValues: Partial<TState>) => T;
 
-// ============ Sync Config =================================================== //
+// ============ Sync Config ==================================================== //
 
 export type SyncConfig<T extends Record<string, unknown>> = {
   /**

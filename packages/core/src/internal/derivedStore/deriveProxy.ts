@@ -129,7 +129,7 @@ class TrackingHandler<T extends object> implements ProxyHandler<T> {
   }
 }
 
-// ============ Proxy Stripping ================================================= //
+// ============ Proxy Stripping ================================================ //
 
 /**
  * Strips tracking proxies from published values to ensure

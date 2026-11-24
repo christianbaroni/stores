@@ -12,7 +12,7 @@ type TestState = {
   b: number;
 };
 
-// ============ Tests ========================================================= //
+// ============ Tests ========================================================== //
 
 describe('createBaseStore sync and persistence', () => {
   afterEach(() => vi.restoreAllMocks());

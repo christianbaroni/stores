@@ -1,7 +1,7 @@
 import { createBaseStore, createStoreActions, time } from 'stores';
 import { createSyncedChromeStorage } from 'stores/chrome';
 
-// ============ Types ======================================================== //
+// ============ Types ========================================================== //
 
 export type ContextType = 'popup' | 'options' | 'background';
 
@@ -48,13 +48,13 @@ export type SyncTestState = {
   setCounter: (value: number, context: ExtensionContext) => void;
 };
 
-// ============ Constants ==================================================== //
+// ============ Constants ====================================================== //
 
 const MAX_OPERATIONS = 51;
 const CONTEXT_TTL_MS = time.seconds(3);
 const LAST_SEEN_THRESHOLD_MS = time.seconds(1);
 
-// ============ Store Setup ================================================== //
+// ============ Store Setup ==================================================== //
 
 const { storage, syncEngine } = createSyncedChromeStorage();
 
@@ -208,7 +208,7 @@ export const useSyncTestStore = createBaseStore<SyncTestState>(
 
 export const syncTestActions = createStoreActions(useSyncTestStore);
 
-// ============ Helper Functions ============================================= //
+// ============ Helper Functions =============================================== //
 
 function addOperation(
   operations: Operation[],

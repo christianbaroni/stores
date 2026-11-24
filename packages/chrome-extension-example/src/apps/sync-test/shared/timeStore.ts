@@ -19,7 +19,7 @@ export const useTimeStore = createQueryStore<number, never, TimeState>(
   })
 );
 
-// ============ Helpers ====================================================== //
+// ============ Helpers ======================================================== //
 
 function formatRelativeTime(currentTime: number, timestamp: number): string {
   const delta = currentTime - timestamp;

@@ -1,6 +1,6 @@
 import type { BivariantMethod } from './functions';
 
-// ============ Set State Types ================================================= //
+// ============ Set State Types ================================================ //
 
 export type SetPartial<S> = S | Partial<S> | BivariantMethod<{ updater(state: S): S | Partial<S> }>;
 export type SetFull<S> = S | BivariantMethod<{ updater(state: S): S }>;
